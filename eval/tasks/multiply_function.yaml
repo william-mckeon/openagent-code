@@ -1,0 +1,18 @@
+# Add a new function to an existing file (alongside existing code).
+prompt: >
+  Add a multiply(a, b) function to calc.py, alongside the existing add function,
+  so test_calc.py passes. Then run the test to confirm.
+
+setup:
+  calc.py: |
+    def add(a, b):
+        return a + b
+
+  test_calc.py: |
+    from calc import add, multiply
+
+    assert add(2, 3) == 5
+    assert multiply(2, 3) == 6
+    print("PASS")
+
+verify: "python test_calc.py"

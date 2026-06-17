@@ -1,0 +1,64 @@
+# ============================================================================
+# openagent-code - local development compose
+# ============================================================================
+#
+# One service: the openagent-code CLI agent. Unlike the other OpenAgent
+# services this is NOT a daemon — it runs one coding task and exits — so it has
+# no ports, no healthcheck, no restart policy, and does not attach to
+# openagent-network. It depends on no other service.
+#
+# Because it is one-shot, use `run` rather than `up`:
+#
+#   docker compose build
+#   docker compose run --rm openagent-code "add a docstring to foo.py and run the tests"
+#
+# Prerequisites
+# -------------
+#   cp .env.example .env
+#   # then edit .env  (at minimum CODE_API_BASE + CODE_API_KEY for your endpoint)
+#
+# Workspace
+# ---------
+# CODE_WORKSPACE selects the repo the agent edits, mounted at /workspace.
+# Defaults to ./workspace; point it at any repo:
+#
+#   CODE_WORKSPACE=/path/to/your/repo docker compose run --rm openagent-code "..."
+#
+# Trajectories (training data) are written under the workspace by default; the
+# mount means they persist on the host after the container exits.
+#
+# When editing .env
+# -----------------
+# `docker compose run` reads env_file fresh each invocation, so changes to .env
+# take effect on the next run with no rebuild.
+# ============================================================================
+
+# Project name — otherwise Compose derives it from the folder (OpenCode -> the
+# "opencode_*" network/container names). Pin it to the service family instead.
+name: openagent-code
+
+services:
+  openagent-code:
+    build:
+      context: .
+      dockerfile: docker/code/Dockerfile
+    image: openagent-code:latest
+    container_name: openagent-code
+
+    # All config + secrets come from .env (created from .env.example).
+    env_file:
+      - .env
+
+    environment:
+      # The container always edits the mounted repo at /workspace.
+      CODE_WORKSPACE: "/workspace"
+
+    volumes:
+      # The repo the agent works on. The ./workspace default is an EMPTY placeholder
+      # — running against it produces a no_action run with nothing to edit. Point
+      # CODE_WORKSPACE at a real repo:
+      #   CODE_WORKSPACE=/path/to/your/repo docker compose run --rm openagent-code "..."
+      - "${CODE_WORKSPACE:-./workspace}:/workspace"
+
+    # One-shot CLI: no ports, no restart policy, no network. Pass the task as
+    # the command:  docker compose run --rm openagent-code "your task here".

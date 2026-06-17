@@ -1,0 +1,18 @@
+# Implement a missing function so an existing test passes.
+# Verify uses plain python (no pytest dependency) so eval runs anywhere.
+prompt: >
+  math_utils.py is missing the add function. Implement add(a, b) in math_utils.py
+  so test_math.py passes, then run it to confirm.
+
+setup:
+  math_utils.py: |
+    # implement add(a, b) here
+
+  test_math.py: |
+    from math_utils import add
+
+    assert add(2, 3) == 5
+    assert add(-1, 1) == 0
+    print("PASS")
+
+verify: "python test_math.py"

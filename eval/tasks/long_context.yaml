@@ -1,0 +1,58 @@
+# Exercises a larger working context (a sizeable file the agent must read before
+# fixing). On its own it may not overflow the 12000-token budget, but run the eval
+# with CODE_COMPACT_AT_TOKENS set low (e.g. 800) and this task will trigger real
+# compaction mid-run — proving the agent still completes after summarizing, and
+# that the raw history is still captured. The bug is a single wrong return value.
+prompt: >
+  test_widget.py is failing. Read widget.py, find the bug in the `area` method, and
+  fix it so the test passes. Then run the test to confirm.
+
+setup:
+  widget.py: |
+    """A deliberately verbose module so the working context is non-trivial."""
+
+
+    class Widget:
+        """A rectangle-like widget with a width and a height.
+
+        This docstring is padded so that reading the file consumes a meaningful
+        amount of context, which is the point of this eval task: it gives the
+        context manager something to compact when the token budget is set low.
+        """
+
+        def __init__(self, width, height, label="widget"):
+            self.width = width
+            self.height = height
+            self.label = label
+            self.history = []
+
+        def rename(self, label):
+            self.history.append(("rename", self.label, label))
+            self.label = label
+            return self.label
+
+        def scale(self, factor):
+            self.history.append(("scale", factor))
+            self.width *= factor
+            self.height *= factor
+            return self
+
+        def perimeter(self):
+            return 2 * (self.width + self.height)
+
+        def area(self):
+            # BUG: area of a rectangle is width * height, not width + height.
+            return self.width + self.height
+
+        def describe(self):
+            return f"{self.label}: {self.width}x{self.height} area={self.area()}"
+
+  test_widget.py: |
+    from widget import Widget
+
+    w = Widget(3, 4)
+    assert w.area() == 12, f"expected 12, got {w.area()}"
+    assert w.perimeter() == 14
+    print("PASS")
+
+verify: "python test_widget.py"

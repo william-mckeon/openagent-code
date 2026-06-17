@@ -1,0 +1,17 @@
+# Investigate + fix a bug in an existing file (the canonical demo task).
+prompt: >
+  test_foo.py is failing. Investigate and fix the bug in foo.py so the test passes,
+  then run the test to confirm.
+
+setup:
+  foo.py: |
+    def add(a, b):
+        return a - b
+
+  test_foo.py: |
+    from foo import add
+
+    assert add(2, 3) == 5
+    print("PASS")
+
+verify: "python test_foo.py"

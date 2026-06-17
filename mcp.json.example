@@ -1,0 +1,13 @@
+{
+  "_comment": "Copy to mcp.json and point CODE_MCP_CONFIG at it. Each server is launched over stdio; its tools appear to the agent as mcp__<server>__<tool>. The server's runtime (node/npx, python, ...) must be installed wherever openagent-code runs — the default Docker image has only python + git, so npx-based servers need a custom image or a local (non-Docker) run.",
+  "mcpServers": {
+    "git": {
+      "command": "python",
+      "args": ["-m", "mcp_server_git", "--repository", "/workspace"]
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/workspace"]
+    }
+  }
+}

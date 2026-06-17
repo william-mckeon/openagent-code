@@ -1,0 +1,20 @@
+# Forces search/investigation: the wrong value lives somewhere in a package.
+prompt: >
+  A test expects the TIMEOUT setting to be 30, but it is set wrong somewhere in the
+  app/ package. Find it and fix it so test_settings.py passes, then run the test.
+
+setup:
+  app/__init__.py: ""
+
+  app/settings.py: |
+    DEBUG = False
+    TIMEOUT = 10
+    RETRIES = 3
+
+  test_settings.py: |
+    from app.settings import TIMEOUT
+
+    assert TIMEOUT == 30, f"expected 30, got {TIMEOUT}"
+    print("PASS")
+
+verify: "python test_settings.py"

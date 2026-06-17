@@ -1,0 +1,30 @@
+# Discriminating: THREE independent bugs, one in each function. There's no single
+# edit that fixes them - the agent has to enumerate the work and complete all of it,
+# which is exactly what update_plan is for (and the trajectory captures the plan).
+# The verify checks all three, so any partial completion fails.
+prompt: >
+  mathlib.py has three separate bugs - one each in add(), is_even(), and maximum().
+  Fix all three so test_mathlib.py passes. Track them as a plan so none is missed,
+  then run the test.
+
+setup:
+  mathlib.py: |
+    def add(a, b):
+        return a - b
+
+    def is_even(n):
+        return n % 2 == 1
+
+    def maximum(xs):
+        return min(xs)
+
+  test_mathlib.py: |
+    from mathlib import add, is_even, maximum
+
+    assert add(2, 3) == 5, f"add: got {add(2, 3)}"
+    assert is_even(4) is True, "is_even(4) should be True"
+    assert is_even(3) is False, "is_even(3) should be False"
+    assert maximum([1, 9, 4]) == 9, f"maximum: got {maximum([1, 9, 4])}"
+    print("PASS")
+
+verify: "python test_mathlib.py"

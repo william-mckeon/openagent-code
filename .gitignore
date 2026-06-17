@@ -1,0 +1,98 @@
+# =============================================================================
+# openagent-code - Git ignore rules
+# =============================================================================
+# CRITICAL: .env contains secrets. It must NEVER be committed.
+# =============================================================================
+
+
+# --- Secrets ---------------------------------------------------------------
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+secrets/
+
+
+# --- Captured training data ------------------------------------------------
+# Trajectories can contain source code and prompts from the repos worked on.
+# Keep the folder, ignore its contents (including subdirs like trajectories/eval/).
+trajectories/*.jsonl
+trajectories/**/*.jsonl
+workspace/
+
+# Converter output — derived from trajectories, same code/prompt content.
+train/dataset/
+
+# Cross-session memory (Phase 4 #7) — a per-project notes file the agent writes,
+# only present if CODE_MEMORY is on and openagent-code is pointed at this repo.
+.openagent/
+
+
+# --- Python ----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+
+# --- Distribution / packaging ----------------------------------------------
+build/
+dist/
+*.egg-info/
+.eggs/
+wheels/
+*.whl
+
+
+# --- Virtual environments --------------------------------------------------
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+
+# --- Testing / coverage ----------------------------------------------------
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+.hypothesis/
+
+
+# --- Type checkers ---------------------------------------------------------
+.mypy_cache/
+.pyright/
+.pytype/
+.pyre/
+
+
+# --- Linters / formatters --------------------------------------------------
+.ruff_cache/
+.black_cache/
+
+
+# --- IDE / editor ----------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+
+# --- OS noise --------------------------------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+
+# --- Docker (build artifacts only; Dockerfile and compose are tracked) -----
+.docker/
+*.tar

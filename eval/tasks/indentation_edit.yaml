@@ -1,0 +1,22 @@
+# Regression test for the indentation guard: the line to change sits inside a
+# nested block (12 spaces). An over-indented edit becomes an IndentationError and
+# fails verify, so this task specifically catches the doubled-indent bug.
+prompt: >
+  classify(5) should return "pos" but it returns "neg". Fix the bug in shapes.py so
+  test_shapes.py passes, then run the test.
+
+setup:
+  shapes.py: |
+    def classify(n):
+        if n > 0:
+            return "neg"
+        return "nonpos"
+
+  test_shapes.py: |
+    from shapes import classify
+
+    assert classify(5) == "pos"
+    assert classify(-1) == "nonpos"
+    print("PASS")
+
+verify: "python test_shapes.py"

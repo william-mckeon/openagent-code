@@ -1,0 +1,29 @@
+# A genuinely multi-step task: three separate functions to implement, each tested.
+# Rewards laying out a plan with update_plan first, then working through it. The
+# agent can also just do it sequentially — either passes; the point is to exercise
+# the planning path and capture the plan as tool calls in the trajectory.
+prompt: >
+  calc.py has three unimplemented functions — add, subtract, and multiply. Implement
+  all three so test_calc.py passes. This has several steps: write a plan with
+  update_plan first, then work through it and mark progress. Run the test at the end.
+
+setup:
+  calc.py: |
+    def add(a, b):
+        ...  # implement: return the sum
+
+    def subtract(a, b):
+        ...  # implement: return a minus b
+
+    def multiply(a, b):
+        ...  # implement: return the product
+
+  test_calc.py: |
+    from calc import add, subtract, multiply
+
+    assert add(2, 3) == 5
+    assert subtract(5, 2) == 3
+    assert multiply(2, 4) == 8
+    print("PASS")
+
+verify: "python test_calc.py"

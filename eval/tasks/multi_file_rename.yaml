@@ -1,0 +1,42 @@
+# Discriminating: forces a real grep -> read -> edit chain ACROSS files. The symbol
+# is defined in one module and called from two others; the test imports all three.
+# A single-file editor that renames only the definition leaves the call sites'
+# `from app.users import get_user` broken -> ImportError -> fail. You must touch
+# every site, which is the point: it exercises multi-file investigation + editing.
+prompt: >
+  Rename the function `get_user` to `fetch_user` everywhere it appears in the app/
+  package - its definition AND every import and call site - so test_rename.py passes.
+  Then run the test.
+
+setup:
+  app/__init__.py: ""
+
+  app/users.py: |
+    def get_user(uid):
+        return {"id": uid, "name": "u%d" % uid}
+
+  app/service.py: |
+    from app.users import get_user
+
+    def describe(uid):
+        u = get_user(uid)
+        return f"{u['id']}:{u['name']}"
+
+  app/api.py: |
+    from app.users import get_user
+
+    def handle(uid):
+        return get_user(uid)["name"]
+
+  test_rename.py: |
+    import app.users as users
+    import app.service as service
+    import app.api as api
+
+    assert hasattr(users, "fetch_user"), "users.fetch_user is missing"
+    assert not hasattr(users, "get_user"), "old name get_user is still defined"
+    assert service.describe(1) == "1:u1"
+    assert api.handle(2) == "u2"
+    print("PASS")
+
+verify: "python test_rename.py"

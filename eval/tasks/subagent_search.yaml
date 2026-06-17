@@ -1,0 +1,33 @@
+# Rewards delegation: the wrong constant is buried in one of several files. A good
+# agent can offload the search to a subagent (spawn_agent) and then fix what it
+# reports — though it can also just grep directly. Either way it should pass; the
+# point is to exercise the subagent path and capture a nested trajectory.
+prompt: >
+  A test expects MAX_RETRIES to be 5, but it is set to the wrong value somewhere in
+  the lib/ package. Find where it is defined and fix it so test_config.py passes,
+  then run the test. The package has several files — you may delegate the search to
+  a subagent if that helps.
+
+setup:
+  lib/__init__.py: ""
+
+  lib/settings.py: |
+    DEBUG = False
+    TIMEOUT = 30
+
+  lib/limits.py: |
+    RATE_LIMIT = 100
+    MAX_RETRIES = 2
+    BACKOFF = 1.5
+
+  lib/paths.py: |
+    DATA_DIR = "/var/data"
+    CACHE_DIR = "/tmp/cache"
+
+  test_config.py: |
+    from lib.limits import MAX_RETRIES
+
+    assert MAX_RETRIES == 5, f"expected 5, got {MAX_RETRIES}"
+    print("PASS")
+
+verify: "python test_config.py"

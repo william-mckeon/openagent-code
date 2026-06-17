@@ -1,0 +1,36 @@
+# Discriminating: the correct total depends on TWO wrong constants. Fixing only one
+# leaves the test red, so the obvious "first plausible change" doesn't pass - the
+# agent has to find and fix BOTH. Two different inputs are asserted so a fix that
+# hard-codes the total() return value for one case fails the other.
+prompt: >
+  test_billing.py expects specific order totals, but billing.py computes the wrong
+  numbers. Find and fix the bug(s) so the test passes, then run it.
+
+setup:
+  billing.py: |
+    TAX_RATE = 0.10   # applied after the discount
+    DISCOUNT = 0.20   # fraction taken off the subtotal
+
+    def subtotal(prices):
+        return sum(prices)
+
+    def total(prices):
+        sub = subtotal(prices)
+        discounted = sub * (1 - DISCOUNT)
+        return round(discounted * (1 + TAX_RATE), 2)
+
+  test_billing.py: |
+    import billing
+    from billing import total
+
+    # Both constants must be corrected (15% discount, 7% tax) - this also blocks a
+    # single-edit hack that hard-codes total() to fit the numbers below.
+    assert billing.DISCOUNT == 0.15, f"DISCOUNT is {billing.DISCOUNT}"
+    assert billing.TAX_RATE == 0.07, f"TAX_RATE is {billing.TAX_RATE}"
+    # subtotal 100 -> 15% off -> 85 -> +7% tax -> 90.95
+    assert total([40, 35, 25]) == 90.95, f"got {total([40, 35, 25])}"
+    # subtotal 20 -> 15% off -> 17 -> +7% tax -> 18.19
+    assert total([10, 10]) == 18.19, f"got {total([10, 10])}"
+    print("PASS")
+
+verify: "python test_billing.py"

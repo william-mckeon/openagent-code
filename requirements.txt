@@ -1,0 +1,35 @@
+# =============================================================================
+# openagent-code - Python dependencies
+# =============================================================================
+#
+# Compatible-release pins (>=A,<B) allow patch and approved minor updates
+# within a known-safe band. To upgrade a package:
+#     pip install --upgrade <package>
+# then verify the agent still runs a task end-to-end and the eval harness still
+# passes before committing the new lower bound here.
+#
+# Notes on choices:
+#   - `litellm` is the model gateway. It presents one OpenAI-style interface in
+#     front of a self-hosted vLLM endpoint (RunPod) AND Bedrock, so the
+#     provider is a CODE_* env swap, never a code change. It also normalizes
+#     tool-calling and the reasoning channel across providers.
+#   - `python-dotenv` loads .env for local (non-Docker) runs; under
+#     docker-compose the values arrive via env_file and this is a no-op.
+# =============================================================================
+
+# --- Model gateway (BYOC, OpenAI-compatible + Bedrock) ----------------------
+litellm>=1.40.0,<2.0.0
+
+# --- Configuration ----------------------------------------------------------
+python-dotenv>=1.0.0,<2.0.0
+
+# --- HTTP client for the opt-in web tools (web_fetch / web_search) -----------
+# Already present transitively via litellm; pinned here because tools.py uses it.
+httpx>=0.27.0,<1.0.0
+
+# --- MCP client (Phase 4 tool breadth) --------------------------------------
+# Only loaded when CODE_MCP_CONFIG is set; src/mcp_client.py imports it lazily.
+mcp>=1.0.0,<2.0.0
+
+# --- Eval harness task files (eval/tasks/*.yaml) ----------------------------
+pyyaml>=6.0,<7.0

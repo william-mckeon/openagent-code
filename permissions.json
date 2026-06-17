@@ -1,0 +1,25 @@
+{
+  "_comment": "Sample permission rules for CODE_PERMISSIONS_CONFIG. Copy to permissions.json and point CODE_PERMISSIONS_CONFIG at it. Matcher is tool_name(pattern). For run_command the pattern is a command prefix ('pytest:*' matches 'pytest -q', bare is exact, '*' is any). For file tools (read_file/write_file/edit_file/grep/glob) the pattern is a workspace-relative path glob ('src/**'). Precedence: deny > fence > read-only > plan-mode > ask > allow > mode-default. deny ALWAYS wins, even under bypass mode.",
+
+  "deny": [
+    "run_command(rm:*)",
+    "run_command(sudo:*)",
+    "run_command(curl:*)",
+    "run_command(wget:*)",
+    "read_file(.env)",
+    "edit_file(.git/**)"
+  ],
+
+  "ask": [
+    "run_command(git push:*)",
+    "run_command(git commit:*)"
+  ],
+
+  "allow": [
+    "run_command(pytest:*)",
+    "run_command(python:*)",
+    "run_command(ls:*)",
+    "edit_file(src/**)",
+    "write_file(src/**)"
+  ]
+}
