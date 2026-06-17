@@ -87,11 +87,16 @@ class Model:
 
             msg = resp.choices[0].message
             # Dropped tool call (native mode): empty content AND no tool_calls — the
-            # signature of a worker missing the tool-call parser. Retry to land on a
-            # healthy worker; accept it on the final attempt.
+            # signature of a worker that went cold/scale-to-zero again MID-SESSION (not
+            # just at startup). A short backoff (a few seconds) can't outwait a 30-60s
+            # cold spin-up, which is how a turn ended in "(no output)". So re-absorb the
+            # cold start the same way startup does — warm_up() waits for a real tool call
+            # — then retry. Accept the empty response only on the final attempt.
             dropped = bool(schemas) and not (msg.content or "").strip() and not (msg.tool_calls or [])
             if dropped and not last:
-                self._backoff(attempt, "empty response (dropped tool call?)")
+                if config.VERBOSE:
+                    print("  [retry] empty response (dropped tool call?) - re-warming the endpoint")
+                warm_up()
                 continue
 
             tool_names = [t["function"]["name"] for t in schemas] if schemas else []

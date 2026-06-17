@@ -85,7 +85,7 @@ def _one_shot(task, perms):
     print(f"openagent-code | model={config.display_model()} | tool_mode={config.TOOL_MODE} | "
           f"mode={perms.mode} | workspace={workspace}")
     _warn_if_empty_workspace(workspace)
-    agent = build_agent(traj, memory=_load_memory(workspace))
+    agent = build_agent(traj, memory=_load_memory(workspace), granted_dirs=perms.extra_roots)
 
     try:
         result = agent.run(task, ctx)
@@ -179,7 +179,11 @@ def _run_session(traj, agent, ctx):
                 continue
             turns += 1
             result = agent.run(user, ctx)
-            print("\n" + (result.final or "(no output)"))
+            if result.final:
+                print("\n" + result.final)
+            else:
+                print("\n(no output — the model may have dropped the response, often a cold/"
+                      "flaky endpoint. Try again; the warm-up should recover it.)")
     finally:
         traj.end("completed" if traj.tool_calls else "no_action", None, terminated="session_end")
         print(f"\nsession ended ({turns} turn(s)). resume later with:"
@@ -193,7 +197,8 @@ def _repl(perms):
     traj = Trajectory(config.trajectory_dir(), "(interactive session)", config.MODEL, workspace)
     ctx = make_context(workspace, perms, traj.session_id,
                        depth=0, verbose=config.VERBOSE, interactive=True)
-    return _run_session(traj, build_agent(traj, memory=_load_memory(workspace)), ctx)
+    agent = build_agent(traj, memory=_load_memory(workspace), granted_dirs=perms.extra_roots)
+    return _run_session(traj, agent, ctx)
 
 
 def _resume_repl(session_id, perms):

@@ -229,6 +229,37 @@ def spawn_agent(args, ctx):
     return ToolResult(True, final or "(subagent returned no answer)")
 
 
+def request_dir(args, ctx):
+    """Request READ access to a directory outside the workspace (Phase 4 host access).
+
+    The agent CANNOT widen its own fence — this ASKS the human. On approval the dir is
+    added to the live permission roots (so subsequent reads succeed); on refusal, or when
+    no human is present, access stays denied. Use it when a task needs a folder you can't
+    currently read, instead of giving up or reviewing the wrong folder.
+    """
+    path = (args.get("path") or "").strip().strip('"')
+    if not path:
+        return ToolResult(False, "request_dir requires a 'path'.")
+    ap = os.path.abspath(path)
+    if not os.path.isdir(ap):
+        return ToolResult(False, f"Not a directory: {ap}")
+    real = os.path.realpath(ap)
+    if ctx.permissions._within_roots(real, ctx.cwd):
+        return ToolResult(True, f"Already accessible: {ap}")
+    if ctx.ask is None or not ctx.interactive:
+        return ToolResult(False, f"Cannot grant access to {ap}: no human is present to approve. "
+                                 "Ask the user to restart with --add-dir, or proceed without it.")
+    why = (args.get("why") or "").strip()
+    question = (f"The agent requests READ access to: {ap}"
+                + (f"\n  reason: {why}" if why else "") + "\nGrant access? [y/N]")
+    ans = (ctx.ask(question) or "").strip().lower()
+    if ans in ("y", "yes", "ok", "sure", "allow", "approve"):
+        if real not in ctx.permissions.extra_roots:
+            ctx.permissions.extra_roots.append(real)
+        return ToolResult(True, f"Access granted to {ap}. You may now read files there with absolute paths.")
+    return ToolResult(False, f"The user denied access to {ap}. Do not try to read it.")
+
+
 # ---------------------------------------------------------------- memory (opt-in)
 
 def remember(args, ctx):
@@ -381,6 +412,17 @@ TOOLS = [
         "parameters": {"type": "object", "properties": {
             "task": {"type": "string", "description": "A complete, standalone instruction for the subagent."},
         }, "required": ["task"]},
+    },
+    {
+        "name": "request_dir", "fn": request_dir,
+        "description": ("Request READ access to a directory OUTSIDE your workspace when a task "
+                        "needs it. This ASKS the user to approve (you cannot grant it yourself). "
+                        "On approval you can read files there with absolute paths. If denied or no "
+                        "human is present, do not try to read it. Don't review a folder you can't access."),
+        "parameters": {"type": "object", "properties": {
+            "path": {"type": "string", "description": "Absolute path of the directory to access."},
+            "why": {"type": "string", "description": "Brief reason you need it (shown to the user)."},
+        }, "required": ["path"]},
     },
 ]
 

@@ -157,8 +157,8 @@ def permission_extra_roots() -> list:
 # CODE_COMPACT_KEEP_RECENT  How many of the most-recent working messages to keep
 #                         verbatim (never summarized).
 # -----------------------------------------------------------------------------
-COMPACT_AT_TOKENS = int(os.environ.get("CODE_COMPACT_AT_TOKENS", "12000"))
-COMPACT_KEEP_RECENT = int(os.environ.get("CODE_COMPACT_KEEP_RECENT", "6"))
+COMPACT_AT_TOKENS = int(os.environ.get("CODE_COMPACT_AT_TOKENS", "16000"))
+COMPACT_KEEP_RECENT = int(os.environ.get("CODE_COMPACT_KEEP_RECENT", "8"))
 
 # CODE_MAX_SUBAGENT_DEPTH — how deep spawn_agent can nest (Phase 4).
 #   0 = subagents disabled, 1 = one level (top-level agent may spawn, children

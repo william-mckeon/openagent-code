@@ -40,19 +40,24 @@ fence. Agentic *and* safe = the agent asks, the human approves.
    tool call. `/add-dir` also drops a note into the context so the agent *knows* the
    folder is now readable. (`src/cli.py` `_repl_add_dir`/`_repl_set_mode`; verified
    denied→allowed after grant.)
-2. **`request_dir` agent tool** (agent requests): when the agent needs a folder outside
-   its roots, it calls `request_dir(path, why)` → in interactive mode this prompts the
-   human (reusing `ask_user` plumbing) → on approval the path is added to the live fence;
-   on refusal (or headless) it's denied. The agent is autonomous but never self-grants.
-3. **Grounding fix** (the important one): the agent must NEVER substitute the workspace
-   for a path it cannot read. When a referenced path is outside the fence / missing, the
-   fence-denial message is actionable ("`X` is outside your allowed dirs — call
-   `request_dir` or ask the user to `--add-dir` it"), and the system prompt instructs:
-   *if asked about a path you cannot access, say so explicitly — do not review a different
-   folder and present it as the requested one.*
-4. **`grep`/`glob` span granted roots**: searches optionally cover the workspace + added
-   dirs (or accept an added-dir as their `path`), and the system prompt **advertises** the
-   currently-granted reference dirs so the agent can use them naturally.
+2. ✅ **DONE — `request_dir` agent tool** (agent requests): the agent calls
+   `request_dir(path, why)` → in interactive mode it prompts the human (via `ctx.ask`) →
+   on approval the path is appended to the live `Permissions.extra_roots` (fence widens);
+   on refusal or headless it's denied. The agent is autonomous but **never self-grants**
+   (`src/tools.py` `request_dir`; verified grant/deny/headless paths). The tool is
+   non-mutating and not fence-checked itself (so it can be called *about* an out-of-fence
+   path), but is still subject to `deny request_dir(*)` rules.
+3. ✅ **DONE — Grounding fix** (the important one): the system prompt now forbids
+   substituting the workspace for an inaccessible path, forbids speculating about files it
+   did not read, and requires reading files in full before reviewing (`src/prompts.py`
+   BASE_PROMPT). Driven by the log review where it reviewed the workspace as "OpenAgent-api"
+   and guessed at `requirements.txt`. The **fence-denial message is now actionable** too —
+   it tells the agent to call `request_dir` / have the user `--add-dir` (`src/permissions.py`).
+4. ✅ **ADVERTISE DONE / span remaining**: the system prompt now **lists the granted
+   reference directories** and tells the agent to address them by absolute path and to
+   review THEM (not default to the workspace) when named (`build_system_prompt`
+   `granted_dirs`, threaded from `cli`/`session`). **Remaining:** have `grep`/`glob`
+   optionally auto-span the granted roots so the agent needn't pass the path explicitly.
 
 ## Acceptance (checkable)
 

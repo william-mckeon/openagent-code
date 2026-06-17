@@ -157,6 +157,15 @@ Build order TBD when we get here; rough priority is compaction → subagents fir
    until warm). The diagnosis: warm endpoint = 8/8 with zero retries; cold = dropped
    calls. Retries' short backoff (~14s) didn't cover a 30-60s cold start; the warm-up
    absorbs it once, up front — the automated form of "run the probe, then the eval."
+   Later, a live REPL log review surfaced two more, now fixed: (a) a **mid-session**
+   dropped tool call (the worker going cold *again* during a session) used to exhaust the
+   short backoff and end a turn in `(no output)` — now a drop re-runs `warm_up()` to
+   re-absorb the cold start instead of failing; and (b) **compaction lost the live thread**
+   (after summarizing, the agent forgot it had just finished a task and re-asked) — fixed
+   by the `SUMMARIZE_PROMPT` preserving the most-recent request + last action, plus higher
+   `CODE_COMPACT_AT_TOKENS` (16000) / `CODE_COMPACT_KEEP_RECENT` (8) defaults. The same log
+   also drove the **grounding** prompt rules (no reviewing the wrong folder, no speculating
+   about unread files) — see specs/0003-host-access.md.
 
 ~5 of these = a *foundational* agent; all 8 = broad agent-capability parity.
 

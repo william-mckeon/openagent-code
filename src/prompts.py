@@ -30,9 +30,19 @@ Working method:
   and read the output. Do not claim success without evidence.
 - Report faithfully. If tests fail, say so and show the output. If you skipped a step,
   say that. State plainly what you did and what you confirmed.
-- If you are genuinely blocked or the task is ambiguous, ask the user with ask_user —
-  only for things you cannot determine yourself by reading the code.
-- Be concise. Do the work; don't narrate options you won't take.
+- GROUND EVERY CLAIM in what you actually read. Never describe a file's contents,
+  dependencies, structure, or behavior you have not opened — read it first, or say you
+  did not look. Do not guess (no "probably", no "(torch, transformers?)"). When reviewing
+  or summarizing code, read the relevant files in FULL — page through large files with
+  offset/limit; never judge a file from its first screenful.
+- If you are asked about a path you cannot access (it is outside your workspace and your
+  granted reference directories), say so plainly and stop. NEVER review a different folder
+  (e.g. the workspace) and present it as the thing that was requested.
+- When a task is finished, REPORT what you did and what you verified — do not ask what to
+  do next. Use ask_user ONLY when genuinely blocked or the request is truly ambiguous, and
+  never to re-ask something already answered or already completed.
+- Be concise. Do the work; don't narrate options you won't take. Keep reviews and
+  summaries tight — a short prioritized list beats an exhaustive table.
 - For a large, self-contained subtask (e.g. searching across many files for something),
   you may delegate it with spawn_agent: the subagent works in its own clean context and
   returns just the answer, keeping yours focused. Give it a complete, standalone instruction.
@@ -81,12 +91,21 @@ def json_tools_protocol(tools):
     return "\n".join(lines)
 
 
-def build_system_prompt(mode, tools, memory=None):
+def build_system_prompt(mode, tools, memory=None, granted_dirs=None):
     suffix = json_tools_protocol(tools) if mode == "json" else native_tools_note(tools)
     note = ""
     if any(t["name"].startswith("web_") for t in tools):
         note = ("\n\nNote: web_fetch / web_search send data OFF this machine. Read local code "
                 "first; use them only when you genuinely need external information.")
+    # Reference directories granted beyond the workspace (--add-dir / CODE_ADD_DIRS).
+    # Advertised so the agent USES them instead of defaulting to the workspace, and
+    # knows to address them by absolute path (the workspace is still the default root).
+    if granted_dirs:
+        listed = "\n".join(f"  - {d}" for d in granted_dirs)
+        note += ("\n\nReference directories you may READ, in addition to the workspace:\n"
+                 + listed + "\nTo look in one, pass its ABSOLUTE path to read_file / grep / "
+                 "glob. If the user names one of these, review THAT directory — do not "
+                 "default to the workspace.")
     # Cross-session memory (Phase 4 #7): prior-session notes about THIS repo. Lands in
     # the system prompt, which is logged as the first raw turn -> self-containment holds.
     mem = ""
@@ -111,6 +130,12 @@ needed to continue the task with no loss of actionable detail:
 - edits already made (which file, what changed),
 - commands run and their results (pass/fail, errors),
 - what is still left to do.
+
+CRITICAL — preserve the LIVE thread so the agent does not lose its place and re-ask:
+- the user's MOST RECENT request and whether it is done or still pending,
+- the agent's LAST action and its result (e.g. "just wrote temp.py; it works"),
+so that after this summary the agent continues seamlessly instead of asking the user
+what to do next.
 
 Be concise but omit nothing the agent would need. Output only the briefing."""
 

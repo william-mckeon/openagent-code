@@ -56,7 +56,8 @@ def resume(session_id, workspace, permissions, verbose=False, interactive=False)
 
     traj = Trajectory.resume(path)
     mem = memory.load(workspace) if config.MEMORY else ""
-    agent = build_agent(traj, initial_working=working, pinned_plan=plan, memory=mem)
+    agent = build_agent(traj, initial_working=working, pinned_plan=plan, memory=mem,
+                        granted_dirs=permissions.extra_roots)
     ctx = make_context(workspace, permissions, traj.session_id, depth=0,
                        verbose=verbose, interactive=interactive)
     ctx.plan = plan   # keep the loop pinning it going forward

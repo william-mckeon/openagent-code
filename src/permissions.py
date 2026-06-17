@@ -92,7 +92,8 @@ class Permissions:
 
         # 2. fence — file tools may not resolve outside the workspace + CODE_ADD_DIRS.
         if t.kind == "path" and not self._within_roots(t.abs, ctx.cwd):
-            return D(False, "deny", "path is outside the workspace fence (CODE_ADD_DIRS to widen)")
+            return D(False, "deny", "path is outside your allowed directories — call request_dir "
+                                    "to ask the user for access, or have them restart with --add-dir")
 
         # 3. read-only tools are allowed once past deny + fence.
         if not mutating:

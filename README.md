@@ -75,7 +75,7 @@ openagent-code/
 ├── src/                      # the agent
 │   ├── config.py             # CODE_* env -> config (no YAML; .env is the source)
 │   ├── model.py              # LiteLLM gateway (+ summarize() for compaction)
-│   ├── tools.py              # tool boundary: read/grep/glob/write/edit/run_command/update_plan/spawn_agent/remember
+│   ├── tools.py              # tools: read/grep/glob/write/edit/run_command/update_plan/spawn_agent/request_dir/remember
 │   ├── memory.py             # cross-session project memory — load + remember (Phase 4)
 │   ├── context.py            # ContextManager — live context + compaction (Phase 4)
 │   ├── planner.py            # native vs json tool-calling protocols

@@ -99,6 +99,7 @@ docker run --rm --env-file .env -v /path/to/repo:/workspace \
 | `update_plan` | no | Record/update a tracked checklist for a multi-step task; pinned into the live context |
 | `ask_user` | no | Ask the human a clarifying question (interactive mode); degrades to "proceed" when no human is present |
 | `spawn_agent` | yes | Delegate a standalone subtask to an isolated subagent; returns its final answer. Capped by `CODE_MAX_SUBAGENT_DEPTH` |
+| `request_dir` | no | Ask the user to grant READ access to a directory outside the workspace. The agent cannot self-grant — on approval the dir joins the live fence; headless/denied → refused |
 | `remember` | no | Save a durable note to project memory (reloaded next session). **OPT-IN** (`CODE_MEMORY`); non-mutating (the agent's notebook), writes inside the fence |
 | `web_fetch` | yes | Fetch a URL → text. **OPT-IN** (`CODE_ENABLE_WEB`); sends the URL off-machine. Only in the toolset when enabled |
 | `web_search` | yes | Search via a BYO endpoint (`CODE_SEARCH_URL`). **OPT-IN**; sends the query off-machine |
