@@ -1,0 +1,43 @@
+# =============================================================================
+# openagent-code - packaging + the local launcher
+# =============================================================================
+#
+# This exists so local use feels natural: `pip install -e .` puts an
+# `openagent-code` command on your PATH, so you `cd` into any repo and run
+#     openagent-code "fix the failing test"      # one-shot
+#     openagent-code                              # interactive REPL
+# instead of `python -m src` + a pile of $env:CODE_* vars. The workspace defaults
+# to the current directory, and the common knobs are flags (--workspace/-C,
+# --mode, --add-dir, --memory/--no-memory, --warmup) — no env juggling.
+#
+# Docker (docker/code/Dockerfile, docker-compose.yml) stays as the SANDBOX/eval
+# runtime; this is the interactive/dev front door.
+# =============================================================================
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "openagent-code"
+version = "0.6.0"
+description = "Self-hosted coding agent instrumented for training data"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [{ name = "William McKeon" }]
+dependencies = [
+    "litellm>=1.40.0,<2.0.0",
+    "python-dotenv>=1.0.0,<2.0.0",
+    "httpx>=0.27.0,<1.0.0",
+    "mcp>=1.0.0,<2.0.0",
+    "pyyaml>=6.0,<7.0",
+]
+
+# `openagent-code` -> src/cli.py:main(). The function returns an exit code, which
+# setuptools' console-script wrapper passes to sys.exit().
+[project.scripts]
+openagent-code = "src.cli:main"
+
+[tool.setuptools]
+packages = ["src"]

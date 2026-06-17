@@ -44,17 +44,33 @@ def _load_memory(workspace):
     return mem
 
 
-def _parse_perm_flags(argv):
-    """Pull permission overrides out of argv: --mode <name> and --add-dir <path>
-    (repeatable). Returns (mode_override, [dirs], remaining_argv)."""
+def _parse_flags(argv):
+    """Pull launcher flags out of argv so the common knobs are FLAGS, not CODE_* env
+    vars (the env-juggling that makes local use painful). Applies the config-level
+    overrides in place and returns (mode_override, [add_dirs], remaining_argv):
+
+      -C / --workspace <path>   the repo to work in (default: current directory)
+      --mode <name>             permission mode (default/acceptEdits/plan/bypass)
+      --add-dir <path>          grant a reference folder beyond the workspace (repeatable)
+      --memory / --no-memory    toggle cross-session memory for this run
+      --warmup <seconds>        cold-start warm-up budget
+    """
     mode, dirs, rest = None, [], []
     i = 0
     while i < len(argv):
         a = argv[i]
-        if a == "--mode" and i + 1 < len(argv):
-            mode = argv[i + 1]; i += 2
+        if a in ("--workspace", "-C") and i + 1 < len(argv):
+            config.WORKSPACE = os.path.abspath(argv[i + 1]); i += 2
         elif a == "--add-dir" and i + 1 < len(argv):
             dirs.append(argv[i + 1]); i += 2
+        elif a == "--mode" and i + 1 < len(argv):
+            mode = argv[i + 1]; i += 2
+        elif a == "--memory":
+            config.MEMORY = True; i += 1
+        elif a == "--no-memory":
+            config.MEMORY = False; i += 1
+        elif a == "--warmup" and i + 1 < len(argv):
+            config.WARMUP_BUDGET = float(argv[i + 1]); i += 2
         else:
             rest.append(a); i += 1
     return mode, dirs, rest
@@ -104,10 +120,43 @@ def _one_shot(task, perms):
     return 0 if outcome in ("success", "completed") else 1
 
 
+_MODES = {"default", "acceptEdits", "plan", "bypass"}
+
+
+def _repl_add_dir(agent, ctx, path):
+    """`/add-dir <path>` — grant a reference folder mid-session (0003 host access).
+    Widens the LIVE permission fence and tells the agent it can now read there."""
+    path = path.strip().strip('"')
+    if not path:
+        print("usage: /add-dir <path>"); return
+    ap = os.path.abspath(path)
+    if not os.path.isdir(ap):
+        print(f"  not a directory: {ap}"); return
+    real = os.path.realpath(ap)
+    if real not in ctx.permissions.extra_roots:
+        ctx.permissions.extra_roots.append(real)
+    # Tell the agent (human-grant -> the model needs to KNOW the folder is readable).
+    agent.cm.add({"role": "user", "content":
+                  f"(system) Read access granted to: {ap}\n"
+                  f"You may now read files there with absolute paths, and pass that path to "
+                  f"grep/glob to search it. It is READ-only reference unless told otherwise."})
+    print(f"  granted (read): {ap}")
+
+
+def _repl_set_mode(ctx, name):
+    """`/mode <name>` — switch the permission mode mid-session."""
+    name = name.strip()
+    if name not in _MODES:
+        print(f"  current mode: {ctx.permissions.mode}\n  usage: /mode <{' | '.join(sorted(_MODES))}>")
+        return
+    ctx.permissions.mode = name
+    print(f"  mode -> {name}")
+
+
 def _run_session(traj, agent, ctx):
     """The interactive chat loop, shared by a fresh REPL and a resumed session."""
-    print(f"openagent-code REPL | model={config.display_model()} | workspace={ctx.cwd}")
-    print("Type a task and press enter. Commands: /exit  /plan")
+    print(f"openagent-code REPL | model={config.display_model()} | mode={ctx.permissions.mode} | workspace={ctx.cwd}")
+    print("Type a task and press enter. Commands: /exit  /plan  /add-dir <path>  /mode <name>")
     turns = 0
     try:
         while True:
@@ -121,6 +170,12 @@ def _run_session(traj, agent, ctx):
                 break
             if user == "/plan":
                 print(ctx.plan or "(no plan yet)")
+                continue
+            if user.startswith("/add-dir"):
+                _repl_add_dir(agent, ctx, user[len("/add-dir"):])
+                continue
+            if user.startswith("/mode"):
+                _repl_set_mode(ctx, user[len("/mode"):])
                 continue
             turns += 1
             result = agent.run(user, ctx)
@@ -156,7 +211,7 @@ def _resume_repl(session_id, perms):
 
 def main(argv=None):
     argv = list(argv if argv is not None else sys.argv[1:])
-    mode_override, add_dirs, argv = _parse_perm_flags(argv)
+    mode_override, add_dirs, argv = _parse_flags(argv)
     perms = Permissions.from_config(mode_override=mode_override, extra_dirs=add_dirs)
     from .mcp_client import connect, disconnect
     from .model import warm_up

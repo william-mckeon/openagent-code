@@ -101,33 +101,47 @@ openagent-code/
 
 ## Quickstart
 
-### Docker (the primary path)
+### Local (the interactive path)
 
-```powershell
-copy .env.example .env          # set CODE_API_BASE + CODE_API_KEY for your endpoint
-docker compose build
-docker compose run --rm openagent-code "add a docstring to foo.py and run the tests"
-```
-
-**Point it at a real repo** with `CODE_WORKSPACE` — the default `./workspace` is an
-empty placeholder, and running against it produces a `no_action` outcome (nothing to edit):
-
-```powershell
-$env:CODE_WORKSPACE="C:\path\to\your\repo"
-docker compose run --rm openagent-code "fix the failing test in foo.py"
-```
-
-Each run is labelled with an honest outcome in its trajectory:
-`success` / `completed` / `verify_failed` / `no_action` / `protocol_stalled` /
-`max_steps` / `error`. Only `success` and `completed` exit `0`.
-
-### Local (dev)
+Install once, then `cd` into any repo and just run it — the workspace defaults to the
+current directory, and the common knobs are flags, so there's no `CODE_*` env juggling:
 
 ```powershell
 python -m venv .venv; .venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-copy .env.example .env          # edit CODE_API_BASE / CODE_API_KEY
-python -m src "add an add(a,b) function to math_utils.py and run the tests"
+pip install -e .                # puts the `openagent-code` command on your PATH
+copy .env.example .env          # set CODE_API_BASE + CODE_API_KEY for your endpoint
+
+cd C:\path\to\your\repo
+openagent-code "fix the failing test in foo.py"     # one-shot, autonomous
+openagent-code                                       # interactive REPL (just talk to it)
+```
+
+Common flags (instead of `$env:CODE_*`):
+
+| Flag | Purpose |
+|---|---|
+| `-C` / `--workspace <path>` | The repo to work in (default: current directory) |
+| `--mode <name>` | Permission mode: `default` / `acceptEdits` / `plan` / `bypass` |
+| `--add-dir <path>` | Grant a *reference* folder beyond the workspace (repeatable) |
+| `--memory` / `--no-memory` | Toggle cross-session memory for this run |
+| `--warmup <seconds>` | Cold-start warm-up budget |
+
+e.g. review another repo read-only while it stays out of harm's way:
+`openagent-code -C C:\my\project --mode plan --add-dir C:\other\repo`.
+Each run is labelled with an honest outcome (`success` / `completed` / `verify_failed` /
+`no_action` / `protocol_stalled` / `max_steps` / `error`); only `success`/`completed` exit `0`.
+
+### Docker (the sandbox / eval path)
+
+Docker is the **isolated, reproducible** runtime — the eval harness and CI, or running an
+untrusted task in a box. It deliberately sees only the one mounted `/workspace`, so for
+roaming your own machine use the local path above.
+
+```powershell
+copy .env.example .env
+docker compose build
+docker compose run --rm openagent-code "add a docstring to foo.py and run the tests"
+# point at a real repo: $env:CODE_WORKSPACE="C:\path\to\repo"  before the run
 ```
 
 Every run writes a trajectory to `trajectories/<session_id>.jsonl`.
@@ -135,11 +149,14 @@ Every run writes a trajectory to `trajectories/<session_id>.jsonl`.
 ### Interactive (multi-turn) & resume
 
 ```powershell
-python -m src                     # REPL: a multi-turn chat session; ask_user is live
-python -m src --resume <id>       # continue a stopped session, rehydrated from its trajectory
+openagent-code                    # REPL: a multi-turn chat session; ask_user is live
+openagent-code --resume <id>      # continue a stopped session, rehydrated from its trajectory
 ```
 
-A one-shot run (`python -m src "task"`) is autonomous and deterministic. With no task
+(`python -m src ...` works identically if you'd rather not `pip install -e .`.)
+In the REPL, `/plan` shows the plan, **`/add-dir <path>`** grants a reference folder
+mid-conversation (no restart), and **`/mode <name>`** switches permission mode on the fly.
+A one-shot run (`openagent-code "task"`) is autonomous and deterministic. With no task
 you get a REPL — `/exit` ends it (and prints the `--resume <id>` to continue later),
 `/plan` shows the current plan. Resume works because the trajectory **is** the saved
 session: it's rehydrated from the raw `turn` records, not a separate state file.
