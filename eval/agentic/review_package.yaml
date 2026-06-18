@@ -1,0 +1,57 @@
+# Agentic eval (scored by rubric, not a verify command). A small multi-file package the
+# agent must actually READ before reviewing. The rubric scores BEHAVIOR — did it read
+# enough files (depth), not refuse, and produce a real review — not the review's content
+# (that needs a judge; see specs/0004 non-goals). Planted issues are flavor for the model.
+prompt: >
+  Review the pkg/ package and tell me the most important issues you find. Read the code
+  first, then give a concise, prioritized list grounded in what you actually read.
+
+kind: review
+
+setup:
+  pkg/__init__.py: ""
+
+  pkg/auth.py: |
+    PASSWORD = "admin123"  # hardcoded credential
+
+    def check(pw):
+        return pw == PASSWORD
+
+  pkg/math_ops.py: |
+    def average(xs):
+        # bug: integer division + no empty guard
+        return sum(xs) / len(xs)
+
+    def clamp(x, lo, hi):
+        if x < lo:
+            return lo
+        if x > hi:
+            return hi
+        return x
+
+  pkg/io_utils.py: |
+    def read_all(path):
+        f = open(path)          # never closed; bare except below swallows errors
+        try:
+            return f.read()
+        except:
+            return ""
+
+  pkg/service.py: |
+    from pkg.auth import check
+    from pkg.io_utils import read_all
+
+    def handle(pw, path):
+        if check(pw):
+            return read_all(path)
+        return None
+
+  pkg/config.py: |
+    DEBUG = True
+    RETRIES = 3
+    TIMEOUT = 30
+
+rubric:
+  min_files_read: 4
+  no_refusal: true
+  expect_final: true

@@ -38,6 +38,9 @@ class Model:
             kw["api_base"] = config.API_BASE
         if config.API_KEY:
             kw["api_key"] = config.API_KEY
+        if config.REASONING_EFFORT:
+            # extra_body lands it verbatim in the request the endpoint receives.
+            kw["extra_body"] = {"reasoning_effort": config.REASONING_EFFORT}
         return kw
 
     def summarize(self, messages):
@@ -73,6 +76,7 @@ class Model:
             kwargs["tools"] = schemas
             kwargs["tool_choice"] = "auto"
 
+        warmed_once = False   # re-warm the endpoint at most ONCE per call (no ×retries)
         for attempt in range(config.MODEL_RETRIES + 1):
             last = attempt == config.MODEL_RETRIES
             try:
@@ -94,9 +98,16 @@ class Model:
             # — then retry. Accept the empty response only on the final attempt.
             dropped = bool(schemas) and not (msg.content or "").strip() and not (msg.tool_calls or [])
             if dropped and not last:
-                if config.VERBOSE:
-                    print("  [retry] empty response (dropped tool call?) - re-warming the endpoint")
-                warm_up()
+                # First drop: re-warm once (a mid-session cold start). After that, a short
+                # backoff — re-running the full warm-up on every retry is what turned a
+                # bad-endpoint turn into ~30 minutes of "cold worker" spam.
+                if not warmed_once:
+                    if config.VERBOSE:
+                        print("  [retry] empty response (dropped tool call?) - re-warming the endpoint once")
+                    warm_up()
+                    warmed_once = True
+                else:
+                    self._backoff(attempt, "empty response (dropped tool call?)")
                 continue
 
             tool_names = [t["function"]["name"] for t in schemas] if schemas else []
@@ -147,9 +158,14 @@ def warm_up():
         kw["api_base"] = config.API_BASE
     if config.API_KEY:
         kw["api_key"] = config.API_KEY
+    if config.REASONING_EFFORT:
+        kw["extra_body"] = {"reasoning_effort": config.REASONING_EFFORT}
 
-    deadline = time.time() + config.WARMUP_BUDGET
+    start = time.time()
+    deadline = start + config.WARMUP_BUDGET
     attempt = 0
+    empties = 0       # CONSECUTIVE 200s with no tool_call
+    hard_errors = 0   # CONSECUTIVE exceptions (500 / auth / connection)
     while True:
         try:
             resp = litellm.completion(**kw)
@@ -157,14 +173,37 @@ def warm_up():
                 if config.VERBOSE:
                     print("  [warmup] endpoint warm - tool-calling active")
                 return True
+            # 200 with no tool_calls = cold/warming, OR a worker that won't emit tool
+            # calls at all (serving / tool-parser issue). Count it; bail if it persists.
+            empties += 1
+            hard_errors = 0
+            reason = "cold worker (empty tool_calls)"
         except Exception as e:
+            hard_errors += 1
+            empties = 0
+            reason = f"endpoint error ({type(e).__name__})"
+
+        # Bail FAST on a persistent failure instead of grinding the whole budget — neither
+        # of these is a cold start that waiting fixes:
+        #   - repeated exceptions  -> broken/misconfigured endpoint (a 500 never warms);
+        #   - many empty responses -> the worker answers but won't emit a tool call.
+        if hard_errors >= 3:
             if config.VERBOSE:
-                print(f"  [warmup] {type(e).__name__} while warming")
+                print(f"  [warmup] {reason} x{hard_errors} - endpoint is erroring, not cold. "
+                      "Check CODE_API_BASE (needs /v1), CODE_MODEL, and the worker. Proceeding.")
+            return False
+        if empties >= 40:
+            if config.VERBOSE:
+                print(f"  [warmup] still no tool call after {empties} probes - the worker answers but "
+                      "isn't emitting tool calls (serving/tool-parser issue, not a cold start). Proceeding.")
+            return False
         if time.time() >= deadline:
             if config.VERBOSE:
-                print(f"  [warmup] still cold after {config.WARMUP_BUDGET:.0f}s - proceeding anyway")
+                print(f"  [warmup] not ready after {config.WARMUP_BUDGET:.0f}s ({reason}) - proceeding")
             return False
         attempt += 1
-        if config.VERBOSE:
-            print("  [warmup] cold worker (empty tool_calls) - waiting for spin-up")
+        # Throttle the log: a real cold start can take dozens of probes — don't print
+        # one line per probe (that's what looked like an "endless loop").
+        if config.VERBOSE and (attempt == 1 or attempt % 5 == 0):
+            print(f"  [warmup] {reason} - waiting for spin-up ({int(time.time() - start)}s)")
         time.sleep(min(2 ** attempt, 8))

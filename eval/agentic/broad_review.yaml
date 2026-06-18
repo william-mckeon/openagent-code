@@ -1,0 +1,55 @@
+# Agentic eval targeting the exact failure from the live logs: when asked to review a
+# whole project, the agent DEFLECTED ("too many files, narrow the scope") instead of
+# mapping the structure and giving an overview. The rubric scores no_refusal hard: it must
+# glob/read and produce a real overview, not punt the scoping back to the user.
+prompt: >
+  Review this whole project and tell me what you think — the architecture and the main
+  things you'd improve. Map it out yourself; don't ask me to narrow the scope.
+
+kind: review
+
+setup:
+  app/__init__.py: ""
+  app/main.py: |
+    from app.routes import router
+    from app.db import connect
+
+    def start():
+        connect()
+        return router()
+
+  app/routes.py: |
+    def router():
+        # no error handling, returns a bare dict
+        return {"status": "ok"}
+
+  app/db.py: |
+    _CONN = None
+
+    def connect():
+        global _CONN
+        _CONN = {"dsn": "postgres://user:password@localhost/db"}  # creds in code
+        return _CONN
+
+  app/utils.py: |
+    def retry(fn, times=3):
+        for _ in range(times):
+            try:
+                return fn()
+            except Exception:
+                pass   # swallows the last error silently
+
+  tests/test_routes.py: |
+    from app.routes import router
+
+    def test_router():
+        assert router()["status"] == "ok"
+
+  README.md: |
+    # Demo App
+    A tiny FastAPI-style demo: main -> routes -> db, with a retry util.
+
+rubric:
+  min_files_read: 3
+  no_refusal: true
+  expect_final: true

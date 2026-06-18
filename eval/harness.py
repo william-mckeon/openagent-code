@@ -93,13 +93,52 @@ def run_task(task_path):
         shutil.rmtree(sandbox, ignore_errors=True)
 
 
+def run_agentic_task(task_path):
+    """Run an agentic task (eval/agentic/*.yaml) and score its BEHAVIOR via the rubric —
+    no verify command. Measures review depth / no-refusal / completion (specs/0004), the
+    quality the verify eval is blind to. Returns the rubric's score dict + task name."""
+    from eval import rubric
+    name = os.path.basename(task_path)
+    spec = yaml.safe_load(open(task_path, encoding="utf-8"))
+    sandbox = tempfile.mkdtemp(prefix="openagent-code-agentic-")
+    traj = None
+    try:
+        for rel, content in (spec.get("setup") or {}).items():
+            fp = os.path.join(sandbox, rel)
+            os.makedirs(os.path.dirname(fp) or sandbox, exist_ok=True)
+            with open(fp, "w", encoding="utf-8") as f:
+                f.write(content)
+
+        traj = Trajectory(EVAL_TRAJ_DIR, spec["prompt"], config.MODEL, sandbox)
+        ctx = make_context(sandbox, Permissions.from_config(mode_override="bypass"),
+                           traj.session_id, depth=0, verbose=False)
+        result = build_agent(traj).run(spec["prompt"], ctx)
+        traj.end("completed" if traj.tool_calls else "no_action", result.final,
+                 terminated=result.terminated)
+        sc = rubric.score(rubric.load_records(traj.path), spec.get("rubric"))
+        return {"task": name, **sc}
+    except Exception as e:
+        if traj is not None:
+            try:
+                traj.end("error", None, terminated="exception")
+            except Exception:
+                pass
+        print(f"  [ERROR] {name}: {type(e).__name__}: {e}")
+        return {"task": name, "score": 0.0, "checks": {}, "files_read": 0,
+                "tool_calls": (traj.tool_calls if traj is not None else 0), "refused": True}
+    finally:
+        shutil.rmtree(sandbox, ignore_errors=True)
+
+
 def main():
-    tasks = sorted(glob.glob(os.path.join(ROOT, "eval", "tasks", "*.yaml")))
-    if not tasks:
-        print("No tasks in eval/tasks/.")
+    verify_tasks = sorted(glob.glob(os.path.join(ROOT, "eval", "tasks", "*.yaml")))
+    agentic_tasks = sorted(glob.glob(os.path.join(ROOT, "eval", "agentic", "*.yaml")))
+    if not verify_tasks and not agentic_tasks:
+        print("No tasks in eval/tasks/ or eval/agentic/.")
         return
 
-    print(f"eval | model={config.display_model()} | tool_mode={config.TOOL_MODE} | tasks={len(tasks)}")
+    print(f"eval | model={config.display_model()} | tool_mode={config.TOOL_MODE} | "
+          f"verify={len(verify_tasks)} agentic={len(agentic_tasks)}")
     print(f"trajectories -> {EVAL_TRAJ_DIR}\n")
 
     from src.mcp_client import connect, disconnect
@@ -108,19 +147,32 @@ def main():
     # Warm a scale-to-zero endpoint once up front, so the first task isn't the one
     # that eats the cold start (and fails on a cold worker's empty tool_calls).
     warm_up()
+    results, behavior = [], []
     try:
-        results = []
-        for t in tasks:
+        for t in verify_tasks:
             r = run_task(t)
             results.append(r)
             mark = "PASS" if r["passed"] else "FAIL"
             print(f"[{mark}] {r['task']:<28} outcome={r['outcome']:<16} tool_calls={r['tool_calls']}")
+        if agentic_tasks:
+            print()
+            for t in agentic_tasks:
+                b = run_agentic_task(t)
+                behavior.append(b)
+                missed = [k for k, v in (b.get("checks") or {}).items() if not v]
+                tag = "OK  " if b["score"] == 1.0 else "... "
+                print(f"[{tag}] {b['task']:<28} behavior={b['score']:.2f} "
+                      f"files_read={b['files_read']} tool_calls={b['tool_calls']}"
+                      + (f"  missed={','.join(missed)}" if missed else ""))
     finally:
         disconnect()
 
-    passed = sum(1 for r in results if r["passed"])
-    total = len(results)
-    print(f"\n{passed}/{total} passed ({100 * passed // total}%)")
+    if results:
+        passed = sum(1 for r in results if r["passed"])
+        print(f"\nverify:   {passed}/{len(results)} passed ({100 * passed // len(results)}%)")
+    if behavior:
+        avg = sum(b["score"] for b in behavior) / len(behavior)
+        print(f"behavior: {avg:.2f} avg across {len(behavior)} agentic task(s)")
 
 
 if __name__ == "__main__":

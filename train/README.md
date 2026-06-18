@@ -15,9 +15,11 @@ python -m train.convert
 What it does:
 1. reads every `trajectories/**/*.jsonl`;
 2. **filters** to trainable sessions — `outcome ∈ {success, completed}`,
-   verification ok (when present), at least one tool call — and drops the rest
-   (`no_action`, `protocol_stalled`, `verify_failed`, `max_steps`, `error`,
-   `incomplete`) **with the reason counted**, never silently;
+   verification ok (when present), at least one tool call, AND a **behavior gate**
+   (drops `refusal` runs — "narrow the scope" deflections — via `eval/rubric.py`, so
+   we never train the model to refuse) — dropping the rest (`no_action`,
+   `protocol_stalled`, `verify_failed`, `max_steps`, `error`, `incomplete`,
+   `refusal`) **with the reason counted**, never silently;
 3. **flattens** each kept session into PER-STEP rows — one per agent action
    (`model_call`): `{messages: the prefix the model saw, completion: the action it
    took}` plus tool schemas. User/tool messages stay inside the prefix;
@@ -63,8 +65,20 @@ completion. The `user_label` field (accept/reject) and `verification.ok` feed th
 Reward = tests pass / spec met. Most powerful, most complex. Save it until 1–3
 plateau, measured on `eval/`.
 
+### Measuring agentic *behavior*, not just correctness (`eval/rubric.py`, specs/0004)
+The verify eval answers "did the code end up correct?" — it is blind to *agentic
+quality* (review depth, grounding, refusing-vs-doing). `eval/agentic/*.yaml` are
+review/investigate tasks scored by a deterministic **rubric** over the trajectory
+(distinct files read, no "narrow the scope" refusal, finished with a real answer,
+didn't over-ask). `python -m eval.harness` now prints a `behavior:` score beside the
+verify pass-rate. This is the **signal the flywheel was missing**: it lets `convert.py`
+*select* good behavior (the refusal gate above is the first use) instead of us
+hand-patching the system prompt — the pivot from harness-code to training. v1 is
+heuristic; an LLM-judge is the follow-up.
+
 ### Always
-- **Eval gate:** never promote a model that doesn't beat the current one on `eval/`.
+- **Eval gate:** never promote a model that doesn't beat the current one on `eval/`
+  — on **both** the verify pass-rate AND the agentic behavior score.
 - **Hygiene:** scrub secrets/PII before storing or training; dedup; never train on
   your eval tasks (decontaminate). This pipeline is exactly where a data leak would
   happen — keep it clean from the first commit.

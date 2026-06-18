@@ -25,8 +25,17 @@ the harness capabilities, independent of raw model quality — running on a mode
 run agent → capture trajectory → convert to rows → (train) → eval → repeat
 ```
 
-Capture and outcome-labeling are done. Eval is done. The converter is the current
-piece. Training itself is downstream.
+Capture, outcome-labeling, the converter, and eval are all done. **The pivot (2026-06):
+the harness (axis 1) is essentially built; the remaining failures — shallow reviews,
+refusals, overclaiming, weak judgment — are model-quality (axis 2), and the ROADMAP says
+those close via the FLYWHEEL (train), not more prompt rules.** We had been patching them in
+the system prompt; that whack-a-mole is now frozen as a floor. The blocker was that the
+eval only scored binary correctness and was blind to agentic quality — so the flywheel had
+no signal to select on. That's now built: `eval/rubric.py` + `eval/agentic/*.yaml` score
+behavior (depth / no-refusal / completion) deterministically, `eval.harness` reports it
+beside the pass-rate, and `train/convert.py` gates on it (drops `refusal` runs). Next:
+curate a few hundred good trajectories and run the first SFT pass (`train/sft.py`) — the
+first time the model itself improves, not the harness. See specs/0004-agentic-evals.md.
 
 ---
 
@@ -166,6 +175,17 @@ Build order TBD when we get here; rough priority is compaction → subagents fir
    `CODE_COMPACT_AT_TOKENS` (16000) / `CODE_COMPACT_KEEP_RECENT` (8) defaults. The same log
    also drove the **grounding** prompt rules (no reviewing the wrong folder, no speculating
    about unread files) — see specs/0003-host-access.md.
+   **Cold-start, settled:** a review of OpenAgent-infra found it points at the SAME RunPod
+   serverless endpoint (`ryebshj6yomwei`) — there is no warm/alternate endpoint and no
+   warm-up/keep-alive in infra; its only trick is a **600s** read timeout (patiently waits
+   the spin-up). openagent-code's `CODE_WARMUP_BUDGET` was 120s, which gave up early and
+   then thrashed (give-up → real call drops → re-warm, looping for minutes). Fixed by
+   matching infra's patience: `CODE_WARMUP_BUDGET` default → **600** (one long wait, no
+   thrash). The *real* cure remains a min-active worker on the RunPod endpoint (dashboard,
+   no code) so it never scales to zero. A second log review also tightened **review
+   discipline** in the prompt: don't refuse a broad review (map structure → read key files
+   → overview), don't overclaim coverage (only describe files actually opened), and "this
+   project" means the workspace, not a folder discussed earlier.
 
 ~5 of these = a *foundational* agent; all 8 = broad agent-capability parity.
 

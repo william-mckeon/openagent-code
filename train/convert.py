@@ -35,6 +35,7 @@ sys.path.insert(0, ROOT)
 from src.tools import TOOLS, openai_schemas  # noqa: E402
 from src.trajectory import Trajectory  # noqa: E402  (for SCHEMA_VERSION)
 from src import config  # noqa: E402  (for SFT_VIEW)
+from eval import rubric  # noqa: E402  (behavior gate — specs/0004-agentic-evals.md)
 
 TRAJ_GLOB = os.path.join(ROOT, "trajectories", "**", "*.jsonl")
 OUT_DIR = os.path.join(ROOT, "train", "dataset")
@@ -80,6 +81,10 @@ def is_trainable(records):
     verifications = [r for r in records if r.get("type") == "verification"]
     if verifications and not all(v.get("ok") for v in verifications):
         return False, "verify_failed"
+    # Behavior gate (specs/0004): even a verify-passing run is bad training data if the
+    # agent REFUSED (a "narrow the scope" deflection) — we don't want to teach that.
+    if rubric.is_refusal(records):
+        return False, "refusal"
     return True, "kept"
 
 

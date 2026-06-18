@@ -83,7 +83,7 @@ def _one_shot(task, perms):
     ctx = make_context(workspace, perms, traj.session_id,
                        depth=0, verbose=config.VERBOSE, interactive=False)
     print(f"openagent-code | model={config.display_model()} | tool_mode={config.TOOL_MODE} | "
-          f"mode={perms.mode} | workspace={workspace}")
+          f"mode={perms.mode} | effort={config.REASONING_EFFORT or 'default'} | workspace={workspace}")
     _warn_if_empty_workspace(workspace)
     agent = build_agent(traj, memory=_load_memory(workspace), granted_dirs=perms.extra_roots)
 
@@ -155,7 +155,8 @@ def _repl_set_mode(ctx, name):
 
 def _run_session(traj, agent, ctx):
     """The interactive chat loop, shared by a fresh REPL and a resumed session."""
-    print(f"openagent-code REPL | model={config.display_model()} | mode={ctx.permissions.mode} | workspace={ctx.cwd}")
+    print(f"openagent-code REPL | model={config.display_model()} | mode={ctx.permissions.mode} | "
+          f"effort={config.REASONING_EFFORT or 'default'} | workspace={ctx.cwd}")
     print("Type a task and press enter. Commands: /exit  /plan  /add-dir <path>  /mode <name>")
     turns = 0
     try:
@@ -178,7 +179,14 @@ def _run_session(traj, agent, ctx):
                 _repl_set_mode(ctx, user[len("/mode"):])
                 continue
             turns += 1
-            result = agent.run(user, ctx)
+            try:
+                result = agent.run(user, ctx)
+            except Exception as e:
+                # A model error (500, context overflow, a flaky worker) must NOT kill the
+                # REPL — end the turn with a message and keep the session alive.
+                print(f"\n[error] that turn failed: {type(e).__name__}: {str(e)[:200]}\n"
+                      "(the session is still alive — try again, rephrase, or /exit)")
+                continue
             if result.final:
                 print("\n" + result.final)
             else:

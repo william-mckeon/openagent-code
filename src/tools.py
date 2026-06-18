@@ -119,8 +119,21 @@ def grep(args, ctx):
 
 def glob_tool(args, ctx):
     root = _abs(ctx, args.get("path", "."))
-    hits = [_rel(ctx, h) for h in globlib.glob(os.path.join(root, args["pattern"]), recursive=True)]
-    return ToolResult(True, "\n".join(sorted(hits)) or "(no matches)", {"count": len(hits)})
+    hits = []
+    for h in globlib.glob(os.path.join(root, args["pattern"]), recursive=True):
+        rel = _rel(ctx, h)
+        # Skip heavy/noise dirs (same set grep uses) so a broad pattern like '**/*'
+        # doesn't return the whole repo (trajectories/, .venv, __pycache__, ...) and
+        # blow the model's context window — which is how a glob 500'd the 8k worker.
+        if any(part in _SKIP_DIRS for part in rel.split("/")):
+            continue
+        hits.append(rel)
+    hits = sorted(hits)
+    cap = 200
+    body = "\n".join(hits[:cap]) or "(no matches)"
+    if len(hits) > cap:
+        body += f"\n... ({len(hits)} matches; showing first {cap} — narrow the pattern)"
+    return ToolResult(True, body, {"count": len(hits)})
 
 
 # ---------------------------------------------------------------- mutating

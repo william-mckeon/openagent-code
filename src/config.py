@@ -41,6 +41,15 @@ API_BASE = os.environ.get("CODE_API_BASE", "")
 API_KEY = os.environ.get("CODE_API_KEY", "")
 TEMPERATURE = float(os.environ.get("CODE_TEMPERATURE", "0.2"))
 
+# CODE_REASONING_EFFORT — gpt-oss reasoning depth: low | medium | high. Higher means
+# the model deliberates more before answering — the lever against a weaker model
+# answering instantly (confabulating a review) instead of investigating / calling tools.
+# Sent to the endpoint as `reasoning_effort`. Empty/invalid = don't send it (use the
+# endpoint's own default), which keeps behaviour unchanged unless you opt in.
+_EFFORTS = {"low", "medium", "high"}
+_effort = os.environ.get("CODE_REASONING_EFFORT", "").strip().lower()
+REASONING_EFFORT = _effort if _effort in _EFFORTS else ""
+
 # CODE_TOOL_MODE — how the model invokes tools:
 #   "native" — OpenAI tool-calling. Default. Requires the serving stack to parse
 #              tool calls; for gpt-oss on vLLM, launch the worker with
@@ -73,7 +82,12 @@ REQUEST_TIMEOUT = float(os.environ.get("CODE_REQUEST_TIMEOUT", "600"))
 # (and burning its CODE_MODEL_RETRIES on the empty responses a cold worker returns).
 # No-op when CODE_API_BASE is empty (e.g. Bedrock). CODE_WARMUP=false skips it.
 WARMUP = _as_bool(os.environ.get("CODE_WARMUP", "true"))
-WARMUP_BUDGET = float(os.environ.get("CODE_WARMUP_BUDGET", "120"))
+# 600s matches openagent-infra's read timeout: outwait the FULL serverless spin-up in
+# ONE patient wait, rather than giving up at a short budget and then thrashing
+# (give-up -> the real call drops -> re-warm -> repeat). The real cure for cold starts
+# is a min-active worker on the RunPod endpoint (no scale-to-zero); this just makes the
+# unavoidable first wait a single one. Set 0 / CODE_WARMUP=false to skip.
+WARMUP_BUDGET = float(os.environ.get("CODE_WARMUP_BUDGET", "600"))
 
 # -----------------------------------------------------------------------------
 # Agent loop
