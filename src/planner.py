@@ -37,6 +37,17 @@ class NativePlanner:
         assistant = {"role": "assistant", "content": msg.content or ""}
         calls = []
         if msg.tool_calls:
+            # Preserve the model's reasoning across tool calls. gpt-oss (harmony) keeps
+            # its PLAN in a separate reasoning channel, emitted with empty content on a
+            # tool-call turn. If we drop that reasoning from history, the model loses its
+            # working memory between steps and loops — re-reading/re-grepping the same
+            # files, making one edit in 30 steps on a multi-file task. Fold the reasoning
+            # into the assistant content so the next step sees the plan it already formed.
+            # Tool-call turns only — the final answer (calls empty, below) stays clean.
+            reasoning = getattr(msg, "reasoning_content", None)
+            if reasoning and reasoning.strip():
+                body = (msg.content or "").strip()
+                assistant["content"] = f"{reasoning.strip()}\n\n{body}" if body else reasoning.strip()
             assistant["tool_calls"] = [{
                 "id": tc.id, "type": "function",
                 "function": {"name": tc.function.name, "arguments": tc.function.arguments},

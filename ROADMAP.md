@@ -189,6 +189,33 @@ Build order TBD when we get here; rough priority is compaction → subagents fir
 
 ~5 of these = a *foundational* agent; all 8 = broad agent-capability parity.
 
+### Phase 5 — the distillation flywheel (make the MODEL)  → specs/0005-distillation.md
+The harness is built; this phase produces the *model*. Use the flywheel + a strong teacher
+(**gpt-oss-120b on Amazon Bedrock via boto3/IAM**) to **distill a smaller, deployable student**
+(any *pretrained* model — Tier 1 = gpt-oss-20b, Tier 2 = a small instruct model; from-scratch
+is a parked Tier 3) that learns *your* agentic-coding distribution, then swap it in behind the
+same `CODE_API_BASE` boundary. **Documented in full** in `specs/0005-distillation.md`; **built in
+gated stages**, not one blob:
+
+1. **Document** (this + the spec). ✅
+2. **Bedrock teacher** — boto3 config + one provider-aware `reasoning_effort` tweak in
+   `src/model.py` + a `[bedrock]` extra. Gate: `check_native_toolcalls` `[OK]` + eval 13/13 on
+   120b/Bedrock. *Standalone win: ends the RunPod cold-start/500 pain, 128k window.* **✅ PASSED
+   (2026-06-20): 13/13 (100%), behavior 1.00**, auth via a Bedrock API-key bearer token in
+   `us-east-1`. The gate also surfaced + fixed two flywheel-critical harness bugs (grep glob in
+   `tools.py`, dropped `reasoning_content` in `planner.py` that made gpt-oss loop on multi-step tasks).
+3. **Harden the eval** — a discriminating tier so the promotion gate can actually move off 100%.
+4. **Capture + curate** the corpus from the 120b teacher (no new code; `convert.py`).
+5. **`train/sft.py`** — the trainer + data bridge (the one real build; LoRA, single GPU).
+6. **Distill → eval-gate → serve (vLLM) → swap** (one `.env` line). Gate: student ≥ base.
+7. **Close the loop** — deployed student generates more trajectories → retrain.
+
+The only genuine code is `train/sft.py` + the one `model.py` reasoning tweak; the whole `src/`
+harness is otherwise the reusable body the student steps into. Caveats (in the spec): distillation
+caps the student at the teacher (RL surpasses it later), small students tool-call worse, and the
+eval MUST discriminate first or the gate is blind. boenet/from-scratch is explicitly out of scope
+here — the student is "any pretrained model."
+
 #### LOCKED design decision — capture vs. context (must hold from item 1 onward)
 
 Today a single `messages` list is both (a) what we send the model and (b) what we
@@ -250,4 +277,4 @@ prerequisite *of* item 1, not a later cleanup.
 
 ## Status line
 
-Phase 0 ✅ · Phase 1 ✅ (eval now 13 tasks, 13/13 — harder tier added, ceiling not yet found) · Phase 2 ✅ · Phase 3 ✅ · **Phase 4 — compaction ✅ + subagents ✅ + planning ✅ + interactivity ✅ + tool-breadth ✅ + cold-start handling ✅ + permissions Core ✅ + cross-session memory ✅. Remaining: permission hooks (#6 pass 2) + the always-open robustness/eval-ceiling tail**.
+Phase 0 ✅ · Phase 1 ✅ (eval now 13 tasks, 13/13 — harder tier added, ceiling not yet found) · Phase 2 ✅ · Phase 3 ✅ · **Phase 4 — compaction ✅ + subagents ✅ + planning ✅ + interactivity ✅ + tool-breadth ✅ + cold-start handling ✅ + permissions Core ✅ + cross-session memory ✅. Remaining: permission hooks (#6 pass 2) + the always-open robustness/eval-ceiling tail** · **Phase 5 — distillation flywheel (gpt-oss-120b/Bedrock teacher → distilled student): Stage 1 (documented) ✅; Stages 2-7 staged (specs/0005)**.

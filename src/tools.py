@@ -89,6 +89,26 @@ def read_file(args, ctx):
     return ToolResult(True, numbered or "(empty file)", {"total_lines": len(lines)})
 
 
+def _glob_match(rel, fn, pat):
+    """Does a file match the grep `glob` filter? Match against the RELATIVE PATH
+    (forward-slashed, e.g. 'app/users.py'), not just the bare filename — the model
+    passes path-style globs like '**/*.py' or 'app/*.py' (the form the glob tool's
+    own schema advertises). Matching only the basename made every '**/*.py' grep
+    return "(no matches)" and the agent thrash.
+
+    fnmatch's '*' spans '/', so 'app/users.py' matches '**/*.py', 'app/*.py', and a
+    plain '*.py'. The leading '**/' is also treated as OPTIONAL (zero-or-more dirs,
+    the ripgrep/git convention) so '**/*.py' still matches a ROOT-level 'foo.py'.
+    The bare-filename check is kept so a basename glob always works regardless.
+    """
+    if fnmatch.fnmatch(rel, pat) or fnmatch.fnmatch(fn, pat):
+        return True
+    if pat.startswith("**/"):
+        tail = pat[3:]
+        return fnmatch.fnmatch(rel, tail) or fnmatch.fnmatch(fn, tail)
+    return False
+
+
 def grep(args, ctx):
     try:
         pattern = re.compile(args["pattern"])
@@ -100,9 +120,9 @@ def grep(args, ctx):
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS]
         for fn in filenames:
-            if glob_filter and not fnmatch.fnmatch(fn, glob_filter):
-                continue
             fp = os.path.join(dirpath, fn)
+            if glob_filter and not _glob_match(_rel(ctx, fp), fn, glob_filter):
+                continue
             try:
                 with open(fp, encoding="utf-8") as f:
                     for i, line in enumerate(f, 1):

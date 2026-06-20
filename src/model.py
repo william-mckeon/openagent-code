@@ -23,6 +23,18 @@ from . import config
 from .prompts import SUMMARIZE_PROMPT
 
 
+def _reasoning_kwargs():
+    """Provider-aware reasoning_effort. The LiteLLM `bedrock/` provider takes it as a
+    TOP-LEVEL param (it maps to additionalModelRequestFields), where extra_body is ignored;
+    OpenAI-compatible endpoints (vLLM / Bedrock's /openai/v1) take it via extra_body, which
+    lands verbatim in the request body. Empty config = send nothing."""
+    if not config.REASONING_EFFORT:
+        return {}
+    if config.MODEL.startswith("bedrock/"):
+        return {"reasoning_effort": config.REASONING_EFFORT}
+    return {"extra_body": {"reasoning_effort": config.REASONING_EFFORT}}
+
+
 class Model:
     def __init__(self, trajectory):
         self.traj = trajectory
@@ -38,9 +50,7 @@ class Model:
             kw["api_base"] = config.API_BASE
         if config.API_KEY:
             kw["api_key"] = config.API_KEY
-        if config.REASONING_EFFORT:
-            # extra_body lands it verbatim in the request the endpoint receives.
-            kw["extra_body"] = {"reasoning_effort": config.REASONING_EFFORT}
+        kw.update(_reasoning_kwargs())   # provider-aware (bedrock top-level vs extra_body)
         return kw
 
     def summarize(self, messages):
@@ -158,8 +168,7 @@ def warm_up():
         kw["api_base"] = config.API_BASE
     if config.API_KEY:
         kw["api_key"] = config.API_KEY
-    if config.REASONING_EFFORT:
-        kw["extra_body"] = {"reasoning_effort": config.REASONING_EFFORT}
+    kw.update(_reasoning_kwargs())   # provider-aware (bedrock top-level vs extra_body)
 
     start = time.time()
     deadline = start + config.WARMUP_BUDGET
