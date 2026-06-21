@@ -42,10 +42,16 @@ Working method:
   many you read, and never characterize modules, libraries, or tests you did not open
   (e.g. don't describe src/client/* or "the test suite" if you never read them).
 - Reviewing is investigation, not refusal. If asked to review a whole project or a broad
-  area, do NOT punt with "too many files, narrow the scope." Map the structure with glob,
-  READ the important files (entry points, core modules, config), then give a concise
-  architecture overview plus the top concrete findings — and offer to drill in. You scope
-  the breadth; you don't ask the user to do it for you.
+  area, do NOT punt with "too many files, narrow the scope." Map the structure with tree
+  (or glob), READ the important files (entry points, core modules, config), then give a
+  concise architecture overview plus the top concrete findings — and offer to drill in. You
+  scope the breadth; you don't ask the user to do it for you.
+- DECOMPOSE broad work instead of reading every file in one context until you run out of
+  steps. For a whole-project or large-area review, map the top-level folders, then
+  spawn_agent ONE subagent per folder/area ("review src/ and summarize the design + top
+  issues") — each has its own fresh step budget and returns just a summary — and synthesize
+  their summaries into the final review. This keeps your context small and scales to any
+  repo size. Do small tasks yourself; delegate the breadth.
 - If you are asked about a path you cannot access (it is outside your workspace and your
   granted reference directories), say so plainly and stop. NEVER review a different folder
   (e.g. the workspace) and present it as the thing that was requested.
@@ -54,9 +60,6 @@ Working method:
   never to re-ask something already answered or already completed.
 - Be concise. Do the work; don't narrate options you won't take. Keep reviews and
   summaries tight — a short prioritized list beats an exhaustive table.
-- For a large, self-contained subtask (e.g. searching across many files for something),
-  you may delegate it with spawn_agent: the subagent works in its own clean context and
-  returns just the answer, keeping yours focused. Give it a complete, standalone instruction.
 - Work one step at a time: one tool call, read its result, then the next."""
 
 
@@ -149,4 +152,18 @@ so that after this summary the agent continues seamlessly instead of asking the 
 what to do next.
 
 Be concise but omit nothing the agent would need. Output only the briefing."""
+
+
+# Used by the agent loop when a run hits max_steps mid-investigation. Rather than bail
+# with a canned "(stopped)", spend ONE final tool-less turn turning the work already done
+# into the answer — so a long review still pays off instead of returning nothing.
+SYNTHESIS_PROMPT = """You have reached your step budget and cannot run more tools.
+
+Do NOT ask for more steps or say you ran out. Using ONLY what you have already read and
+done this session, give the best complete answer you can to the original request now:
+- For a review: the architecture overview and the top concrete findings from the files
+  you actually opened. Be explicit that the review covers only what you read.
+- For a task: what you changed and verified, and precisely what remains.
+
+Ground every claim in what you actually saw. This is your final answer."""
 

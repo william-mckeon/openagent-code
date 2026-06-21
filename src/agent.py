@@ -16,6 +16,7 @@ run() returns a RunResult so the caller can label the outcome HONESTLY: a run th
 made no tool calls, or stalled on the protocol, is not a success.
 """
 from .tools import ToolResult
+from .prompts import SYNTHESIS_PROMPT
 
 
 class RunResult:
@@ -95,7 +96,21 @@ class Agent:
             self.cm.rollback(mark)
             raise
 
-        return RunResult("(stopped: reached max_steps)", "max_steps", tool_calls)
+        # Out of step budget. Don't bail with a canned "(stopped)" — a long investigation
+        # would return nothing. Spend ONE final tool-less turn turning the work already done
+        # into the answer (the review, or what got changed + what remains). Best-effort: if
+        # this synthesis call fails, fall back to the plain max_steps marker.
+        final = "(stopped: reached max_steps)"
+        try:
+            self.cm.add({"role": "user", "content": SYNTHESIS_PROMPT})
+            msg = self.planner.model.complete(self.cm.context(), None, self.max_steps)
+            text = (getattr(msg, "content", "") or "").strip()
+            if text:
+                final = text
+                self.cm.add({"role": "assistant", "content": text})
+        except Exception:
+            pass
+        return RunResult(final, "max_steps", tool_calls)
 
 
 def _short(args):

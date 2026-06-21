@@ -106,7 +106,12 @@ WARMUP_BUDGET = float(os.environ.get("CODE_WARMUP_BUDGET", "600"))
 # CODE_VERBOSE        Print tool activity to stdout.
 # -----------------------------------------------------------------------------
 WORKSPACE = os.environ.get("CODE_WORKSPACE") or os.getcwd()
-MAX_STEPS = int(os.environ.get("CODE_MAX_STEPS", "25"))
+# 50 (raised from 25): a model<->tool round-trip is a STEP, not a token — a broad
+# "review the whole repo" reads ~one file per step, so a low cap stops it before it
+# can synthesize. The 128k window has the token headroom; let the loop take more
+# round-trips. Pair with the on-max_steps synthesis turn (agent.py) so a capped run
+# still returns an answer, and with subagent decomposition so big tasks fan out.
+MAX_STEPS = int(os.environ.get("CODE_MAX_STEPS", "50"))
 AUTO_APPROVE = _as_bool(os.environ.get("CODE_AUTO_APPROVE", "true"))
 VERBOSE = _as_bool(os.environ.get("CODE_VERBOSE", "true"))
 
@@ -183,7 +188,14 @@ COMPACT_KEEP_RECENT = int(os.environ.get("CODE_COMPACT_KEEP_RECENT", "8"))
 # CODE_MAX_SUBAGENT_DEPTH — how deep spawn_agent can nest (Phase 4).
 #   0 = subagents disabled, 1 = one level (top-level agent may spawn, children
 #   may not), 2 = children may spawn too, etc. Enforced at the spawn_agent tool.
-MAX_SUBAGENT_DEPTH = int(os.environ.get("CODE_MAX_SUBAGENT_DEPTH", "1"))
+#   2 (raised from 1): lets a per-folder child decompose a large folder one level
+#   further, so a whole-project review maps cleanly as a tree of summaries.
+MAX_SUBAGENT_DEPTH = int(os.environ.get("CODE_MAX_SUBAGENT_DEPTH", "2"))
+
+# CODE_MAX_SUBAGENT_FANOUT — how many children ONE agent may spawn (breadth). Depth
+# alone doesn't bound cost: an agent told to "decompose" could otherwise spawn an
+# unbounded number of subagents. Caps the fan-out per agent. Enforced at spawn_agent.
+MAX_SUBAGENT_FANOUT = int(os.environ.get("CODE_MAX_SUBAGENT_FANOUT", "8"))
 
 # -----------------------------------------------------------------------------
 # External tools (Phase 4 tool breadth) — these reach OFF the machine, so they

@@ -156,6 +156,42 @@ def glob_tool(args, ctx):
     return ToolResult(True, body, {"count": len(hits)})
 
 
+def tree(args, ctx):
+    """One-call directory map: the folder structure as an indented tree. Cheaper than
+    globbing then reading to orient — meant for 'what's in this project' at the START of
+    a broad review. Skips the noise dirs grep/glob skip, and caps entries so a huge repo
+    can't blow the context window."""
+    root = _abs(ctx, args.get("path", "."))
+    try:
+        max_depth = int(args.get("depth", 3))
+    except (TypeError, ValueError):
+        max_depth = 3
+    cap = 400
+    lines, count, truncated = [], 0, False
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(d for d in dirnames if d not in _SKIP_DIRS and not d.startswith("."))
+        rel = _rel(ctx, dirpath)
+        depth = 0 if rel == "." else rel.count("/") + 1
+        if depth > max_depth:
+            dirnames[:] = []   # don't descend past the depth limit
+            continue
+        indent = "  " * depth
+        label = os.path.basename(dirpath) if depth else (rel if rel != "." else ".")
+        lines.append(f"{indent}{label}/")
+        for fn in sorted(filenames):
+            if count >= cap:
+                truncated = True
+                break
+            lines.append(f"{indent}  {fn}")
+            count += 1
+        if truncated:
+            break
+    body = "\n".join(lines) or "(empty)"
+    if truncated:
+        body += f"\n... (truncated at {cap} files — pass a smaller depth or a subpath)"
+    return ToolResult(True, body, {"files": count})
+
+
 # ---------------------------------------------------------------- mutating
 
 def write_file(args, ctx):
@@ -255,9 +291,16 @@ def spawn_agent(args, ctx):
     if ctx.depth >= config.MAX_SUBAGENT_DEPTH:
         return ToolResult(False, f"Max subagent depth ({config.MAX_SUBAGENT_DEPTH}) reached "
                                  "- do this subtask yourself.")
+    # Breadth cap: depth alone doesn't bound cost — an agent told to "decompose" could
+    # spawn unboundedly. Count spawns on this agent's ctx and stop at the fan-out limit.
+    spawned = getattr(ctx, "spawn_count", 0)
+    if spawned >= config.MAX_SUBAGENT_FANOUT:
+        return ToolResult(False, f"Subagent fan-out limit ({config.MAX_SUBAGENT_FANOUT}) reached "
+                                 "- synthesize what the subagents already returned, or do the rest yourself.")
     task = (args.get("task") or "").strip()
     if not task:
         return ToolResult(False, "spawn_agent requires a non-empty 'task'.")
+    ctx.spawn_count = spawned + 1
     final = ctx.spawn(task)
     return ToolResult(True, final or "(subagent returned no answer)")
 
@@ -387,6 +430,16 @@ TOOLS = [
         }, "required": ["pattern"]},
     },
     {
+        "name": "tree", "fn": tree,
+        "description": ("Show the directory structure as an indented tree, in ONE call. Use it "
+                        "first to map a project before a broad review, instead of globbing then "
+                        "reading to orient. 'depth' limits nesting (default 3); 'path' scopes it."),
+        "parameters": {"type": "object", "properties": {
+            "path": {"type": "string"},
+            "depth": {"type": "integer", "description": "max nesting depth (default 3)"},
+        }, "required": []},
+    },
+    {
         "name": "write_file", "fn": write_file,
         "description": "Create or overwrite a file with the given content.",
         "parameters": {"type": "object", "properties": {
@@ -439,9 +492,12 @@ TOOLS = [
     {
         "name": "spawn_agent", "fn": spawn_agent,
         "description": ("Delegate a self-contained subtask to a fresh subagent that has its own "
-                        "clean context. Use it to offload a big search or an independent subtask so "
-                        "your own context stays focused. The subagent CANNOT see this conversation — "
-                        "give it a complete, standalone instruction. It returns only its final answer."),
+                        "clean context AND its own full step budget, returning only its final "
+                        "summary. DECOMPOSE big work with it: for a whole-project or broad review, "
+                        "spawn one subagent per folder/area (e.g. 'review src/ and summarize'), then "
+                        "synthesize their summaries — far better than reading every file yourself "
+                        "until you run out of steps. The subagent CANNOT see this conversation, so "
+                        "give it a complete, standalone instruction."),
         "parameters": {"type": "object", "properties": {
             "task": {"type": "string", "description": "A complete, standalone instruction for the subagent."},
         }, "required": ["task"]},
