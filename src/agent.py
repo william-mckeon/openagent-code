@@ -34,53 +34,66 @@ class Agent:
         self.cm = context_manager       # owns the system prompt + the live context
 
     def run(self, task, ctx):
+        # Snapshot the live context BEFORE this turn. If a model call dies mid-turn (a
+        # Bedrock 503 after tool results were appended), we roll the live view back to
+        # here so it never ends in orphaned tool-results — otherwise the next user turn
+        # produces the consecutive user/tool blocks Bedrock's Converse API rejects,
+        # poisoning the session. The trajectory still captured every raw turn.
+        mark = self.cm.mark()
         self.cm.add({"role": "user", "content": task})
         consecutive_fail = {}  # tool name -> count of prior consecutive failures
         tool_calls = 0
 
-        for step in range(self.max_steps):
-            self.traj.steps = step + 1
-            self.cm.set_pinned(ctx.plan)   # keep the current plan visible (Phase 4 planning)
-            decision = self.planner.step(self.cm.context(), step)
-            self.cm.add(decision.assistant)
+        try:
+            for step in range(self.max_steps):
+                self.traj.steps = step + 1
+                self.cm.set_pinned(ctx.plan)   # keep the current plan visible (Phase 4 planning)
+                decision = self.planner.step(self.cm.context(), step)
+                self.cm.add(decision.assistant)
 
-            # Model never produced a usable action (json protocol exhausted).
-            if decision.gave_up:
-                return RunResult(decision.final, "nudge_exhausted", tool_calls)
+                # Model never produced a usable action (json protocol exhausted).
+                if decision.gave_up:
+                    return RunResult(decision.final, "nudge_exhausted", tool_calls)
 
-            # Model broke protocol once — re-prompt instead of ending.
-            if decision.nudge:
-                if ctx.verbose:
-                    print("  [nudge] model did not emit a JSON action; re-prompting")
-                self.cm.add({"role": "user", "content": decision.nudge})
-                continue
+                # Model broke protocol once — re-prompt instead of ending.
+                if decision.nudge:
+                    if ctx.verbose:
+                        print("  [nudge] model did not emit a JSON action; re-prompting")
+                    self.cm.add({"role": "user", "content": decision.nudge})
+                    continue
 
-            if not decision.calls:
-                return RunResult(decision.final, "final", tool_calls)
+                if not decision.calls:
+                    return RunResult(decision.final, "final", tool_calls)
 
-            for call in decision.calls:
-                name, args = call["name"], call["args"]
+                for call in decision.calls:
+                    name, args = call["name"], call["args"]
 
-                # Permission gate (Phase 4 #6): decide BEFORE running, capture the
-                # decision, and substitute a denial result if blocked. One gate for
-                # every tool, logged against THIS agent's trajectory (subagent-safe).
-                pd = ctx.permissions.decide(name, args, ctx)
-                self.traj.log_permission(step, name, pd)
-                if pd.allowed:
-                    result = self.registry.run(name, args, ctx)
-                else:
-                    result = ToolResult(False, f"Permission denied: {pd.reason}")
-                tool_calls += 1
+                    # Permission gate (Phase 4 #6): decide BEFORE running, capture the
+                    # decision, and substitute a denial result if blocked. One gate for
+                    # every tool, logged against THIS agent's trajectory (subagent-safe).
+                    pd = ctx.permissions.decide(name, args, ctx)
+                    self.traj.log_permission(step, name, pd)
+                    if pd.allowed:
+                        result = self.registry.run(name, args, ctx)
+                    else:
+                        result = ToolResult(False, f"Permission denied: {pd.reason}")
+                    tool_calls += 1
 
-                retry_index = consecutive_fail.get(name, 0)
-                self.traj.log_tool_call(step, name, args, result, retry_index)
-                consecutive_fail[name] = 0 if result.ok else retry_index + 1
+                    retry_index = consecutive_fail.get(name, 0)
+                    self.traj.log_tool_call(step, name, args, result, retry_index)
+                    consecutive_fail[name] = 0 if result.ok else retry_index + 1
 
-                if ctx.verbose:
-                    flag = "deny" if not pd.allowed else ("ok" if result.ok else "FAIL")
-                    print(f"  [{flag}] {name}({_short(args)})")
+                    if ctx.verbose:
+                        flag = "deny" if not pd.allowed else ("ok" if result.ok else "FAIL")
+                        print(f"  [{flag}] {name}({_short(args)})")
 
-                self.cm.add(self.planner.format_result(call, result))
+                    self.cm.add(self.planner.format_result(call, result))
+        except Exception:
+            # The live context must never be left ending in dangling tool-results. Roll
+            # back this whole turn (capture is untouched) and re-raise so the caller
+            # labels the outcome — the REPL keeps the session alive on CLEAN history.
+            self.cm.rollback(mark)
+            raise
 
         return RunResult("(stopped: reached max_steps)", "max_steps", tool_calls)
 

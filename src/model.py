@@ -15,12 +15,20 @@ CODE_MODEL / CODE_API_BASE examples (see src/config.py and .env.example):
     CODE_MODEL=bedrock/openai.gpt-oss-120b-1:0
     CODE_API_BASE=            # unset; Bedrock uses AWS_* credentials
 """
+import random
 import time
 
 import litellm
 
 from . import config
 from .prompts import SUMMARIZE_PROMPT
+
+# Let LiteLLM reshape the message list to each provider's rules. Bedrock's Converse API
+# requires strict user<->assistant alternation, and maps tool-results to user-side blocks;
+# a turn that ends in tool-results (or any consecutive same-role run) is otherwise rejected.
+# With this on, LiteLLM inserts the needed continue/dummy messages instead of erroring.
+# Benign for the OpenAI/vLLM path (no reshaping needed there).
+litellm.modify_params = True
 
 
 def _reasoning_kwargs():
@@ -128,9 +136,13 @@ class Model:
             return msg
 
     def _backoff(self, attempt, why):
-        delay = min(2 ** attempt, 8)
+        # Exponential with jitter, capped at config.BACKOFF_CAP. The jitter de-syncs
+        # retries and the higher cap matters for serverless Bedrock, which throws bursts
+        # of transient 503s ("ServiceUnavailableError") on large requests — a flat 8s cap
+        # gives up before the burst clears. Pair with a higher CODE_MODEL_RETRIES.
+        delay = min(2 ** attempt, config.BACKOFF_CAP) + random.uniform(0, 1)
         if config.VERBOSE:
-            print(f"  [retry] {why} - attempt {attempt + 1}/{config.MODEL_RETRIES}, waiting {delay}s")
+            print(f"  [retry] {why} - attempt {attempt + 1}/{config.MODEL_RETRIES}, waiting {delay:.1f}s")
         time.sleep(delay)
 
 

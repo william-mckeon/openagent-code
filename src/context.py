@@ -52,6 +52,22 @@ class ContextManager:
         self.working.append(message)
         self.traj.log_turn(message)
 
+    def mark(self):
+        """Snapshot the live working-set length so a failed turn can be rolled back to a
+        clean state. See rollback(). Only the model's live view is marked — capture is
+        untouched."""
+        return len(self.working)
+
+    def rollback(self, mark):
+        """Drop working-set messages appended since `mark`. Used when a model call dies
+        mid-turn (e.g. a Bedrock 503 after some tool results were already appended): it
+        keeps the LIVE context from ending in orphaned tool-results, which the next user
+        turn would otherwise turn into the consecutive user/tool blocks Bedrock's Converse
+        API rejects — poisoning the whole session. The trajectory keeps the full raw
+        record (capture vs. context): only what the model SEES is trimmed."""
+        if 0 <= mark < len(self.working):
+            del self.working[mark:]
+
     def set_pinned(self, text):
         """Pin a message just after the system prompt — always sent, never compacted.
 

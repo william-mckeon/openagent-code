@@ -222,7 +222,23 @@ def _resume_repl(session_id, perms):
     return _run_session(traj, agent, ctx)
 
 
+def _force_utf8_stdout():
+    """Make stdout/stderr UTF-8 so printing the model's output can't crash the run.
+
+    On Windows the console defaults to a legacy codepage (cp1252), so printing any
+    character the model routinely emits — em dash, non-breaking hyphen, smart quotes,
+    bullets — raises UnicodeEncodeError and kills the turn. errors='replace' is a
+    belt-and-suspenders fallback for any glyph the target encoding still can't render.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass  # redirected to something without reconfigure() — leave it as-is
+
+
 def main(argv=None):
+    _force_utf8_stdout()
     argv = list(argv if argv is not None else sys.argv[1:])
     mode_override, add_dirs, argv = _parse_flags(argv)
     perms = Permissions.from_config(mode_override=mode_override, extra_dirs=add_dirs)

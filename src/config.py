@@ -65,7 +65,13 @@ TOOL_MODE = os.environ.get("CODE_TOOL_MODE", "native").strip().lower()
 # dropped-tool-call responses (native mode: empty content + no tool_calls — the
 # signature of a worker missing the tool-call parser). Lets the agent grind through
 # a flaky / intermittent endpoint instead of failing the turn. 0 = no retries.
-MODEL_RETRIES = int(os.environ.get("CODE_MODEL_RETRIES", "3"))
+# Default 5 (not 3): serverless Bedrock throws bursts of transient 503s on large
+# requests, and 3 short tries gave up before the burst cleared.
+MODEL_RETRIES = int(os.environ.get("CODE_MODEL_RETRIES", "5"))
+
+# CODE_BACKOFF_CAP — max seconds for one retry's exponential backoff (jitter added on
+# top). Raised from the old hard-coded 8s so retries can outwait a Bedrock 503 burst.
+BACKOFF_CAP = float(os.environ.get("CODE_BACKOFF_CAP", "20"))
 
 # CODE_REQUEST_TIMEOUT — read timeout (seconds) for a SINGLE model call. Generous
 # ON PURPOSE, copied from openagent-infra: a scale-to-zero serverless worker
