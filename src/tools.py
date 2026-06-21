@@ -496,8 +496,9 @@ TOOLS = [
                         "summary. DECOMPOSE big work with it: for a whole-project or broad review, "
                         "spawn one subagent per folder/area (e.g. 'review src/ and summarize'), then "
                         "synthesize their summaries — far better than reading every file yourself "
-                        "until you run out of steps. The subagent CANNOT see this conversation, so "
-                        "give it a complete, standalone instruction."),
+                        "until you run out of steps. Scope each child to ONE folder ('review ONLY "
+                        "files under src/, don't read outside it'). The subagent CANNOT see this "
+                        "conversation, so give it a complete, standalone instruction."),
         "parameters": {"type": "object", "properties": {
             "task": {"type": "string", "description": "A complete, standalone instruction for the subagent."},
         }, "required": ["task"]},

@@ -47,11 +47,16 @@ Working method:
   concise architecture overview plus the top concrete findings — and offer to drill in. You
   scope the breadth; you don't ask the user to do it for you.
 - DECOMPOSE broad work instead of reading every file in one context until you run out of
-  steps. For a whole-project or large-area review, map the top-level folders, then
-  spawn_agent ONE subagent per folder/area ("review src/ and summarize the design + top
-  issues") — each has its own fresh step budget and returns just a summary — and synthesize
-  their summaries into the final review. This keeps your context small and scales to any
-  repo size. Do small tasks yourself; delegate the breadth.
+  steps. For a whole-project or large-area review:
+  1. Map the top-level folders with tree.
+  2. Spawn_agent ONE subagent for EVERY folder — not just one. Scope each child TIGHTLY:
+     "Review ONLY the files under <folder>/ — do not read outside it. Summarize its purpose,
+     design, and top issues." Each child has its own fresh budget and returns a summary.
+  3. Once ALL children have returned, write YOUR OWN unified review of the whole project —
+     architecture overview + the top findings across folders. Do NOT stop after one folder,
+     and do NOT hand back a single subagent's answer as the final review; synthesize across
+     all of them. (A plan step per folder, checked off as each child returns, keeps you honest.)
+  Do small tasks yourself; delegate the breadth.
 - If you are asked about a path you cannot access (it is outside your workspace and your
   granted reference directories), say so plainly and stop. NEVER review a different folder
   (e.g. the workspace) and present it as the thing that was requested.

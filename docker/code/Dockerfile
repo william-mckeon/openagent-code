@@ -122,14 +122,16 @@ RUN pip install --upgrade pip \
 ENV CODE_WORKSPACE=/workspace \
     CODE_MODEL=openai/gpt-oss-120b \
     CODE_TOOL_MODE=native \
-    CODE_MODEL_RETRIES=3 \
+    CODE_MODEL_RETRIES=5 \
+    CODE_BACKOFF_CAP=20 \
     CODE_REQUEST_TIMEOUT=600 \
     CODE_WARMUP=true \
     CODE_WARMUP_BUDGET=600 \
-    CODE_MAX_STEPS=25 \
-    CODE_COMPACT_AT_TOKENS=12000 \
+    CODE_MAX_STEPS=50 \
+    CODE_COMPACT_AT_TOKENS=60000 \
     CODE_COMPACT_KEEP_RECENT=6 \
-    CODE_MAX_SUBAGENT_DEPTH=1 \
+    CODE_MAX_SUBAGENT_DEPTH=2 \
+    CODE_MAX_SUBAGENT_FANOUT=8 \
     CODE_ENABLE_WEB=false
 
 # Copy source. eval/ ships too so the harness (python -m eval.harness) can run

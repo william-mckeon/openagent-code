@@ -116,10 +116,12 @@ class Model:
             # — then retry. Accept the empty response only on the final attempt.
             dropped = bool(schemas) and not (msg.content or "").strip() and not (msg.tool_calls or [])
             if dropped and not last:
-                # First drop: re-warm once (a mid-session cold start). After that, a short
-                # backoff — re-running the full warm-up on every retry is what turned a
-                # bad-endpoint turn into ~30 minutes of "cold worker" spam.
-                if not warmed_once:
+                # First drop on a WARMABLE endpoint (CODE_API_BASE set): re-warm once — a
+                # mid-session cold start. Re-running warm-up on every retry is what turned a
+                # bad-endpoint turn into ~30 min of "cold worker" spam, hence once only.
+                # Bedrock has no API_BASE to warm (warm_up is a no-op there), so don't claim
+                # to — just back off and retry the transient empty response.
+                if config.API_BASE and not warmed_once:
                     if config.VERBOSE:
                         print("  [retry] empty response (dropped tool call?) - re-warming the endpoint once")
                     warm_up()
