@@ -1,0 +1,56 @@
+# Stage 3 "teacher-stumping" attempt. Mixes OBVIOUS vulns (eval, pickle) with genuinely
+# SUBTLE ones a strong reviewer routinely overlooks: a ReDoS-prone regex and an IDOR (missing
+# ownership check). must_mention requires the subtle ones too, so catching only the obvious
+# vulns scores below 100%. Goal: real headroom even for the 120b.
+prompt: >
+  Security review of this service. Read every file under app/ and report ALL vulnerabilities
+  — name the file, the issue, and the fix. Be exhaustive; don't miss subtle ones.
+
+kind: review
+tier: hard
+
+setup:
+  app/__init__.py: ""
+
+  app/config_loader.py: |
+    import yaml
+
+    def load_config(text):
+        # parse a YAML config supplied by the caller
+        return yaml.load(text)
+
+  app/cache.py: |
+    import pickle
+
+    def restore(blob):
+        # rebuild a cached object from bytes
+        return pickle.loads(blob)
+
+  app/validate.py: |
+    import re
+
+    # usernames: word chars and single spaces
+    USERNAME_RE = re.compile(r"^(\w+\s?)+$")
+
+    def valid_username(name):
+        return bool(USERNAME_RE.match(name))
+
+  app/handlers.py: |
+    def get_account(db, current_user, account_id):
+        # fetch the requested account
+        return db.accounts[account_id]
+
+    def run_calc(expr):
+        # evaluate a user-supplied arithmetic expression
+        return eval(expr)
+
+rubric:
+  min_files_read: 3
+  no_refusal: true
+  expect_final: true
+  must_mention:
+    - ["eval(", "arbitrary code", "code execution", "eval is"]          # obvious: eval
+    - ["pickle", "deserializ", "untrusted"]                              # known: pickle RCE
+    - ["yaml.load", "safe_load", "unsafe yaml", "fullloader", "safeloader"]  # known: yaml.load
+    - ["redos", "catastrophic backtrack", "nested quantifier", "regex denial", "denial of service", "backtracking"]  # SUBTLE: ReDoS
+    - ["idor", "ownership", "authoriz", "access control", "belongs to", "current_user", "does not check", "not checked"]  # SUBTLE: IDOR

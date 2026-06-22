@@ -63,9 +63,12 @@ for the boto3 path). The whole `src/` harness is otherwise untouched.
    (`rubric.must_mention`), task `tier`s (smoke/core/hard) with per-tier reporting, a `hard`
    tier (e.g. `security_audit` with subtle planted vulns), delegation-aware depth, and a gate
    verdict line. The eval now discriminates BY CONSTRUCTION (a shallow review scores below a
-   sharp one — unit-proven). Honest caveat: the **120b teacher saturates it** (15/15 verify,
-   1.00 behavior incl. the hard tier) — expected for a frontier teacher; the resolution exists
-   to expose a WEAKER student, validated when the first student runs (Stage 6).
+   sharp one — unit-proven), and lands a **calibrated edge-of-competence task**:
+   `security_audit_hard` (a ReDoS-prone regex among obvious vulns) — the 120b misses the ReDoS
+   ~1 in 3 runs (behavior 0.80 / 1.00 / 1.00), so the teacher no longer reliably reads 100%.
+   A frontier teacher can't be *deterministically* stumped on fair tasks; this sits at its edge,
+   where a promotion gate belongs. A weaker student misses it (and more) far more often — the
+   real discrimination, validated at Stage 6.
    *(Prerequisite for trusting anything downstream — a blind gate makes distillation meaningless.)*
 4. **Capture + curate the corpus.** Run the 120b teacher across diverse tasks → `convert.py`.
    No new code. Gate: a clean dataset of N rows.

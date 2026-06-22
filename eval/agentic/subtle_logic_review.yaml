@@ -1,0 +1,57 @@
+# Stage 3 "teacher-stumping" attempt on the CORRECTNESS axis. Each file has one subtle logic
+# bug that requires tracing data flow, not pattern-matching: a cache that never honors its TTL,
+# a retry that gives up on the first SUCCESS, and an off-by-one in pagination. must_mention all
+# three; missing any (the retry-inverted-condition is the sneaky one) scores below 100%.
+prompt: >
+  Review these utilities for CORRECTNESS bugs (not style). Read each file and report the
+  specific logic error in each, with the fix. There is a real bug in every file.
+
+kind: review
+tier: hard
+
+setup:
+  lib/__init__.py: ""
+
+  lib/cache.py: |
+    import time
+
+    _store = {}
+
+    def get_or_set(key, ttl, producer):
+        now = time.time()
+        if key in _store:
+            value, expires_at = _store[key]
+            return value
+        value = producer()
+        _store[key] = (value, now + ttl)
+        return value
+
+  lib/retry.py: |
+    def retry(fn, attempts=3):
+        last = None
+        for _ in range(attempts):
+            try:
+                result = fn()
+            except Exception as e:
+                last = e
+                continue
+            else:
+                last = result
+                continue
+        return last
+
+  lib/paginate.py: |
+    def page(items, page_num, size):
+        # page_num is 1-based
+        start = page_num * size
+        end = start + size
+        return items[start:end]
+
+rubric:
+  min_files_read: 3
+  no_refusal: true
+  expect_final: true
+  must_mention:
+    - ["ttl", "expire", "expiration", "stale", "expires_at", "never checks", "ignored"]   # cache TTL ignored
+    - ["returns on success", "continue", "returns the last", "doesn't return", "always runs all", "early return", "should return", "first success", "inverted"]  # retry never short-circuits
+    - ["off-by-one", "off by one", "1-based", "one-based", "page_num - 1", "(page_num-1)", "starts at", "skips the first page"]  # pagination off-by-one
