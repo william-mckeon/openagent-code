@@ -1,0 +1,23 @@
+# Hard tier: a trap fix. dedup() uses set(), which removes duplicates but DESTROYS order.
+# The "obvious" eyeball-correct code is the bug; the test asserts first-seen order is kept,
+# so the fix must be order-preserving (dict.fromkeys or a seen-set loop). Forces reading
+# the assertions, not just the function.
+prompt: >
+  dedup() in dedup.py should remove duplicates while keeping each element's first-seen
+  order, but it's reordering the output. Fix it so test_dedup.py passes, then run the test.
+tier: hard
+
+setup:
+  dedup.py: |
+    def dedup(items):
+        return list(set(items))
+
+  test_dedup.py: |
+    from dedup import dedup
+
+    assert dedup([3, 1, 3, 2, 1]) == [3, 1, 2], f"order not preserved: {dedup([3, 1, 3, 2, 1])}"
+    assert dedup(["b", "a", "b", "c", "a"]) == ["b", "a", "c"]
+    assert dedup([]) == []
+    print("PASS")
+
+verify: "python test_dedup.py"

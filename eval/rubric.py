@@ -79,6 +79,21 @@ def _is_refusal(final, n_tools):
     return any(p in t for p in REFUSAL_PHRASES) and n_tools <= 1
 
 
+def _mentions_missed(final, must_mention):
+    """Which required topics the final answer FAILED to mention (case-insensitive
+    substring). This is what makes the behavior eval discriminate: a shallow review
+    that reads the files but never names the planted issue (hardcoded secret, swallowed
+    exception, ...) scores lower than one that actually catches them. An entry may be a
+    LIST of alternatives — any one satisfies it (synonyms)."""
+    low = (final or "").lower()
+    missed = []
+    for entry in must_mention:
+        alts = entry if isinstance(entry, (list, tuple)) else [entry]
+        if not any(str(a).lower() in low for a in alts):
+            missed.append(str(alts[0]))
+    return missed
+
+
 # -- scoring -----------------------------------------------------------------
 
 def score_turn(turn, rubric=None):
@@ -92,18 +107,28 @@ def score_turn(turn, rubric=None):
     asked = [t for t in tcs if t.get("tool") == "ask_user"]
     over_ask = bool(asked) and len(tcs) > 1 and tcs[-1].get("tool") == "ask_user"
 
+    # Delegated reviews read few files in the LEAD trajectory because each spawned child
+    # reviews a whole area in its OWN trajectory. Credit spawns toward depth so good
+    # decomposition isn't scored as shallow.
+    n_spawns = sum(1 for t in tcs if t.get("tool") == "spawn_agent" and t.get("ok"))
+
     checks = {}
     if "min_files_read" in rubric:
-        checks["depth"] = len(reads) >= int(rubric["min_files_read"])
+        checks["depth"] = (len(reads) + n_spawns) >= int(rubric["min_files_read"])
     if rubric.get("no_refusal", True):
         checks["no_refusal"] = not refused
     if rubric.get("expect_final", True):
         checks["completed"] = bool(final) and not refused
     checks["no_over_ask"] = not over_ask
+    # Findings check (Stage 3): did the review actually NAME the planted issues? This is
+    # the discriminating one — reading files isn't enough, you must catch what matters.
+    missed = _mentions_missed(final, rubric["must_mention"]) if rubric.get("must_mention") else []
+    if rubric.get("must_mention"):
+        checks["found_issues"] = not missed
 
     passed = sum(1 for v in checks.values() if v)
     return {"checks": checks, "files_read": len(reads), "tool_calls": len(tcs),
-            "refused": refused, "score": passed / (len(checks) or 1)}
+            "refused": refused, "missed_mentions": missed, "score": passed / (len(checks) or 1)}
 
 
 def score(records, rubric=None):
@@ -114,6 +139,7 @@ def score(records, rubric=None):
     n = len(per) or 1
     keys = set().union(*[set(p["checks"]) for p in per]) if per else set()
     agg = {k: all(p["checks"].get(k, True) for p in per) for k in keys}
+    missed = sorted({m for p in per for m in p.get("missed_mentions", [])})
     return {
         "score": sum(p["score"] for p in per) / n,
         "turns": per,
@@ -121,6 +147,7 @@ def score(records, rubric=None):
         "files_read": sum(p["files_read"] for p in per),
         "tool_calls": sum(p["tool_calls"] for p in per),
         "refused": any(p["refused"] for p in per),
+        "missed_mentions": missed,
     }
 
 

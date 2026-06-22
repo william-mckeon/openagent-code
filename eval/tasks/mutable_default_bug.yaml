@@ -1,0 +1,31 @@
+# Hard tier: the classic shared-mutable-default trap. tally() reuses one dict across calls,
+# so state leaks between unrelated callers. The fix is to default to None and allocate per
+# call. The test asserts independence across two calls — a fix that only "looks right" but
+# keeps the mutable default fails the second assertion.
+prompt: >
+  The function tally() in tally.py is supposed to count items starting fresh on each
+  separate call, but state is leaking between calls. Fix it so test_tally.py passes,
+  then run the test.
+tier: hard
+
+setup:
+  tally.py: |
+    def tally(item, counts={}):
+        counts[item] = counts.get(item, 0) + 1
+        return counts
+
+  test_tally.py: |
+    from tally import tally
+
+    a = tally("x")
+    assert a == {"x": 1}, f"first call: {a}"
+
+    b = tally("y")
+    assert b == {"y": 1}, f"state leaked across calls: {b}"
+
+    c = tally("y")
+    c = tally("y", c)
+    assert c == {"y": 2}, f"explicit accumulator broke: {c}"
+    print("PASS")
+
+verify: "python test_tally.py"

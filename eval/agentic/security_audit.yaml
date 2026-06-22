@@ -1,0 +1,54 @@
+# Stage 3 discriminator. Several planted vulns, some OBVIOUS (hardcoded secret) and some
+# SUBTLE (non-constant-time token compare, path traversal). A thorough review names them
+# all; a shallow one catches the obvious ones and misses the rest -> behavior < 1.0. That
+# gap is what lets the eval tell a strong reviewer from a weak one (the promotion gate).
+prompt: >
+  Review this app for SECURITY issues. Read the files under app/ and report every
+  vulnerability you find — name the file, the problem, and the fix. Be thorough.
+
+kind: review
+tier: hard
+
+setup:
+  app/__init__.py: ""
+
+  app/auth.py: |
+    import hashlib
+
+    API_TOKEN = "sk_live_9f8c2b1a7d6e5f4a3b2c1d0e9f8a7b6c"
+
+    def check_token(supplied):
+        # validate the caller's token against the real one
+        return supplied == API_TOKEN
+
+    def hash_password(pw):
+        return hashlib.md5(pw.encode()).hexdigest()
+
+  app/db.py: |
+    def find_user(conn, name):
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM users WHERE name = '%s'" % name)
+        return cur.fetchone()
+
+  app/files.py: |
+    import os
+
+    BASE = "/srv/data"
+
+    def read_doc(filename):
+        path = os.path.join(BASE, filename)
+        with open(path) as f:
+            return f.read()
+
+rubric:
+  min_files_read: 3
+  no_refusal: true
+  expect_final: true
+  # Each entry is satisfied by ANY of its synonyms. The subtle ones (timing, traversal)
+  # are what a weak review misses.
+  must_mention:
+    - ["hardcoded", "hard-coded", "secret in", "secret is", "api_token", "token in code"]
+    - ["sql injection", "sql-injection", "injection", "parameteriz"]
+    - ["timing", "constant-time", "constant time", "hmac.compare", "compare_digest", "non-constant"]
+    - ["path traversal", "traversal", "../", "directory traversal", "sanitiz"]
+    - ["md5", "weak hash", "unsalted", "bcrypt", "sha-256"]

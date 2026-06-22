@@ -53,3 +53,9 @@ rubric:
   min_files_read: 3
   no_refusal: true
   expect_final: true
+  # The setup plants a hardcoded DB credential (db.py) and a silently-swallowed exception
+  # (utils.py). A real review — even when delegated to subagents — must surface them in the
+  # synthesis. Tests the whole decompose -> summarize -> synthesize path end to end.
+  must_mention:
+    - ["credential", "password", "dsn", "hardcoded", "secret", "creds in code"]
+    - ["swallow", "silently", "silent", "suppress", "ignores the error", "bare except"]

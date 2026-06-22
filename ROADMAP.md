@@ -205,6 +205,10 @@ gated stages**, not one blob:
    `us-east-1`. The gate also surfaced + fixed two flywheel-critical harness bugs (grep glob in
    `tools.py`, dropped `reasoning_content` in `planner.py` that made gpt-oss loop on multi-step tasks).
 3. **Harden the eval** — a discriminating tier so the promotion gate can actually move off 100%.
+   **✅ BUILT (2026-06-21):** findings-based behavior scoring (`must_mention`), task tiers
+   (smoke/core/hard) + per-tier reporting, a `hard` tier (`security_audit`, tricky verify
+   tasks), delegation-aware depth, gate verdict. Discriminates by construction; the 120b
+   teacher saturates it (expected) — a weaker student will reveal the gap (validated in Stage 6).
 4. **Capture + curate** the corpus from the 120b teacher (no new code; `convert.py`).
 5. **`train/sft.py`** — the trainer + data bridge (the one real build; LoRA, single GPU).
 6. **Distill → eval-gate → serve (vLLM) → swap** (one `.env` line). Gate: student ≥ base.

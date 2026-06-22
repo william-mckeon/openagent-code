@@ -59,7 +59,13 @@ for the boto3 path). The whole `src/` harness is otherwise untouched.
    between tool calls and looped on multi-step tasks (`src/planner.py`). `multi_file_rename`:
    failing 4/4 → passing 3/3.
    *(Standalone payoff: escapes the RunPod cold-start/500 pain immediately.)*
-3. **Harden the eval.** Add a discriminating task tier. Gate: the suite stops reading 100%.
+3. **Harden the eval. ✅ BUILT (2026-06-21).** Findings-based behavior scoring
+   (`rubric.must_mention`), task `tier`s (smoke/core/hard) with per-tier reporting, a `hard`
+   tier (e.g. `security_audit` with subtle planted vulns), delegation-aware depth, and a gate
+   verdict line. The eval now discriminates BY CONSTRUCTION (a shallow review scores below a
+   sharp one — unit-proven). Honest caveat: the **120b teacher saturates it** (15/15 verify,
+   1.00 behavior incl. the hard tier) — expected for a frontier teacher; the resolution exists
+   to expose a WEAKER student, validated when the first student runs (Stage 6).
    *(Prerequisite for trusting anything downstream — a blind gate makes distillation meaningless.)*
 4. **Capture + curate the corpus.** Run the 120b teacher across diverse tasks → `convert.py`.
    No new code. Gate: a clean dataset of N rows.
@@ -72,7 +78,8 @@ for the boto3 path). The whole `src/` harness is otherwise untouched.
 
 - [x] gpt-oss-120b reachable on Bedrock via boto3 (Bedrock API-key bearer token), `check_native_toolcalls` `[OK]`.
 - [x] `reasoning_effort=high` reaches the Bedrock teacher (provider-aware passing).
-- [ ] The eval discriminates (pass-rate can fall below 100%; behavior score is meaningful).
+- [x] The eval discriminates BY CONSTRUCTION (findings checks + hard tier; a shallow review
+      scores below a sharp one). The 120b teacher saturates it — a weaker student will reveal the gap.
 - [ ] A captured + curated corpus exists (`train/dataset/sft.jsonl`, behavior-gated).
 - [ ] `train/sft.py` turns those rows into a student checkpoint (LoRA on a single GPU).
 - [ ] The distilled student, served via vLLM and swapped in (`CODE_API_BASE`), **meets or beats
