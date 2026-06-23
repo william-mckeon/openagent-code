@@ -74,8 +74,11 @@ for the boto3 path). The whole `src/` harness is otherwise untouched.
    pool (`train/tasks/*.yaml`, distinct from the eval gate) + `train/capture.py` (runs the
    teacher → `trajectories/corpus/`) + the **train/eval firewall** in `convert.py` (excludes
    `trajectories/eval/` — no teaching to the test). First batch: 8/8 tasks captured, 319 gate
-   trajectories firewalled out, **1,131 clean behavior-gated rows**. *Scaling up = more
-   `train/tasks/` + `--repeat` passes; the gate (clean dataset of N rows) is met and grows.*
+   trajectories firewalled out, **1,131 clean behavior-gated rows**. **Pool scaled to 18 diverse
+   tasks** (implement / fix-a-bug / add-a-feature across string, data-structure, parsing, and math
+   domains — all distinct from the eval gate). Lock/grow the corpus with `python -m train.capture
+   --repeat N` then `python -m train.convert`; the gate (clean dataset of N rows, eval-decontaminated)
+   holds and grows per pass.
 5. **The trainer — `train/sft.py`.** Gate: SFT a tiny student → checkpoint → eval runs on it.
 6. **Distill → gate → serve → swap.** Tier-1 student. Gate: distilled student ≥ base on the
    (now-discriminating) eval, served via vLLM, swapped in with one `.env` line.

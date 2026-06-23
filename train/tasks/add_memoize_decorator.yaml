@@ -1,0 +1,30 @@
+# Corpus task (add-a-feature: a decorator, without breaking existing code).
+prompt: >
+  mathutil.py has slow_square(). Add a memoize decorator that caches a single-argument
+  function's results by its argument (so a repeated call doesn't re-run the body). Do not
+  change slow_square. Make test_mathutil.py pass, then run it.
+
+setup:
+  mathutil.py: |
+    def slow_square(x):
+        return x * x
+
+  test_mathutil.py: |
+    from mathutil import slow_square, memoize
+
+    calls = {"n": 0}
+
+    @memoize
+    def f(x):
+        calls["n"] += 1
+        return x * x
+
+    assert f(3) == 9
+    assert f(3) == 9
+    assert calls["n"] == 1          # second call served from cache
+    assert f(4) == 16
+    assert calls["n"] == 2
+    assert slow_square(5) == 25     # untouched
+    print("PASS")
+
+verify: "python test_mathutil.py"

@@ -1,0 +1,32 @@
+# Corpus task (fix-a-bug: off-by-one boundary). The loop condition `lo < hi` should be
+# `lo <= hi`, so it misses a target that lands when the window narrows to a single index
+# (e.g. the last element). It terminates — just returns -1 wrongly.
+prompt: >
+  bsearch() in search.py returns -1 for some values that ARE in the sorted list (e.g. the
+  last element). Fix the boundary bug so test_search.py passes, then run it.
+
+setup:
+  search.py: |
+    def bsearch(arr, target):
+        lo, hi = 0, len(arr) - 1
+        while lo < hi:
+            mid = (lo + hi) // 2
+            if arr[mid] == target:
+                return mid
+            if arr[mid] < target:
+                lo = mid + 1
+            else:
+                hi = mid - 1
+        return -1
+
+  test_search.py: |
+    from search import bsearch
+
+    arr = [1, 3, 5, 7, 9]
+    assert bsearch(arr, 5) == 2
+    assert bsearch(arr, 1) == 0
+    assert bsearch(arr, 9) == 4
+    assert bsearch(arr, 4) == -1
+    print("PASS")
+
+verify: "python test_search.py"

@@ -1,0 +1,17 @@
+# Corpus task (implement: string casing).
+prompt: >
+  Create casing.py with to_camel(s) converting a snake_case string to camelCase: the first
+  word stays lowercase and each later word is capitalized ("foo_bar_baz" -> "fooBarBaz"). A
+  single word is returned unchanged. Make test_casing.py pass, then run it.
+
+setup:
+  test_casing.py: |
+    from casing import to_camel
+
+    assert to_camel("foo_bar") == "fooBar"
+    assert to_camel("hello_world_again") == "helloWorldAgain"
+    assert to_camel("single") == "single"
+    assert to_camel("a_b_c") == "aBC"
+    print("PASS")
+
+verify: "python test_casing.py"

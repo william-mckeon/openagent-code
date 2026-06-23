@@ -1,0 +1,16 @@
+# Corpus task (implement: slicing, edge cases).
+prompt: >
+  Create chunk.py with chunk(items, n) that splits a list into consecutive sublists of length
+  n (the last may be shorter). Assume n >= 1. Make test_chunk.py pass, then run it.
+
+setup:
+  test_chunk.py: |
+    from chunk import chunk
+
+    assert chunk([1, 2, 3, 4, 5], 2) == [[1, 2], [3, 4], [5]]
+    assert chunk([1, 2, 3], 3) == [[1, 2, 3]]
+    assert chunk([1, 2, 3, 4], 1) == [[1], [2], [3], [4]]
+    assert chunk([], 2) == []
+    print("PASS")
+
+verify: "python test_chunk.py"

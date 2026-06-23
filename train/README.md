@@ -8,7 +8,9 @@
 
 The converter only makes rows from runs that already happened. `capture.py` is what
 **spins the flywheel**: it points the teacher (whatever `.env` selects — gpt-oss-120b on
-Bedrock) at the diverse training pool in `train/tasks/*.yaml` and captures every run.
+Bedrock) at the diverse training pool in `train/tasks/*.yaml` (18 tasks to start —
+implement / fix-a-bug / add-a-feature across string, data-structure, parsing, math) and
+captures every run. Add more tasks freely; they must stay distinct from `eval/`.
 
 ```bash
 python -m train.capture            # one pass over train/tasks/

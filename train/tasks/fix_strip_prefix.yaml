@@ -1,0 +1,22 @@
+# Corpus task (fix-a-bug: str.strip vs prefix removal). strip(prefix) removes any leading/
+# trailing CHARACTERS in `prefix`, not the prefix string — a classic Python footgun.
+prompt: >
+  strip_prefix(s, prefix) in paths.py is meant to remove `prefix` from the START of s only,
+  but it uses str.strip() and mangles the string (stripping characters from both ends). Fix
+  it to remove the prefix only when s starts with it. Make test_paths.py pass, then run it.
+
+setup:
+  paths.py: |
+    def strip_prefix(s, prefix):
+        return s.strip(prefix)
+
+  test_paths.py: |
+    from paths import strip_prefix
+
+    assert strip_prefix("foofoo", "foo") == "foo"
+    assert strip_prefix("test_test", "test") == "_test"
+    assert strip_prefix("hello", "xyz") == "hello"
+    assert strip_prefix("data", "") == "data"
+    print("PASS")
+
+verify: "python test_paths.py"

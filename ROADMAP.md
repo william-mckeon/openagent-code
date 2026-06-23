@@ -187,7 +187,31 @@ Build order TBD when we get here; rough priority is compaction → subagents fir
    → overview), don't overclaim coverage (only describe files actually opened), and "this
    project" means the workspace, not a folder discussed earlier.
 
-~5 of these = a *foundational* agent; all 8 = broad agent-capability parity.
+9. **Review at scale + scope safety (the orchestrator)** ✅ BUILT (2026-06-22/23, commits
+   `8a418cf` → `8109e85`). Driven by repeated live "review the whole project" failures that each
+   died at a *different* wall (out of steps → half-done → context overflow → 131k `BadRequestError`).
+   The fix was **deterministic orchestration, not more prompting**:
+   - **`review_repo` + `src/orchestrator.py`** — the HARNESS splits the repo and reviews each area in
+     a bounded child, returning summaries the lead synthesizes, so the lead never holds the whole repo
+     (can't overflow). The agentic part: the model proposes the `areas` plan; a `_balance_plan`
+     guardrail collapses root-file spam and **guarantees every top-level folder (esp. `src/`) is reviewed**.
+   - **`tree`** (one-call map), **synthesis-on-`max_steps`**, **non-interactive children** (can't hijack
+     the REPL), per-message cap + **non-retryable** BadRequest/context-overflow (overflow safety),
+     `search`/`glob` aliases, `CODE_MAX_STEPS` 25→50.
+   - **Read-only reviews + secret guardrails** — a review REPORTS, never edits/creates/runs or touches
+     `.env`; `.env` edits are `ask`-gated; no confabulation. (Added after the agent "redacted" the live
+     Bedrock token in `.env` during a review and broke auth.)
+
+**Deferred — Phase 4 is NOT fully closed (don't forget these):**
+- **Hooks** (item 6, pass 2) — programmable `PreToolUse`/`PostToolUse`. The deterministic enforcement
+  layer; the `.env`-overwrite incident is its motivating case. The engine already exposes one `decide()`
+  seam for it. **The main open Phase-4 item.**
+- **Mid-task interrupt** (item 4) — Ctrl-C steering (needs concurrency).
+- **MCP transports** (item 5) — HTTP/SSE (stdio only today); npx servers need a custom Docker image.
+- **Memory pruning / auto-extraction** (item 7).
+
+~5 of these = a *foundational* agent; all 8 = broad agent-capability parity. Items 1-8 cores + item 9
+are built; **hooks are the notable gap.**
 
 ### Phase 5 — the distillation flywheel (make the MODEL)  → specs/0005-distillation.md
 The harness is built; this phase produces the *model*. Use the flywheel + a strong teacher
@@ -214,9 +238,20 @@ gated stages**, not one blob:
    `train/tasks/` (training pool, separate from the eval gate) + `train/capture.py` (teacher →
    `trajectories/corpus/`) + a train/eval **firewall** in `convert.py` (excludes the gate). First
    batch: 8/8 captured, 319 gate trajectories excluded, 1,131 clean rows. Scale via more tasks + `--repeat`.
-5. **`train/sft.py`** — the trainer + data bridge (the one real build; LoRA, single GPU).
-6. **Distill → eval-gate → serve (vLLM) → swap** (one `.env` line). Gate: student ≥ base.
-7. **Close the loop** — deployed student generates more trajectories → retrain.
+5. **`train/sft.py`** — the trainer + data bridge (the one real build; LoRA, single GPU). ❌ NEXT.
+6. **Distill → eval-gate → serve (vLLM) → swap** (one `.env` line). Gate: student ≥ base. ❌
+7. **Close the loop** — deployed student generates more trajectories → retrain. ❌
+
+**◆ WHERE WE STAND (2026-06-23).** The RunPod→Bedrock migration is DONE and the harness is robust +
+agentic; the flywheel is HALF-built. The whole effort = a **12-part upgrade**:
+*Migration:* (1) Bedrock teacher · (2) message-shaping + error classification · (3) turn rollback ·
+(4) cross-platform + quiet startup. *Harness bugs it exposed:* (5) grep glob · (6) reasoning_content
+preservation. *Agentic reach:* (7) decomposition + tree + synthesis · (8) the review_repo orchestrator.
+*Safety:* (9) read-only reviews + secret guardrails. *Flywheel:* (10) discriminating eval · (11) corpus
+capture + train/eval firewall · (12) the gated 7-stage plan + docs. **Parts 1-12 are built/committed;
+flywheel Stages 1-4 ✅** (teacher 13/13, eval discriminates, corpus pipeline + first 1,131 rows).
+**Stage 5 (`train/sft.py`) is the next real build — it needs a GPU.** Loose ends before/around it:
+finish Stage 4 (scale the corpus beyond the starter 8 tasks), and the deferred Phase-4 **hooks** pass.
 
 The only genuine code is `train/sft.py` + the one `model.py` reasoning tweak; the whole `src/`
 harness is otherwise the reusable body the student steps into. Caveats (in the spec): distillation

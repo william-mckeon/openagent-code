@@ -1,0 +1,17 @@
+# Corpus task (implement: stack-based parsing/evaluation).
+prompt: >
+  Create rpn.py with evaluate(expr) that evaluates a space-separated reverse-Polish-notation
+  expression with operators + - * / over integer operands (use float division for /). Make
+  test_rpn.py pass, then run it.
+
+setup:
+  test_rpn.py: |
+    from rpn import evaluate
+
+    assert evaluate("3 4 +") == 7
+    assert evaluate("5 1 2 + 4 * + 3 -") == 14
+    assert evaluate("10 2 /") == 5.0
+    assert evaluate("2 3 4 * +") == 14
+    print("PASS")
+
+verify: "python test_rpn.py"

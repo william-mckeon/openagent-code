@@ -1,0 +1,19 @@
+# Corpus task (implement: grouping, order preservation).
+prompt: >
+  Create groupby.py with group_by(items, key) where items is a list of dicts. Return a dict
+  mapping each distinct value of item[key] to the list of items that have it, preserving the
+  original order. Make test_groupby.py pass, then run it.
+
+setup:
+  test_groupby.py: |
+    from groupby import group_by
+
+    data = [{"t": "a", "n": 1}, {"t": "b", "n": 2}, {"t": "a", "n": 3}]
+    assert group_by(data, "t") == {
+        "a": [{"t": "a", "n": 1}, {"t": "a", "n": 3}],
+        "b": [{"t": "b", "n": 2}],
+    }
+    assert group_by([], "t") == {}
+    print("PASS")
+
+verify: "python test_groupby.py"

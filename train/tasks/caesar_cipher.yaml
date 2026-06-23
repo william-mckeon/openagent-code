@@ -1,0 +1,18 @@
+# Corpus task (implement: string transform, case + non-letters preserved, round-trip).
+prompt: >
+  Create cipher.py with encode(text, shift) and decode(text, shift) implementing a Caesar
+  cipher over ASCII letters only — preserve case, leave non-letters unchanged, and
+  decode(encode(t, k), k) == t. Make test_cipher.py pass, then run it.
+
+setup:
+  test_cipher.py: |
+    from cipher import encode, decode
+
+    assert encode("abc", 1) == "bcd"
+    assert encode("xyz", 3) == "abc"
+    assert encode("Hello, World!", 5) == "Mjqqt, Btwqi!"
+    assert decode("Mjqqt, Btwqi!", 5) == "Hello, World!"
+    assert decode(encode("Round-Trip 42", 13), 13) == "Round-Trip 42"
+    print("PASS")
+
+verify: "python test_cipher.py"
