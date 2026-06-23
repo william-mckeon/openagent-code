@@ -14,4 +14,4 @@ Four layers, each a stable interface to the next:
   4. trajectory.py every session -> schema-versioned JSONL (the flywheel fuel)
 """
 
-__version__ = "0.1.0"
+__version__ = "0.6.0"

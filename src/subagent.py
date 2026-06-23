@@ -65,9 +65,13 @@ def run_subagent(task, parent_ctx):
         parent_session_id=parent_ctx.session_id,
         depth=child_depth,   # tool_schemas defaults to the active toolset
     )
+    # Children are ALWAYS non-interactive, even from a REPL: a spawned worker reviewing one
+    # folder must never prompt the human (ask_user degrades to "no human - proceed"). Inheriting
+    # the parent's interactive flag let a child hijack the REPL with "Could you specify the path?"
+    # mid-review. The human talks to the lead; children just do their bounded task and report.
     child_ctx = make_context(parent_ctx.cwd, parent_ctx.permissions, traj.session_id,
                              depth=child_depth, verbose=parent_ctx.verbose,
-                             interactive=parent_ctx.interactive)
+                             interactive=False)
     if parent_ctx.verbose:
         print(f"  [subagent depth={child_depth}] {task[:70]}")
 

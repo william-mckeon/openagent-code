@@ -31,6 +31,20 @@ from .prompts import SUMMARIZE_PROMPT
 litellm.modify_params = True
 
 
+def _non_retryable(e):
+    """True for errors that retrying can't fix — a 400 BadRequest or a context-window
+    overflow. Re-sending the identical oversized/malformed request only fails again, so we
+    raise immediately rather than backing off through every retry."""
+    name = type(e).__name__.lower()
+    if "badrequest" in name or "contextwindow" in name or "invalidrequest" in name:
+        return True
+    msg = str(e).lower()
+    return any(s in msg for s in (
+        "context length", "maximum context", "context window", "input is too long",
+        "input length", "too many tokens", "exceeds the maximum", "maximum allowed",
+    ))
+
+
 def _reasoning_kwargs():
     """Provider-aware reasoning_effort. The LiteLLM `bedrock/` provider takes it as a
     TOP-LEVEL param (it maps to additionalModelRequestFields), where extra_body is ignored;
@@ -102,7 +116,11 @@ class Model:
                 resp = litellm.completion(**kwargs)
                 latency_ms = (time.time() - t0) * 1000
             except Exception as e:
-                if last:
+                # A 400 / context-window-exceeded is NOT transient: re-sending the same
+                # oversized or malformed request just fails again. Fail FAST instead of
+                # burning every retry (we watched a context overflow waste ~55s over 6
+                # retries). Transient errors (timeout, 5xx, connection) still back off.
+                if last or _non_retryable(e):
                     raise
                 self._backoff(attempt, type(e).__name__)
                 continue

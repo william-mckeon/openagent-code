@@ -48,9 +48,26 @@ class ContextManager:
             self.working = list(initial_working)
 
     def add(self, message):
-        """Append one message. Logged raw (never compacted) and added to the live set."""
-        self.working.append(message)
+        """Append one message. Logged raw (never compacted) and added to the live set.
+
+        The TRAJECTORY gets the full raw message (capture is lossless); the LIVE working set
+        gets a size-capped copy, so no single tool result — a huge file read, a long subagent
+        return — can dominate the window and defeat compaction (which keeps recent messages
+        verbatim). This is the per-message half of staying under the model's hard limit; the
+        review_repo orchestrator handles the whole-repo case at the source."""
         self.traj.log_turn(message)
+        self.working.append(self._capped(message))
+
+    def _capped(self, message):
+        limit = config.MAX_MESSAGE_CHARS
+        content = message.get("content")
+        if not limit or not isinstance(content, str) or len(content) <= limit:
+            return message
+        trimmed = dict(message)
+        trimmed["content"] = (content[:limit]
+                              + f"\n...[truncated {len(content) - limit} chars to fit the live "
+                                "context; the full text is preserved in the trajectory]")
+        return trimmed
 
     def mark(self):
         """Snapshot the live working-set length so a failed turn can be rolled back to a

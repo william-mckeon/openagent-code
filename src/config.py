@@ -185,6 +185,13 @@ def permission_extra_roots() -> list:
 COMPACT_AT_TOKENS = int(os.environ.get("CODE_COMPACT_AT_TOKENS", "16000"))
 COMPACT_KEEP_RECENT = int(os.environ.get("CODE_COMPACT_KEEP_RECENT", "8"))
 
+# CODE_MAX_MESSAGE_CHARS — cap on a SINGLE message's content in the LIVE context (the full
+# text is still logged raw to the trajectory). Stops one giant tool result (a huge file read,
+# a long subagent return) from dominating the window and defeating compaction — which keeps
+# recent messages verbatim and so can't shrink a huge recent one. ~48k chars ≈ 12k tokens.
+# 0 disables the cap.
+MAX_MESSAGE_CHARS = int(os.environ.get("CODE_MAX_MESSAGE_CHARS", "48000"))
+
 # CODE_MAX_SUBAGENT_DEPTH — how deep spawn_agent can nest (Phase 4).
 #   0 = subagents disabled, 1 = one level (top-level agent may spawn, children
 #   may not), 2 = children may spawn too, etc. Enforced at the spawn_agent tool.
@@ -196,6 +203,11 @@ MAX_SUBAGENT_DEPTH = int(os.environ.get("CODE_MAX_SUBAGENT_DEPTH", "2"))
 # alone doesn't bound cost: an agent told to "decompose" could otherwise spawn an
 # unbounded number of subagents. Caps the fan-out per agent. Enforced at spawn_agent.
 MAX_SUBAGENT_FANOUT = int(os.environ.get("CODE_MAX_SUBAGENT_FANOUT", "8"))
+
+# CODE_MAX_REVIEW_AREAS — fan-out cap for the review_repo orchestrator specifically. Higher
+# than MAX_SUBAGENT_FANOUT (which guards ad-hoc spawning) because a whole-repo review wants
+# to cover EVERY top-level area, and each child is bounded and returns only a short summary.
+MAX_REVIEW_AREAS = int(os.environ.get("CODE_MAX_REVIEW_AREAS", "16"))
 
 # -----------------------------------------------------------------------------
 # External tools (Phase 4 tool breadth) — these reach OFF the machine, so they

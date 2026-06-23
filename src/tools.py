@@ -110,8 +110,13 @@ def _glob_match(rel, fn, pat):
 
 
 def grep(args, ctx):
+    # Accept 'query' as an alias for 'pattern' so the `search` tool (and the model's frequent
+    # instinct to call search(query=...)) maps straight onto grep.
+    raw = args.get("pattern") or args.get("query") or ""
+    if not raw:
+        return ToolResult(False, "grep/search needs a 'pattern' (or 'query') to search for.")
     try:
-        pattern = re.compile(args["pattern"])
+        pattern = re.compile(raw)
     except re.error as e:
         return ToolResult(False, f"Invalid regex: {e}")
     root = _abs(ctx, args.get("path", "."))
@@ -139,8 +144,10 @@ def grep(args, ctx):
 
 def glob_tool(args, ctx):
     root = _abs(ctx, args.get("path", "."))
+    # Accept 'glob' as an alias for 'pattern' — the model often calls glob(glob='**/*').
+    pattern = args.get("pattern") or args.get("glob") or "*"
     hits = []
-    for h in globlib.glob(os.path.join(root, args["pattern"]), recursive=True):
+    for h in globlib.glob(os.path.join(root, pattern), recursive=True):
         rel = _rel(ctx, h)
         # Skip heavy/noise dirs (same set grep uses) so a broad pattern like '**/*'
         # doesn't return the whole repo (trajectories/, .venv, __pycache__, ...) and
@@ -402,6 +409,10 @@ def web_search(args, ctx):
 
 # ---------------------------------------------------------------- registry
 
+# Imported here (not at top) so orchestrator.py can import ToolResult from this module
+# without a circular import — ToolResult is defined above by now.
+from .orchestrator import review_repo  # noqa: E402
+
 TOOLS = [
     {
         "name": "read_file", "fn": read_file,
@@ -420,6 +431,17 @@ TOOLS = [
             "path": {"type": "string"},
             "glob": {"type": "string"},
         }, "required": ["pattern"]},
+    },
+    {
+        # Alias of grep — the model reliably reaches for a 'search' tool; give it one instead of
+        # a wasted failed call. fn is grep itself (it accepts 'query' as an alias for 'pattern').
+        "name": "search", "fn": grep,
+        "description": "Search file contents for a query (regex). Same as grep. Optional path/glob.",
+        "parameters": {"type": "object", "properties": {
+            "query": {"type": "string"},
+            "path": {"type": "string"},
+            "glob": {"type": "string"},
+        }, "required": ["query"]},
     },
     {
         "name": "glob", "fn": glob_tool,
@@ -502,6 +524,28 @@ TOOLS = [
         "parameters": {"type": "object", "properties": {
             "task": {"type": "string", "description": "A complete, standalone instruction for the subagent."},
         }, "required": ["task"]},
+    },
+    {
+        "name": "review_repo", "fn": review_repo,
+        "description": ("Review a whole project / many folders at once. It reviews each area in a "
+                        "bounded child agent and returns their summaries — so you never read the "
+                        "whole repo into your own context (which overflows it). Call this ONCE for "
+                        "any 'review the whole project' request instead of reading files yourself; "
+                        "then synthesize the summaries it returns. YOU choose the carve-up: pass "
+                        "'areas' to decide how to partition the work (by folder, by concern, "
+                        "grouping or skipping as you see fit, each with its own focus) — or omit it "
+                        "to auto-split by top-level folder. Optional 'focus' and 'path'."),
+        "parameters": {"type": "object", "properties": {
+            "path": {"type": "string", "description": "subtree to review (default: whole workspace)"},
+            "focus": {"type": "string", "description": "optional lens applied to every area, e.g. 'security'"},
+            "areas": {"type": "array",
+                      "description": "OPTIONAL: your partition of the work — the harness runs exactly "
+                                     "this plan, one bounded child per area. Omit to auto-split by folder.",
+                      "items": {"type": "object", "properties": {
+                          "scope": {"type": "string", "description": "what this child reviews, e.g. 'src/' or 'eval/ and train/ (the training side)'"},
+                          "focus": {"type": "string", "description": "optional emphasis for this area"},
+                      }, "required": ["scope"]}},
+        }, "required": []},
     },
     {
         "name": "request_dir", "fn": request_dir,
