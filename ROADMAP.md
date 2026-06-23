@@ -210,7 +210,10 @@ gated stages**, not one blob:
    tasks), delegation-aware depth, gate verdict. Discriminates by construction; plus a
    calibrated edge task (`security_audit_hard`) the 120b fails ~1/3 of runs (a missed ReDoS),
    so the teacher no longer reliably reads 100%. A weaker student reveals the full gap (Stage 6).
-4. **Capture + curate** the corpus from the 120b teacher (no new code; `convert.py`).
+4. **Capture + curate** the corpus from the 120b teacher. **✅ PIPELINE BUILT (2026-06-22):**
+   `train/tasks/` (training pool, separate from the eval gate) + `train/capture.py` (teacher →
+   `trajectories/corpus/`) + a train/eval **firewall** in `convert.py` (excludes the gate). First
+   batch: 8/8 captured, 319 gate trajectories excluded, 1,131 clean rows. Scale via more tasks + `--repeat`.
 5. **`train/sft.py`** — the trainer + data bridge (the one real build; LoRA, single GPU).
 6. **Distill → eval-gate → serve (vLLM) → swap** (one `.env` line). Gate: student ≥ base.
 7. **Close the loop** — deployed student generates more trajectories → retrain.

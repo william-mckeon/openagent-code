@@ -1,0 +1,22 @@
+# Corpus task (fix-a-bug: str.title() mishandles apostrophes -> "Don'T"). Implement a correct
+# title-casing that only capitalizes the first letter of each whitespace-separated word.
+prompt: >
+  titlecase(s) in textcase.py uses str.title(), which wrongly capitalizes letters after an
+  apostrophe (e.g. "don't" -> "Don'T"). Fix it so only the first letter of each
+  whitespace-separated word is capitalized. Make test_textcase.py pass, then run it.
+
+setup:
+  textcase.py: |
+    def titlecase(s):
+        return s.title()
+
+  test_textcase.py: |
+    from textcase import titlecase
+
+    assert titlecase("hello world") == "Hello World"
+    assert titlecase("don't stop") == "Don't Stop"
+    assert titlecase("o'brien's car") == "O'brien's Car"
+    assert titlecase("") == ""
+    print("PASS")
+
+verify: "python test_textcase.py"

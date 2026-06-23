@@ -1,0 +1,19 @@
+# Corpus task (implement-from-scratch). Distinct from the eval gate. The agent must create
+# roman.py to satisfy a test it reads.
+prompt: >
+  Create roman.py with a function to_roman(n) that converts an integer in 1..3999 to its
+  Roman numeral string. Make test_roman.py pass, then run the test.
+
+setup:
+  test_roman.py: |
+    from roman import to_roman
+
+    assert to_roman(4) == "IV"
+    assert to_roman(9) == "IX"
+    assert to_roman(40) == "XL"
+    assert to_roman(58) == "LVIII"
+    assert to_roman(1994) == "MCMXCIV"
+    assert to_roman(3888) == "MMMDCCCLXXXVIII"
+    print("PASS")
+
+verify: "python test_roman.py"

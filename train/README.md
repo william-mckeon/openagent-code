@@ -4,6 +4,24 @@
 > converter below is **Phase 2**; the self-containment **gate** (Phase 3) must
 > land before any agent-capability / toolset change.
 
+## Capture the corpus — `train/capture.py`  (Stage 4)
+
+The converter only makes rows from runs that already happened. `capture.py` is what
+**spins the flywheel**: it points the teacher (whatever `.env` selects — gpt-oss-120b on
+Bedrock) at the diverse training pool in `train/tasks/*.yaml` and captures every run.
+
+```bash
+python -m train.capture            # one pass over train/tasks/
+python -m train.capture --repeat 3 # N passes (temperature>0 -> varied trajectories)
+```
+
+Each task runs in a throwaway sandbox with its `verify` command, and the trajectory lands
+in **`trajectories/corpus/`** — deliberately separate from `trajectories/eval/`. That is the
+**train/eval firewall**: `train/tasks/` (corpus, trained on) and `eval/tasks/` + `eval/agentic/`
+(the held-out gate, judged) are different task sets in different trajectory dirs, and
+`convert.py` excludes the gate dir. Keep them disjoint — a task that appears in both is a
+data leak that quietly inflates your gate. Then run `python -m train.convert` to curate.
+
 ## The converter — `train/convert.py`
 
 Turns captured trajectories into SFT rows. "Makes every run count."
@@ -13,7 +31,9 @@ python -m train.convert
 ```
 
 What it does:
-1. reads every `trajectories/**/*.jsonl`;
+1. reads every `trajectories/**/*.jsonl` **except the held-out eval gate**
+   (`trajectories/eval/` is excluded — training on it would be teaching to the test;
+   the count of excluded gate trajectories is reported as `excluded_eval_gate`);
 2. **filters** to trainable sessions — `outcome ∈ {success, completed}`,
    verification ok (when present), at least one tool call, AND a **behavior gate**
    (drops `refusal` runs — "narrow the scope" deflections — via `eval/rubric.py`, so

@@ -38,9 +38,20 @@ from src import config  # noqa: E402  (for SFT_VIEW)
 from eval import rubric  # noqa: E402  (behavior gate — specs/0004-agentic-evals.md)
 
 TRAJ_GLOB = os.path.join(ROOT, "trajectories", "**", "*.jsonl")
+# TRAIN/EVAL FIREWALL: the eval suite is the HELD-OUT promotion gate. Converting its
+# trajectories would train the student on the very tasks we judge it by — teaching to the
+# test, which makes the gate meaningless (specs/0005). So any trajectory under
+# trajectories/eval/ is excluded from the corpus. EVERY other run still counts.
+EVAL_TRAJ_DIR = os.path.normpath(os.path.join(ROOT, "trajectories", "eval"))
 OUT_DIR = os.path.join(ROOT, "train", "dataset")
 OUT_FILE = os.path.join(OUT_DIR, "sft.jsonl")
 REPORT_FILE = os.path.join(OUT_DIR, "report.json")
+
+
+def _is_eval_trajectory(path):
+    """True if `path` lives under trajectories/eval/ (the held-out gate)."""
+    ap = os.path.normpath(os.path.abspath(path))
+    return ap.startswith(EVAL_TRAJ_DIR + os.sep)
 
 KEEP_OUTCOMES = {"success", "completed"}
 CURRENT_TOOLS = openai_schemas(TOOLS)
@@ -171,7 +182,10 @@ def to_rows(records, view):
 
 
 def main():
-    files = sorted(glob.glob(TRAJ_GLOB, recursive=True))
+    all_files = sorted(glob.glob(TRAJ_GLOB, recursive=True))
+    # Firewall: drop the held-out eval gate before anything else (no silent contamination).
+    files = [p for p in all_files if not _is_eval_trajectory(p)]
+    excluded_eval = len(all_files) - len(files)
     rows, dropped, schema_src = [], {}, {"logged": 0, "reattached": 0}
     versions = set()
     kept_sessions = 0
@@ -207,6 +221,7 @@ def main():
         "sft_view": config.SFT_VIEW,
         "row_unit": "per_step",
         "total_sessions": len(files),
+        "excluded_eval_gate": excluded_eval,
         "sessions_kept": kept_sessions,
         "rows_written": len(rows),
         "dropped": dropped,
@@ -227,7 +242,8 @@ def main():
     with open(REPORT_FILE, "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2)
 
-    print(f"SFT convert | sessions={len(files)} kept={kept_sessions} -> rows={len(rows)} (per-step)")
+    print(f"SFT convert | corpus={len(files)} (excluded {excluded_eval} eval-gate) "
+          f"kept={kept_sessions} -> rows={len(rows)} (per-step)")
     if dropped:
         print("dropped: " + ", ".join(f"{k}={v}" for k, v in sorted(dropped.items())))
     print(f"tool schemas: {schema_src['reattached']} reattached, {schema_src['logged']} logged")

@@ -1,0 +1,17 @@
+# Corpus task (implement-from-scratch: string parsing + edge cases).
+prompt: >
+  Create querystring.py with a function parse_qs(s) that parses a URL query string like
+  "a=1&b=2&b=3&flag" into a dict. Repeated keys collect into a list; a bare key with no '='
+  maps to "". Make test_querystring.py pass, then run it.
+
+setup:
+  test_querystring.py: |
+    from querystring import parse_qs
+
+    assert parse_qs("a=1&b=2") == {"a": "1", "b": "2"}
+    assert parse_qs("b=2&b=3") == {"b": ["2", "3"]}
+    assert parse_qs("flag") == {"flag": ""}
+    assert parse_qs("") == {}
+    print("PASS")
+
+verify: "python test_querystring.py"

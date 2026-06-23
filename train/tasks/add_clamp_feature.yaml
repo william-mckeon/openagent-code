@@ -1,0 +1,22 @@
+# Corpus task (add-a-feature to an existing module without breaking it).
+prompt: >
+  numutil.py already has scale(). Add a new function clamp(x, lo, hi) that returns x bounded
+  to the [lo, hi] range (lo if x < lo, hi if x > hi, else x). Don't change scale(). Make
+  test_numutil.py pass, then run it.
+
+setup:
+  numutil.py: |
+    def scale(x, factor):
+        return x * factor
+
+  test_numutil.py: |
+    from numutil import scale, clamp
+
+    assert scale(3, 2) == 6
+    assert clamp(5, 0, 10) == 5
+    assert clamp(-3, 0, 10) == 0
+    assert clamp(99, 0, 10) == 10
+    assert clamp(10, 0, 10) == 10
+    print("PASS")
+
+verify: "python test_numutil.py"

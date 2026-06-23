@@ -1,0 +1,28 @@
+# Corpus task (fix-a-bug: condition ordering). The 15-case must be checked first, but this
+# checks 3 and 5 before 15, so multiples of 15 never reach "FizzBuzz".
+prompt: >
+  fizzbuzz(n) in fizzbuzz.py is supposed to return "FizzBuzz" for multiples of 15, but it's
+  returning "Fizz" instead. Fix the logic so test_fizzbuzz.py passes, then run it.
+
+setup:
+  fizzbuzz.py: |
+    def fizzbuzz(n):
+        if n % 3 == 0:
+            return "Fizz"
+        if n % 5 == 0:
+            return "Buzz"
+        if n % 15 == 0:
+            return "FizzBuzz"
+        return str(n)
+
+  test_fizzbuzz.py: |
+    from fizzbuzz import fizzbuzz
+
+    assert fizzbuzz(1) == "1"
+    assert fizzbuzz(3) == "Fizz"
+    assert fizzbuzz(5) == "Buzz"
+    assert fizzbuzz(15) == "FizzBuzz"
+    assert fizzbuzz(30) == "FizzBuzz"
+    print("PASS")
+
+verify: "python test_fizzbuzz.py"

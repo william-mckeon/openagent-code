@@ -1,0 +1,18 @@
+# Corpus task (implement-from-scratch: text processing, case-insensitive, ignore punctuation).
+prompt: >
+  Create wordfreq.py with a function top_words(text, k) that returns the k most frequent
+  words as a list of (word, count) tuples, highest count first. Words are case-insensitive
+  and stripped of surrounding punctuation; ties break alphabetically. Make test_wordfreq.py
+  pass, then run it.
+
+setup:
+  test_wordfreq.py: |
+    from wordfreq import top_words
+
+    text = "The cat sat. The CAT ran; the dog sat!"
+    assert top_words(text, 2) == [("the", 3), ("cat", 2)]
+    assert top_words(text, 1) == [("the", 3)]
+    assert top_words("", 3) == []
+    print("PASS")
+
+verify: "python test_wordfreq.py"

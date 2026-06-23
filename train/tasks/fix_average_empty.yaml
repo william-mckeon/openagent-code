@@ -1,0 +1,20 @@
+# Corpus task (fix-a-bug: division by zero). average() crashes on []; should return 0.0.
+prompt: >
+  average() in stats.py raises ZeroDivisionError on an empty list. Fix it so an empty list
+  returns 0.0 while keeping the existing behavior for non-empty lists. Make test_stats.py
+  pass, then run it.
+
+setup:
+  stats.py: |
+    def average(nums):
+        return sum(nums) / len(nums)
+
+  test_stats.py: |
+    from stats import average
+
+    assert average([2, 4, 6]) == 4.0
+    assert average([10]) == 10.0
+    assert average([]) == 0.0
+    print("PASS")
+
+verify: "python test_stats.py"

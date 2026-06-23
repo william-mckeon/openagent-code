@@ -39,7 +39,9 @@ from src import config  # noqa: E402
 EVAL_TRAJ_DIR = os.path.join(ROOT, "trajectories", "eval")
 
 
-def run_task(task_path):
+def run_task(task_path, traj_dir=EVAL_TRAJ_DIR):
+    # traj_dir defaults to the eval dir (gate behavior unchanged); train/capture.py passes
+    # trajectories/corpus/ so corpus runs stay physically separate from the held-out gate.
     name = os.path.basename(task_path)
     spec = yaml.safe_load(open(task_path, encoding="utf-8"))
     sandbox = tempfile.mkdtemp(prefix="openagent-code-eval-")
@@ -51,8 +53,8 @@ def run_task(task_path):
             with open(fp, "w", encoding="utf-8") as f:
                 f.write(content)
 
-        # Trajectory persists outside the sandbox so the eval batch survives.
-        traj = Trajectory(EVAL_TRAJ_DIR, spec["prompt"], config.MODEL, sandbox)
+        # Trajectory persists outside the sandbox so the batch survives.
+        traj = Trajectory(traj_dir, spec["prompt"], config.MODEL, sandbox)
         # Force bypass: eval runs headless and must auto-approve to exercise the agent.
         ctx = make_context(sandbox, Permissions.from_config(mode_override="bypass"),
                            traj.session_id, depth=0, verbose=False)

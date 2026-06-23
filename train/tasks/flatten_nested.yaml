@@ -1,0 +1,17 @@
+# Corpus task (implement-from-scratch: recursion). Flatten arbitrarily nested lists.
+prompt: >
+  Create flatten.py with a function flatten(items) that returns a flat list of all elements
+  from an arbitrarily nested list of lists, preserving left-to-right order. Non-list elements
+  pass through. Make test_flatten.py pass, then run it.
+
+setup:
+  test_flatten.py: |
+    from flatten import flatten
+
+    assert flatten([1, [2, 3], [[4], 5]]) == [1, 2, 3, 4, 5]
+    assert flatten([]) == []
+    assert flatten([[[[1]]], 2]) == [1, 2]
+    assert flatten(["a", ["b", ["c"]]]) == ["a", "b", "c"]
+    print("PASS")
+
+verify: "python test_flatten.py"
