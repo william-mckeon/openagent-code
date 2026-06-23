@@ -12,7 +12,9 @@
 
   "ask": [
     "run_command(git push:*)",
-    "run_command(git commit:*)"
+    "run_command(git commit:*)",
+    "edit_file(.env)",
+    "write_file(.env)"
   ],
 
   "allow": [

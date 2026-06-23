@@ -15,13 +15,24 @@ CODE_MODEL / CODE_API_BASE examples (see src/config.py and .env.example):
     CODE_MODEL=bedrock/openai.gpt-oss-120b-1:0
     CODE_API_BASE=            # unset; Bedrock uses AWS_* credentials
 """
+import os
 import random
 import time
+
+# Use LiteLLM's BUNDLED model-cost map instead of fetching it from GitHub on import. The
+# remote fetch phones raw.githubusercontent.com at startup and times out when the network is
+# offline/slow — adding launch latency and a scary warning to a self-hosted tool that should
+# never need GitHub to start. MUST be set BEFORE `import litellm`.
+os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
 
 import litellm
 
 from . import config
 from .prompts import SUMMARIZE_PROMPT
+
+# Quiet LiteLLM's third-party noise: it prints a "Give Feedback / Get Help: <github url>"
+# banner on every error/retry, which clutters our own clean retry logs. Behavior unchanged.
+litellm.suppress_debug_info = True
 
 # Let LiteLLM reshape the message list to each provider's rules. Bedrock's Converse API
 # requires strict user<->assistant alternation, and maps tool-results to user-side blocks;

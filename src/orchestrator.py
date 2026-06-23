@@ -61,6 +61,43 @@ def _degenerate_scope(scope):
                  "repo", "root", "the codebase", "codebase")
 
 
+def _is_root_file(scope, root):
+    """True if `scope` names a single file at the repo root (e.g. '.gitignore', 'LICENSE').
+    These should NOT each get their own review child — collapsing them frees the fan-out
+    budget for the folders (esp. src/)."""
+    s = scope.strip().strip("/")
+    return "/" not in s and os.path.isfile(os.path.join(root, s))
+
+
+def _balance_plan(units, root, focus):
+    """Make the model's `areas` plan safe to execute without dropping the actual code.
+
+    Two guardrails, because 'review the source' is a must-not-fail, not a style preference:
+      1. Collapse many individual ROOT-FILE areas into ONE 'root files' area — a plan that
+         gives .dockerignore / LICENSE / pyproject.toml each their own child burns the
+         fan-out cap on trivia and never reaches src/ (observed live).
+      2. Ensure EVERY top-level folder is covered — append any directory the plan skipped, so
+         the code can't be left unreviewed regardless of how the model partitioned.
+    Folders sort ahead of the single root-files bucket, so if the cap still bites, the
+    substance survives. The model keeps its agency (grouping + per-area focus); the harness
+    just guarantees completeness."""
+    file_units = [u for u in units if _is_root_file(u[0], root)]
+    rest = [u for u in units if not _is_root_file(u[0], root)]
+    if len(file_units) > 1:
+        names = ", ".join(u[0] for u in file_units)
+        rest.append(("the root-level files",
+                     f"Review ONLY these root files (do not enter subfolders): {names}.", focus))
+    else:
+        rest += file_units  # 0 or 1 explicit root file — leave as the model asked
+    dirs, _ = _areas(root)
+    covered = " ".join(u[0].lower() for u in rest)
+    for d in dirs:
+        if d.lower() not in covered:
+            rest.append((f"{d}/", f"Review ONLY the files under '{d}/'.", focus))
+    rest.sort(key=lambda u: u[0] == "the root-level files")  # root-files bucket last
+    return rest
+
+
 def _child_task(area_label, scope_line, focus):
     focus_clause = f"Focus specifically on {focus}. " if focus else ""
     return (
@@ -119,6 +156,8 @@ def review_repo(args, ctx):
                 units.append((scope, f"Review this part of the repo: {scope}. Do NOT read "
                                      f"anything outside that scope.", area_focus))
         if units:
+            # Balance the plan: collapse root-file spam, guarantee every folder is covered.
+            units = _balance_plan(units, root, focus)
             source = "your plan"
 
     if not units:
@@ -164,7 +203,8 @@ def review_repo(args, ctx):
                  f"synthesizing ALL {len(summaries)} summaries above — do not let one area (e.g. "
                  f"src/) crowd out the rest. Give a one-line take on EACH area, then the overall "
                  f"architecture and the top cross-cutting findings. Do NOT call read_file / tree / "
-                 f"grep / review_repo again: the children already covered the files, and re-reading "
-                 f"them is what overflows your context. Your next reply must be the finished review, "
-                 f"as a clean report, with no tool calls.")
+                 f"grep / spawn_agent / review_repo again: the children already covered the files, "
+                 f"and re-reading or re-delegating only wastes budget and overflows your context. "
+                 f"This is a REVIEW — report findings only; do not edit, create, or run anything. "
+                 f"Your next reply must be the finished review, as a clean report, with no tool calls.")
     return ToolResult(True, "\n".join(parts), {"areas": len(summaries)})
