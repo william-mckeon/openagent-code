@@ -78,6 +78,16 @@ def _flatten(messages):
     return "\n".join(out)
 
 
+def _ids(out):
+    """Normalize apply_chat_template(tokenize=True) to a bare list of ids. transformers <5
+    returns a list; transformers 5.x returns a dict/BatchEncoding ({input_ids, attention_mask}).
+    Without this, len() counts the 2 dict KEYS, the prompt mask collapses, and every row is
+    dropped as "no trainable examples"."""
+    if isinstance(out, dict) or hasattr(out, "keys"):
+        return list(out["input_ids"])
+    return list(out)
+
+
 def build_example(tokenizer, row, max_len):
     """THE BRIDGE: one row -> {input_ids, labels, attention_mask} with the PROMPT masked
     (-100) so loss falls only on the agent's action. Returns None if there's nothing to
@@ -87,10 +97,10 @@ def build_example(tokenizer, row, max_len):
     completion = _as_assistant(row.get("completion") or {})
 
     try:
-        prompt_ids = tokenizer.apply_chat_template(
-            messages, tools=tools, add_generation_prompt=True, tokenize=True)
-        full_ids = tokenizer.apply_chat_template(
-            messages + [completion], tools=tools, add_generation_prompt=False, tokenize=True)
+        prompt_ids = _ids(tokenizer.apply_chat_template(
+            messages, tools=tools, add_generation_prompt=True, tokenize=True))
+        full_ids = _ids(tokenizer.apply_chat_template(
+            messages + [completion], tools=tools, add_generation_prompt=False, tokenize=True))
     except Exception:
         # Template can't render tool_calls -> flat-text fallback.
         prompt_text = _flatten(messages) + "\nassistant: "
