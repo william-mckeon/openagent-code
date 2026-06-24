@@ -253,9 +253,13 @@ preservation. *Agentic reach:* (7) decomposition + tree + synthesis · (8) the r
 *Safety:* (9) read-only reviews + secret guardrails. *Flywheel:* (10) discriminating eval · (11) corpus
 capture + train/eval firewall · (12) the gated 7-stage plan + docs. **Parts 1-12 are built/committed;
 flywheel Stages 1-5 ✅ BUILT** (teacher 13/13, eval discriminates, corpus pipeline + 18-task pool,
-and `train/sft.py` — data bridge + LoRA-SFT + `--smoke`, verified). **The next step is EXECUTION on a
-GPU:** run `train/sft.py` on gpt-oss-20b to make the first student, then Stage 6 (distill → gate →
-serve → swap) and Stage 7 (close the loop). Loose ends: grow the corpus, and the deferred Phase-4 **hooks** pass.
+and `train/sft.py` — data bridge + LoRA-SFT + `--smoke`, verified). **Execution runs LOCALLY on the
+GPU, in Docker** — `docker/train/Dockerfile` (CUDA 12.8 / cu128, Blackwell-ready, ported from the proven
+boenet pattern) + `train`/`train-smoke` compose services give a clean Linux env that sidesteps the host's
+Windows DLL block + torch/peft version clash. Not RunPod, not Bedrock (both are inference, not training).
+**Next: `docker compose build train` → `train-smoke` (CPU proof) → the real `--gpus` run on gpt-oss-20b**,
+then Stage 6 (distill → gate → serve → swap) and Stage 7 (close the loop). Loose ends: grow the corpus,
+and the deferred Phase-4 **hooks** pass.
 
 The only genuine code is `train/sft.py` + the one `model.py` reasoning tweak; the whole `src/`
 harness is otherwise the reusable body the student steps into. Caveats (in the spec): distillation

@@ -83,8 +83,11 @@ for the boto3 path). The whole `src/` harness is otherwise untouched.
    (`build_example`): render each row's `messages + completion` via the tokenizer's chat template
    (with the row's tools) and **mask the prompt** so loss is completion-only (clone the *decisions*).
    Heavy deps lazy-imported (file imports without `[train]`); a **`--smoke`** path (tiny model, few
-   steps) proves the pipeline anywhere. Verified: masking correct, lazy-guard graceful. Gate: run
-   `--smoke` to checkpoint, then a real Tier-1 (gpt-oss-20b) LoRA run on a single GPU → eval on it.
+   steps) proves the pipeline anywhere. Verified: masking correct, lazy-guard graceful. **Execution =
+   local GPU in Docker:** `docker/train/Dockerfile` (CUDA 12.8 / cu128, Blackwell-ready, ported from
+   boenet) + `train`/`train-smoke` compose services — a clean Linux env that sidesteps the Windows host's
+   numpy-DLL block + torch/peft version clash (training is GPU work; Bedrock/RunPod are inference). Gate:
+   `docker compose run train-smoke` to checkpoint, then a real Tier-1 (gpt-oss-20b) LoRA run on the GPU.
 6. **Distill → gate → serve → swap.** Tier-1 student. Gate: distilled student ≥ base on the
    (now-discriminating) eval, served via vLLM, swapped in with one `.env` line.
 7. **Close the flywheel.** Deployed student → more trajectories → recapture → retrain. Ongoing.

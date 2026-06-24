@@ -77,6 +77,35 @@ pip install -e ".[train]"          # + a CUDA torch build for that machine
 python -m train.sft --model openai/gpt-oss-20b --epochs 1 --out train/checkpoints/student --load-4bit
 ```
 
+### Run it in Docker (recommended — clean Linux env on your local GPU)
+
+The training stack (torch+CUDA, bitsandbytes) is brittle to install on a host, and Windows
+can block the numpy DLLs. So train in a container instead — a clean Linux env on your **local
+NVIDIA GPU** (no RunPod, no cloud). The image (`docker/train/Dockerfile`, CUDA 12.8 / cu128,
+Blackwell-ready) and two compose services are provided. `train/`, the dataset, checkpoints, and
+`trajectories/` are **mounted**, so editing a task or `sft.py` needs no rebuild.
+
+```bash
+docker compose build train                      # build once (heavy: CUDA + torch + the [train] extra)
+
+# prove the loop on CPU (tiny model, few steps) — no GPU needed:
+docker compose run --rm train-smoke
+
+# the real run on your GPU (NVIDIA Container Toolkit / Docker Desktop+WSL2 required):
+docker compose run --rm train \
+    python -m train.sft --model openai/gpt-oss-20b --epochs 1 --load-4bit
+
+# long run, detached (survives terminal close), then follow the logs:
+docker compose run -d --name oac_train train \
+    python -m train.sft --model openai/gpt-oss-20b --epochs 1 --load-4bit
+docker logs -f oac_train
+```
+
+Windows PowerShell uses the same commands (Docker Desktop + WSL2 passes the GPU through).
+Checkpoints land in the mounted `train/checkpoints/` on the host. Adjust the CUDA/torch
+versions in `docker/train/Dockerfile` if your card isn't Blackwell (an Ampere/Ada card can use a
+cu124 wheel).
+
 **The data bridge** (`build_example`): each row's `messages + completion` is rendered through
 the tokenizer's chat template (with the row's `tools`), and the **prompt is masked (-100)** so
 loss falls only on the agent's ACTION — we clone the *decisions*, not the user/tool text

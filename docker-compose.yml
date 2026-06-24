@@ -62,3 +62,50 @@ services:
 
     # One-shot CLI: no ports, no restart policy, no network. Pass the task as
     # the command:  docker compose run --rm openagent-code "your task here".
+
+  # --------------------------------------------------------------------------
+  # train — GPU LoRA-SFT of the student (distillation Stage 5/6, specs/0005).
+  # Runs train/sft.py in a clean CUDA Linux container on a LOCAL NVIDIA GPU, which
+  # sidesteps the host's Windows DLL block + torch/peft version clash.
+  #   docker compose build train
+  #   docker compose run --rm train python -m train.sft --model openai/gpt-oss-20b --epochs 1 --load-4bit
+  # The trainer code + data are MOUNTED, so editing sft.py or adding tasks needs no rebuild.
+  # --------------------------------------------------------------------------
+  train: &train-base
+    build:
+      context: .
+      dockerfile: docker/train/Dockerfile
+    image: openagent-code-train:latest
+    container_name: openagent-code-train
+    env_file:
+      - .env                      # capture/convert need the teacher; sft ignores it
+    shm_size: "8gb"
+    # Pass the local NVIDIA GPU into the container (NVIDIA Container Toolkit required).
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    volumes:
+      - ./src:/app/src            # live code (no rebuild on change)
+      - ./eval:/app/eval          # convert.py imports eval.rubric
+      - ./train:/app/train        # sft.py, tasks, dataset, checkpoints
+      - ./trajectories:/app/trajectories
+      - training-cache:/app/.cache  # HF/model downloads persist across runs
+    command: python -m train.sft --help
+
+  # train-smoke — same image, NO GPU: proves the pipeline on CPU (tiny model, few steps).
+  train-smoke:
+    <<: *train-base
+    container_name: openagent-code-train-smoke
+    shm_size: "2gb"
+    deploy: {}                    # no GPU reservation — CPU run
+    command: python -m train.sft --smoke
+
+# Named volume for the HuggingFace / model cache, so the student base (and tokenizer)
+# download once and persist across training runs instead of every container.
+volumes:
+  training-cache:
+    name: openagent-code-training-cache
