@@ -51,6 +51,11 @@ train = [
     "accelerate>=0.33.0",
     "datasets>=2.14.0",
     "bitsandbytes>=0.43.0",
+    # torch is listed for completeness, but install the CUDA build matching your GPU box
+    # separately (PyPI's default is CPU-only; bitsandbytes/4-bit needs CUDA).
+    "torch>=2.1.0",
+    "sentencepiece>=0.1.99",   # tokenizer backend for many models
+    "protobuf>=3.20",          # some tokenizers load via protobuf
 ]
 
 # `openagent-code` -> src/cli.py:main(). The function returns an exit code, which

@@ -63,6 +63,33 @@ changes the toolset, or reattachment corrupts older trajectories. See `ROADMAP.m
 
 ---
 
+## The trainer — `train/sft.py`  (Stage 5)
+
+Turns the curated `sft.jsonl` rows into a **student checkpoint** by LoRA-SFT. The one real
+code build in the distillation plan; everything else is the reusable harness.
+
+```bash
+# smoke: tiny model + a few steps — proves the pipeline end to end (even CPU), no big GPU
+python -m train.sft --smoke
+
+# real Tier-1 run on a GPU box (install the extra there first)
+pip install -e ".[train]"          # + a CUDA torch build for that machine
+python -m train.sft --model openai/gpt-oss-20b --epochs 1 --out train/checkpoints/student --load-4bit
+```
+
+**The data bridge** (`build_example`): each row's `messages + completion` is rendered through
+the tokenizer's chat template (with the row's `tools`), and the **prompt is masked (-100)** so
+loss falls only on the agent's ACTION — we clone the *decisions*, not the user/tool text
+(completion-only SFT). Tokenizers whose template can't render tool-calls fall back to a flat-text
+rendering, so the smoke path runs on any model. Heavy deps are imported lazily, so the file
+imports without the `[train]` extra; it just won't *train* until you install it on a GPU box.
+
+**Serve + swap (Stage 6).** Merge the LoRA adapter into the base, serve the merged model on
+**vLLM** (OpenAI-compatible), and swap it into the agent with the existing one-liner — set
+`CODE_MODEL=openai/<your-student>` and `CODE_API_BASE=http://localhost:8000/v1` in `.env`. Then
+run `python -m eval.harness`: promote the student only if it **meets or beats** the base on the
+verify pass-rate AND the behavior score (the gate, now discriminating — see `specs/0005`).
+
 ## The training ladder (downstream of the converter)
 
 You don't train until you have a few hundred good trajectories in `trajectories/`.

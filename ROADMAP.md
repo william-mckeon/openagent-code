@@ -238,7 +238,10 @@ gated stages**, not one blob:
    `train/tasks/` (training pool, separate from the eval gate) + `train/capture.py` (teacher →
    `trajectories/corpus/`) + a train/eval **firewall** in `convert.py` (excludes the gate). First
    batch: 8/8 captured, 319 gate trajectories excluded, 1,131 clean rows. Scale via more tasks + `--repeat`.
-5. **`train/sft.py`** — the trainer + data bridge (the one real build; LoRA, single GPU). ❌ NEXT.
+5. **`train/sft.py`** — the trainer + data bridge (the one real build; LoRA, single GPU).
+   **✅ BUILT (2026-06-23):** completion-only LoRA-SFT; the `build_example` data bridge masks the
+   prompt so loss is on the agent's action; heavy deps lazy-imported; a `--smoke` path proves the
+   pipeline anywhere (verified: masking + graceful guard). Remaining = the real Tier-1 GPU run.
 6. **Distill → eval-gate → serve (vLLM) → swap** (one `.env` line). Gate: student ≥ base. ❌
 7. **Close the loop** — deployed student generates more trajectories → retrain. ❌
 
@@ -249,9 +252,10 @@ agentic; the flywheel is HALF-built. The whole effort = a **12-part upgrade**:
 preservation. *Agentic reach:* (7) decomposition + tree + synthesis · (8) the review_repo orchestrator.
 *Safety:* (9) read-only reviews + secret guardrails. *Flywheel:* (10) discriminating eval · (11) corpus
 capture + train/eval firewall · (12) the gated 7-stage plan + docs. **Parts 1-12 are built/committed;
-flywheel Stages 1-4 ✅** (teacher 13/13, eval discriminates, corpus pipeline + first 1,131 rows).
-**Stage 5 (`train/sft.py`) is the next real build — it needs a GPU.** Loose ends before/around it:
-finish Stage 4 (scale the corpus beyond the starter 8 tasks), and the deferred Phase-4 **hooks** pass.
+flywheel Stages 1-5 ✅ BUILT** (teacher 13/13, eval discriminates, corpus pipeline + 18-task pool,
+and `train/sft.py` — data bridge + LoRA-SFT + `--smoke`, verified). **The next step is EXECUTION on a
+GPU:** run `train/sft.py` on gpt-oss-20b to make the first student, then Stage 6 (distill → gate →
+serve → swap) and Stage 7 (close the loop). Loose ends: grow the corpus, and the deferred Phase-4 **hooks** pass.
 
 The only genuine code is `train/sft.py` + the one `model.py` reasoning tweak; the whole `src/`
 harness is otherwise the reusable body the student steps into. Caveats (in the spec): distillation

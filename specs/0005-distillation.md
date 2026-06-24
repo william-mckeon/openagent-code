@@ -79,7 +79,12 @@ for the boto3 path). The whole `src/` harness is otherwise untouched.
    domains — all distinct from the eval gate). Lock/grow the corpus with `python -m train.capture
    --repeat N` then `python -m train.convert`; the gate (clean dataset of N rows, eval-decontaminated)
    holds and grows per pass.
-5. **The trainer — `train/sft.py`.** Gate: SFT a tiny student → checkpoint → eval runs on it.
+5. **The trainer — `train/sft.py`. ✅ BUILT (2026-06-23).** LoRA-SFT with a **data bridge**
+   (`build_example`): render each row's `messages + completion` via the tokenizer's chat template
+   (with the row's tools) and **mask the prompt** so loss is completion-only (clone the *decisions*).
+   Heavy deps lazy-imported (file imports without `[train]`); a **`--smoke`** path (tiny model, few
+   steps) proves the pipeline anywhere. Verified: masking correct, lazy-guard graceful. Gate: run
+   `--smoke` to checkpoint, then a real Tier-1 (gpt-oss-20b) LoRA run on a single GPU → eval on it.
 6. **Distill → gate → serve → swap.** Tier-1 student. Gate: distilled student ≥ base on the
    (now-discriminating) eval, served via vLLM, swapped in with one `.env` line.
 7. **Close the flywheel.** Deployed student → more trajectories → recapture → retrain. Ongoing.
@@ -92,7 +97,8 @@ for the boto3 path). The whole `src/` harness is otherwise untouched.
       scores below a sharp one). The 120b teacher saturates it — a weaker student will reveal the gap.
 - [x] A captured + curated corpus exists (`train/dataset/sft.jsonl`, behavior-gated, eval-decontaminated).
       Pipeline: `train/tasks/` → `train/capture.py` → `trajectories/corpus/` → `convert.py` (firewalls the gate).
-- [ ] `train/sft.py` turns those rows into a student checkpoint (LoRA on a single GPU).
+- [x] `train/sft.py` turns those rows into a student checkpoint (LoRA on a single GPU). Built +
+      verified (data-bridge masking, `--smoke` path); the real Tier-1 GPU run is the execution step.
 - [ ] The distilled student, served via vLLM and swapped in (`CODE_API_BASE`), **meets or beats
       the base student** on the eval — verify pass-rate AND behavior score.
 - [x] The agent is provider-agnostic. (Stage 2 touched 3 `src/` files, not the 1 planned: the

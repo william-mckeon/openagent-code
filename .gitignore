@@ -23,6 +23,8 @@ workspace/
 
 # Converter output — derived from trajectories, same code/prompt content.
 train/dataset/
+# Trained student checkpoints / LoRA adapters — large weights, regenerable from the data.
+train/checkpoints/
 
 # Cross-session memory (Phase 4 #7) — a per-project notes file the agent writes,
 # only present if CODE_MEMORY is on and openagent-code is pointed at this repo.
