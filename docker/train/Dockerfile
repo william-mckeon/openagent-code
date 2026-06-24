@@ -59,7 +59,9 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 # extra means the extra's `torch>=2.1` is already satisfied, so pip won't yank a
 # CPU build over the CUDA one (the exact failure mode we hit on the host).
 ARG PYTORCH_VERSION
-RUN pip install --no-cache-dir torch==${PYTORCH_VERSION} \
+# --retries/--timeout: the cu128 torch wheel is ~2.5GB; a mid-stream connection drop
+# (IncompleteRead) otherwise fails the whole build. Retry hard.
+RUN pip install --no-cache-dir --retries 10 --timeout 600 torch==${PYTORCH_VERSION} \
     --index-url https://download.pytorch.org/whl/cu128
 RUN python -c "import torch; print('torch', torch.__version__, '| cuda', torch.version.cuda)"
 
@@ -69,7 +71,7 @@ WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY src ./src
 COPY eval ./eval
-RUN pip install --no-cache-dir -e ".[train]"
+RUN pip install --no-cache-dir --retries 10 --timeout 600 -e ".[train]"
 RUN python -c "import transformers, peft, datasets, accelerate; print('train stack OK')"
 
 # ----------------------------------------------------------------------------
