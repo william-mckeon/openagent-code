@@ -1,5 +1,5 @@
 # =============================================================================
-# oac — run openagent-code on the CURRENT directory, from anywhere.
+# oac - run openagent-code on the CURRENT directory, from anywhere.
 # =============================================================================
 # openagent-code self-locates its config (.env) and centralizes its data (trajectories,
 # logs) into the OpenCode project dir, so it works from ANY repo. This wrapper just invokes
@@ -28,7 +28,7 @@ $OacExe = Join-Path $OacRoot ".venv\Scripts\openagent-code.exe"
 
 function oac {
     if (-not (Test-Path $OacExe)) {
-        Write-Error "openagent-code not found at $OacExe — run 'pip install -e .' in $OacRoot first."
+        Write-Error "openagent-code not found at $OacExe - run 'pip install -e .' in $OacRoot first."
         return
     }
     & $OacExe @args
