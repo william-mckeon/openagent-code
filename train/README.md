@@ -113,11 +113,38 @@ loss falls only on the agent's ACTION — we clone the *decisions*, not the user
 rendering, so the smoke path runs on any model. Heavy deps are imported lazily, so the file
 imports without the `[train]` extra; it just won't *train* until you install it on a GPU box.
 
-**Serve + swap (Stage 6).** Merge the LoRA adapter into the base, serve the merged model on
-**vLLM** (OpenAI-compatible), and swap it into the agent with the existing one-liner — set
-`CODE_MODEL=openai/<your-student>` and `CODE_API_BASE=http://localhost:8000/v1` in `.env`. Then
-run `python -m eval.harness`: promote the student only if it **meets or beats** the base on the
-verify pass-rate AND the behavior score (the gate, now discriminating — see `specs/0005`).
+## Stage 6 — merge → serve → swap → gate
+
+Once `train/sft.py` has produced an adapter, turn it into a deployed, gated student:
+
+```bash
+# 1. MERGE the LoRA adapter into the base -> a standalone model dir vLLM can serve
+docker compose run --rm train python -m train.merge --adapter train/checkpoints/student
+#    -> train/checkpoints/student-merged
+
+# 2. SERVE it locally on vLLM (OpenAI-compatible, native tool-calls), on your GPU
+docker compose up serve          # http://localhost:8000/v1, served-model-name "student"
+
+# 3. SWAP it into the agent — the one-line boundary (in .env):
+#       CODE_MODEL=openai/student
+#       CODE_API_BASE=http://localhost:8000/v1
+#       CODE_API_KEY=EMPTY
+#    (add CODE_TOOL_MODE=json if you serve without a native tool-call parser)
+
+# 4. GATE: run the eval suite against base AND student; promote only if student >= base
+#    on BOTH verify pass-rate and behavior score.
+python -m eval.compare \
+    --base-model    openai/Qwen2.5-3B-Instruct --base-api-base    http://localhost:8001/v1 \
+    --student-model openai/student             --student-api-base http://localhost:8000/v1
+```
+
+`eval.compare` prints a base-vs-student table + a **PROMOTE / KEEP BASE** verdict (exit 0 = promote).
+Only swap the student into your daily `.env` if it passes. The eval suite stays held-out from the
+training corpus (`convert.py` firewalls `trajectories/eval/`), so this gate is honest.
+
+> **Blackwell (RTX 50) serving note.** vLLM needs a cu128/sm_120 build; if the pinned
+> `vllm/vllm-openai` tag won't run on the 5080, bump `VLLM_TAG` in `docker/serve/Dockerfile`,
+> or fall back to a transformers-based server from the `docker/train` image + `CODE_TOOL_MODE=json`.
 
 ## The training ladder (downstream of the converter)
 

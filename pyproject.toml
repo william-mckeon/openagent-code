@@ -57,6 +57,13 @@ train = [
     "sentencepiece>=0.1.99",   # tokenizer backend for many models
     "protobuf>=3.20",          # some tokenizers load via protobuf
 ]
+# Serving the distilled student (Stage 6). vLLM gives an OpenAI-compatible endpoint AND
+# parses native tool-calls. Normally you serve via the docker/serve image (pinned, Blackwell-
+# tuned); this extra is for host-based serving. Heavy + CUDA-specific.
+#   pip install -e ".[serve]"
+serve = [
+    "vllm>=0.6.0",
+]
 
 # `openagent-code` -> src/cli.py:main(). The function returns an exit code, which
 # setuptools' console-script wrapper passes to sys.exit().

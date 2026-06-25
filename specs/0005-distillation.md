@@ -88,8 +88,12 @@ for the boto3 path). The whole `src/` harness is otherwise untouched.
    boenet) + `train`/`train-smoke` compose services — a clean Linux env that sidesteps the Windows host's
    numpy-DLL block + torch/peft version clash (training is GPU work; Bedrock/RunPod are inference). Gate:
    `docker compose run train-smoke` to checkpoint, then a real Tier-1 (gpt-oss-20b) LoRA run on the GPU.
-6. **Distill → gate → serve → swap.** Tier-1 student. Gate: distilled student ≥ base on the
-   (now-discriminating) eval, served via vLLM, swapped in with one `.env` line.
+6. **Distill → gate → serve → swap. ✅ INFRA BUILT (2026-06-24).** `train/merge.py` (LoRA →
+   standalone model), `docker/serve/Dockerfile` + the `serve` compose service (vLLM, OpenAI-compatible,
+   native tool-calls, local GPU), `eval/compare.py` (the promotion gate: eval base vs student → PROMOTE
+   / KEEP BASE verdict), and the STUDENT `.env` profile. Execution remaining: train a real Tier-1/Tier-2
+   student on the clean corpus → merge → serve → run the gate → swap if it wins. (Blackwell serving on
+   the 5080 may need a vLLM tag bump or the transformers fallback — see train/README.)
 7. **Close the flywheel.** Deployed student → more trajectories → recapture → retrain. Ongoing.
 
 ## Acceptance (the loop is closed)
@@ -102,8 +106,9 @@ for the boto3 path). The whole `src/` harness is otherwise untouched.
       Pipeline: `train/tasks/` → `train/capture.py` → `trajectories/corpus/` → `convert.py` (firewalls the gate).
 - [x] `train/sft.py` turns those rows into a student checkpoint (LoRA on a single GPU). Built +
       verified (data-bridge masking, `--smoke` path); the real Tier-1 GPU run is the execution step.
-- [ ] The distilled student, served via vLLM and swapped in (`CODE_API_BASE`), **meets or beats
-      the base student** on the eval — verify pass-rate AND behavior score.
+- [~] The distilled student, served via vLLM and swapped in (`CODE_API_BASE`), **meets or beats
+      the base student** on the eval — verify pass-rate AND behavior score. *Infra built
+      (`train/merge.py`, `docker/serve`, `eval/compare.py` gate); awaits the real student run.*
 - [x] The agent is provider-agnostic. (Stage 2 touched 3 `src/` files, not the 1 planned: the
       `model.py` reasoning tweak as designed, **plus** two correctness fixes the gate uncovered —
       `tools.py` grep-glob and `planner.py` reasoning-preservation. Neither is provider-specific.)

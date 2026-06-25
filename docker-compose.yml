@@ -104,6 +104,44 @@ services:
     deploy: {}                    # no GPU reservation — CPU run
     command: python -m train.sft --smoke
 
+  # --------------------------------------------------------------------------
+  # serve — the merged student on a vLLM OpenAI-compatible endpoint (Stage 6).
+  # First merge the adapter:  docker compose run --rm train python -m train.merge --adapter train/checkpoints/student
+  # then:                     docker compose up serve
+  # then point .env at it:    CODE_MODEL=openai/student   CODE_API_BASE=http://localhost:8000/v1
+  # --------------------------------------------------------------------------
+  serve:
+    build:
+      context: .
+      dockerfile: docker/serve/Dockerfile
+    image: openagent-code-serve:latest
+    container_name: openagent-code-serve
+    ports:
+      - "8000:8000"
+    shm_size: "8gb"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    volumes:
+      - ./train/checkpoints:/checkpoints       # the merged student lives here
+      - training-cache:/root/.cache            # reuse the HF cache
+    # Serve the merged student. --served-model-name is the id the agent uses (CODE_MODEL=openai/student).
+    # --tool-call-parser/--enable-auto-tool-choice make it emit OpenAI tool_calls (match the training).
+    # Tune --tool-call-parser to the student family (hermes for Qwen2.5); --max-model-len/--gpu-memory
+    # for your 16GB card. The student-merged dir comes from `python -m train.merge`.
+    command: >
+      --model /checkpoints/student-merged
+      --served-model-name student
+      --port 8000
+      --tool-call-parser hermes
+      --enable-auto-tool-choice
+      --max-model-len 8192
+      --gpu-memory-utilization 0.90
+
 # Named volume for the HuggingFace / model cache, so the student base (and tokenizer)
 # download once and persist across training runs instead of every container.
 volumes:

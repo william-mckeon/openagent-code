@@ -242,7 +242,11 @@ gated stages**, not one blob:
    **✅ BUILT (2026-06-23):** completion-only LoRA-SFT; the `build_example` data bridge masks the
    prompt so loss is on the agent's action; heavy deps lazy-imported; a `--smoke` path proves the
    pipeline anywhere (verified: masking + graceful guard). Remaining = the real Tier-1 GPU run.
-6. **Distill → eval-gate → serve (vLLM) → swap** (one `.env` line). Gate: student ≥ base. ❌
+6. **Distill → eval-gate → serve (vLLM) → swap** (one `.env` line). Gate: student ≥ base.
+   **✅ INFRA BUILT (2026-06-24):** `train/merge.py` (LoRA → standalone model), `docker/serve` +
+   the `serve` compose service (vLLM, local GPU, native tool-calls), `eval/compare.py` (base-vs-student
+   PROMOTE/KEEP verdict), STUDENT `.env` profile. Remaining = EXECUTION: train a real student on the
+   clean corpus → merge → serve → gate → swap.
 7. **Close the loop** — deployed student generates more trajectories → retrain. ❌
 
 **◆ WHERE WE STAND (2026-06-23).** The RunPod→Bedrock migration is DONE and the harness is robust +
