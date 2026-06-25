@@ -17,9 +17,19 @@ import json
 
 from dotenv import load_dotenv
 
-# Load .env for local (non-Docker) development. Under docker-compose the values
-# arrive via env_file, so this is a harmless no-op there.
+# The INSTALL ROOT — the openagent-code project dir (this file is <root>/src/config.py).
+# Everything self-locates against this so the agent runs from ANY directory: the config,
+# and the CENTRALIZED trajectory/log dirs, don't depend on the current working directory.
+# That centralization is what makes the flywheel work across projects — every run, on any
+# repo, writes its trajectory to ONE corpus (<root>/trajectories) that convert.py reads.
+INSTALL_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# Load .env so config is found no matter where you launch from. A .env in the CURRENT dir
+# wins (per-project override); the install-root .env fills the rest (your model/token).
+# Real environment variables still take precedence over both. Under docker-compose the
+# values arrive via env_file, so these file loads are harmless no-ops there.
 load_dotenv()
+load_dotenv(os.path.join(INSTALL_ROOT, ".env"), override=False)
 
 
 def _as_bool(value: str) -> bool:
@@ -259,8 +269,9 @@ def memory_file(workspace: str) -> str:
 # -----------------------------------------------------------------------------
 # Training flywheel
 #
-# CODE_TRAJECTORY_DIR  Where session JSONL is written. Relative paths resolve
-#                      against CODE_WORKSPACE.
+# CODE_TRAJECTORY_DIR  Where session JSONL is written. Relative paths resolve against the
+#                      INSTALL ROOT (not the workspace), so trajectories from every project
+#                      you run on land in ONE corpus that the flywheel trains on.
 # CODE_VERIFY_COMMAND  Objective reward signal: the command that proves a change
 #                      works in the target repo, e.g. "pytest -q". Empty = skip.
 # -----------------------------------------------------------------------------
@@ -275,9 +286,11 @@ SFT_VIEW = os.environ.get("CODE_SFT_VIEW", "raw").strip().lower()
 
 
 def trajectory_dir() -> str:
-    """Absolute trajectory dir (relative values resolve against the workspace)."""
+    """Absolute trajectory dir. Relative values resolve against the INSTALL ROOT (not the
+    workspace), so trajectories from EVERY repo you run the agent on land in ONE place —
+    the flywheel's corpus, which convert.py reads (<install>/trajectories/**)."""
     d = TRAJECTORY_DIR
-    return d if os.path.isabs(d) else os.path.join(WORKSPACE, d)
+    return d if os.path.isabs(d) else os.path.join(INSTALL_ROOT, d)
 
 
 def display_model() -> str:

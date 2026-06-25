@@ -40,9 +40,13 @@ def configure(run_name):
     if not config.LOG_DIR:
         _LOG_PATH = None
         return None
+    # Resolve a relative CODE_LOG_DIR against the INSTALL ROOT (not the CWD), so every run's
+    # log lands in ONE place — <install>/logs — regardless of which repo you launched in.
+    log_root = config.LOG_DIR if os.path.isabs(config.LOG_DIR) \
+        else os.path.join(config.INSTALL_ROOT, config.LOG_DIR)
     try:
-        os.makedirs(config.LOG_DIR, exist_ok=True)
-        path = os.path.abspath(os.path.join(config.LOG_DIR, f"{run_name}.log"))
+        os.makedirs(log_root, exist_ok=True)
+        path = os.path.abspath(os.path.join(log_root, f"{run_name}.log"))
         fh = logging.FileHandler(path, encoding="utf-8")
         fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)-7s [%(name)s] %(message)s",
                                           "%H:%M:%S"))
