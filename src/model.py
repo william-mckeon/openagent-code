@@ -29,6 +29,9 @@ import litellm
 
 from . import config
 from .prompts import SUMMARIZE_PROMPT
+from .logsetup import get_logger
+
+log = get_logger("model")
 
 # Quiet LiteLLM's third-party noise: it prints a "Give Feedback / Get Help: <github url>"
 # banner on every error/retry, which clutters our own clean retry logs. Behavior unchanged.
@@ -132,7 +135,12 @@ class Model:
                 # burning every retry (we watched a context overflow waste ~55s over 6
                 # retries). Transient errors (timeout, 5xx, connection) still back off.
                 if last or _non_retryable(e):
+                    log.error("model call failed (%s%s): %s", type(e).__name__,
+                              ", non-retryable" if _non_retryable(e) else ", retries exhausted",
+                              str(e)[:200])
                     raise
+                log.warning("model call %s (attempt %d/%d) — retrying", type(e).__name__,
+                            attempt + 1, config.MODEL_RETRIES)
                 self._backoff(attempt, type(e).__name__)
                 continue
 

@@ -17,6 +17,9 @@ made no tool calls, or stalled on the protocol, is not a success.
 """
 from .tools import ToolResult
 from .prompts import SYNTHESIS_PROMPT
+from .logsetup import get_logger
+
+log = get_logger("agent")
 
 
 class RunResult:
@@ -84,15 +87,20 @@ class Agent:
                     self.traj.log_tool_call(step, name, args, result, retry_index)
                     consecutive_fail[name] = 0 if result.ok else retry_index + 1
 
+                    flag = "deny" if not pd.allowed else ("ok" if result.ok else "FAIL")
                     if ctx.verbose:
-                        flag = "deny" if not pd.allowed else ("ok" if result.ok else "FAIL")
                         print(f"  [{flag}] {name}({_short(args)})")
+                    # Richer than the console line: include a result snippet — this is the
+                    # detail that makes the run log reviewable for bugs.
+                    log.info("step %d [%s] %s(%s) -> %s", step, flag, name, _short(args),
+                             str(result.content)[:200].replace("\n", " "))
 
                     self.cm.add(self.planner.format_result(call, result))
         except Exception:
             # The live context must never be left ending in dangling tool-results. Roll
             # back this whole turn (capture is untouched) and re-raise so the caller
             # labels the outcome — the REPL keeps the session alive on CLEAN history.
+            log.warning("turn raised at step %d — rolling back the turn", step)
             self.cm.rollback(mark)
             raise
 

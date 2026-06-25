@@ -115,6 +115,13 @@ MAX_STEPS = int(os.environ.get("CODE_MAX_STEPS", "50"))
 AUTO_APPROVE = _as_bool(os.environ.get("CODE_AUTO_APPROVE", "true"))
 VERBOSE = _as_bool(os.environ.get("CODE_VERBOSE", "true"))
 
+# CODE_LOG_DIR / CODE_LOG_LEVEL — the readable, portable SESSION LOG (src/logsetup.py): one
+# .log file per run capturing tool calls + results, retries, errors, outcomes — built to be
+# handed off for review (paste it to Claude to debug a run on any repo). Separate from the
+# trajectory (training data) and the live console UX. CODE_LOG_DIR="" disables it.
+LOG_DIR = os.environ.get("CODE_LOG_DIR", "logs")
+LOG_LEVEL = os.environ.get("CODE_LOG_LEVEL", "INFO").strip().upper()
+
 # -----------------------------------------------------------------------------
 # Permissions (Phase 4 #6) — the engine that gates every tool call. See
 # specs/0001-permissions.md for the full contract (modes, rules, fence, precedence).

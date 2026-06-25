@@ -18,6 +18,9 @@ So compaction shrinks the model's context but never what we capture.
 import json
 
 from . import config
+from .logsetup import get_logger
+
+log = get_logger("context")
 
 
 def estimate_tokens(messages):
@@ -145,5 +148,6 @@ class ContextManager:
 
         self.working = candidate
         self.traj.log_compaction(len(old), summary, before, after)
+        log.info("compacted %d msgs  ~%d->%d tok", len(old), before, after)
         if self.verbose:
             print(f"  [compact] summarized {len(old)} msgs  ~{before}->{after} tok")

@@ -21,6 +21,10 @@ trajectories/*.jsonl
 trajectories/**/*.jsonl
 workspace/
 
+# Readable per-run session logs (src/logsetup.py) — local operational records, may
+# contain code/prompts from the repos worked on. Hand-offable, not committed.
+logs/
+
 # Converter output — derived from trajectories, same code/prompt content.
 train/dataset/
 # Trained student checkpoints / LoRA adapters — large weights, regenerable from the data.

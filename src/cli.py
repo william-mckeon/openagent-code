@@ -15,11 +15,13 @@ import os
 import sys
 import subprocess
 
-from . import config
+from . import config, logsetup
 from .permissions import Permissions
 from .runtime import build_agent
 from .subagent import make_context
 from .trajectory import Trajectory
+
+log = logsetup.get_logger("cli")
 
 
 def _warn_if_empty_workspace(workspace):
@@ -80,10 +82,13 @@ def _one_shot(task, perms):
     """Autonomous single-task run: one agent loop, mandated verify, honest outcome."""
     workspace = config.WORKSPACE
     traj = Trajectory(config.trajectory_dir(), task, config.MODEL, workspace)
+    logsetup.configure(traj.session_id)
     ctx = make_context(workspace, perms, traj.session_id,
                        depth=0, verbose=config.VERBOSE, interactive=False)
     print(f"openagent-code | model={config.display_model()} | tool_mode={config.TOOL_MODE} | "
           f"mode={perms.mode} | effort={config.REASONING_EFFORT or 'default'} | workspace={workspace}")
+    log.info("one-shot start | model=%s mode=%s workspace=%s", config.display_model(), perms.mode, workspace)
+    log.info("task: %s", task)
     _warn_if_empty_workspace(workspace)
     agent = build_agent(traj, memory=_load_memory(workspace), granted_dirs=perms.extra_roots)
 
@@ -91,10 +96,13 @@ def _one_shot(task, perms):
         result = agent.run(task, ctx)
         final, terminated = result.final, result.terminated
         print("\n=== RESULT ===\n" + (final or "(no output)"))
+        log.info("result (terminated=%s): %s", terminated, (final or "(no output)")[:500])
     except Exception as e:
         traj.end("error", None, terminated="exception")
+        log.exception("one-shot FAILED: %s: %s", type(e).__name__, e)
         print(f"\n=== ERROR === {type(e).__name__}: {e}")
         print(f"\nTrajectory: {traj.path}  (outcome=error)")
+        _print_log_path()
         return 1
 
     if terminated == "nudge_exhausted":
@@ -116,8 +124,17 @@ def _one_shot(task, perms):
             outcome = "success" if ok else "verify_failed"
 
     traj.end(outcome, final, terminated=terminated)
+    log.info("one-shot end | outcome=%s tool_calls=%s", outcome, traj.tool_calls)
     print(f"\nTrajectory: {traj.path}  (outcome={outcome}, tool_calls={traj.tool_calls})")
+    _print_log_path()
     return 0 if outcome in ("success", "completed") else 1
+
+
+def _print_log_path():
+    """Tell the user where the readable run log is — the file to hand off for a review."""
+    p = logsetup.log_path()
+    if p:
+        print(f"Run log: {p}  (hand this to a reviewer / Claude to debug the run)")
 
 
 _MODES = {"default", "acceptEdits", "plan", "bypass"}
@@ -158,6 +175,7 @@ def _run_session(traj, agent, ctx):
     print(f"openagent-code REPL | model={config.display_model()} | mode={ctx.permissions.mode} | "
           f"effort={config.REASONING_EFFORT or 'default'} | workspace={ctx.cwd}")
     print("Type a task and press enter. Commands: /exit  /plan  /add-dir <path>  /mode <name>")
+    log.info("REPL start | model=%s mode=%s workspace=%s", config.display_model(), ctx.permissions.mode, ctx.cwd)
     turns = 0
     try:
         while True:
@@ -179,23 +197,29 @@ def _run_session(traj, agent, ctx):
                 _repl_set_mode(ctx, user[len("/mode"):])
                 continue
             turns += 1
+            log.info("turn %d | you> %s", turns, user)
             try:
                 result = agent.run(user, ctx)
             except Exception as e:
                 # A model error (500, context overflow, a flaky worker) must NOT kill the
                 # REPL — end the turn with a message and keep the session alive.
+                log.exception("turn %d FAILED: %s: %s", turns, type(e).__name__, e)
                 print(f"\n[error] that turn failed: {type(e).__name__}: {str(e)[:200]}\n"
                       "(the session is still alive — try again, rephrase, or /exit)")
                 continue
             if result.final:
                 print("\n" + result.final)
+                log.info("turn %d result: %s", turns, result.final[:500])
             else:
+                log.warning("turn %d produced no output (dropped response?)", turns)
                 print("\n(no output — the model may have dropped the response, often a cold/"
                       "flaky endpoint. Try again; the warm-up should recover it.)")
     finally:
         traj.end("completed" if traj.tool_calls else "no_action", None, terminated="session_end")
+        log.info("REPL end | %d turn(s) tool_calls=%s", turns, traj.tool_calls)
         print(f"\nsession ended ({turns} turn(s)). resume later with:"
               f"  python -m src --resume {traj.session_id}")
+        _print_log_path()
     return 0
 
 
@@ -203,6 +227,7 @@ def _repl(perms):
     """Fresh interactive session."""
     workspace = config.WORKSPACE
     traj = Trajectory(config.trajectory_dir(), "(interactive session)", config.MODEL, workspace)
+    logsetup.configure(traj.session_id)
     ctx = make_context(workspace, perms, traj.session_id,
                        depth=0, verbose=config.VERBOSE, interactive=True)
     agent = build_agent(traj, memory=_load_memory(workspace), granted_dirs=perms.extra_roots)
@@ -218,6 +243,7 @@ def _resume_repl(session_id, perms):
     except FileNotFoundError as e:
         print(f"ERROR: {e}")
         return 1
+    logsetup.configure(traj.session_id)
     print(f"resumed session {session_id}")
     return _run_session(traj, agent, ctx)
 
