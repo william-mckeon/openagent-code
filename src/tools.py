@@ -71,7 +71,8 @@ def _rel(ctx, path):
     return rel.replace(os.sep, "/")
 
 
-_SKIP_DIRS = {".git", "__pycache__", "node_modules", ".venv", "trajectories"}
+# The directory skip-list now lives in config (ONE source of truth shared with the review
+# orchestrator) — see config.SKIP_DIRS / skip_walk_dir / skip_rel_path.
 
 
 # ---------------------------------------------------------------- read-only
@@ -80,8 +81,24 @@ def read_file(args, ctx):
     path = _abs(ctx, args["path"])
     offset = int(args.get("offset", 0))
     limit = int(args.get("limit", 2000))
+    # A directory is not a missing file: say so precisely, or the model retries the same path
+    # (it read 'File not found' as a typo and thrashed on pkg/sumdb in a live run).
+    if os.path.isdir(path):
+        return ToolResult(False, f"{args['path']} is a DIRECTORY, not a file — list it with "
+                                 f"tree or glob, then read a file inside it.")
     if not os.path.isfile(path):
         return ToolResult(False, f"File not found: {path}")
+    # Binary guard: a NUL byte in the first chunk means this isn't text (PDF, image, compiled
+    # artifact). Reading it as text returns mojibake the model would then 'review' — refuse
+    # with a clear reason so it doesn't waste turns re-reading the same unreadable file.
+    try:
+        with open(path, "rb") as fb:
+            head = fb.read(8192)
+    except OSError as e:
+        return ToolResult(False, f"Could not read {args['path']}: {e}")
+    if b"\x00" in head:
+        return ToolResult(False, f"{args['path']} looks like a BINARY file "
+                                 f"({os.path.getsize(path)} bytes) — it isn't readable as text.")
     with open(path, encoding="utf-8", errors="replace") as f:
         lines = f.readlines()
     chunk = lines[offset:offset + limit]
@@ -123,7 +140,7 @@ def grep(args, ctx):
     glob_filter = args.get("glob")
     matches = []
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS]
+        dirnames[:] = [d for d in dirnames if not config.skip_walk_dir(d, dirpath)]
         for fn in filenames:
             fp = os.path.join(dirpath, fn)
             if glob_filter and not _glob_match(_rel(ctx, fp), fn, glob_filter):
@@ -149,10 +166,10 @@ def glob_tool(args, ctx):
     hits = []
     for h in globlib.glob(os.path.join(root, pattern), recursive=True):
         rel = _rel(ctx, h)
-        # Skip heavy/noise dirs (same set grep uses) so a broad pattern like '**/*'
-        # doesn't return the whole repo (trajectories/, .venv, __pycache__, ...) and
-        # blow the model's context window — which is how a glob 500'd the 8k worker.
-        if any(part in _SKIP_DIRS for part in rel.split("/")):
+        # Skip heavy/noise dirs (the shared config.SKIP_DIRS set, incl. dependency caches) so a
+        # broad pattern like '**/*' doesn't return the whole repo (trajectories/, node_modules/,
+        # pkg/mod/, ...) and blow the model's context window — which is how a glob 500'd a worker.
+        if config.skip_rel_path(rel):
             continue
         hits.append(rel)
     hits = sorted(hits)
@@ -164,19 +181,22 @@ def glob_tool(args, ctx):
 
 
 def tree(args, ctx):
-    """One-call directory map: the folder structure as an indented tree. Cheaper than
-    globbing then reading to orient — meant for 'what's in this project' at the START of
-    a broad review. Skips the noise dirs grep/glob skip, and caps entries so a huge repo
-    can't blow the context window."""
+    """One-call project map for orienting at the START of a broad review: the folder skeleton
+    with a file COUNT per directory and a sample of filenames. Noise/build/vendor and dependency
+    caches are skipped (so the map is the PROJECT, not its dependencies), and listing is capped
+    PER directory — so one fat folder can't crowd the rest out of the map (a global cap let an
+    early-alphabet dir like pkg/ truncate src/ before it was ever reached)."""
     root = _abs(ctx, args.get("path", "."))
     try:
         max_depth = int(args.get("depth", 3))
     except (TypeError, ValueError):
         max_depth = 3
-    cap = 400
-    lines, count, truncated = [], 0, False
+    per_dir = 25        # filenames shown per directory before a "+N more" line
+    global_cap = 2000   # hard safety bound on total lines for an enormous tree
+    lines, total, truncated = [], 0, False
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = sorted(d for d in dirnames if d not in _SKIP_DIRS and not d.startswith("."))
+        dirnames[:] = sorted(d for d in dirnames
+                             if not config.skip_walk_dir(d, dirpath) and not d.startswith("."))
         rel = _rel(ctx, dirpath)
         depth = 0 if rel == "." else rel.count("/") + 1
         if depth > max_depth:
@@ -184,19 +204,21 @@ def tree(args, ctx):
             continue
         indent = "  " * depth
         label = os.path.basename(dirpath) if depth else (rel if rel != "." else ".")
-        lines.append(f"{indent}{label}/")
-        for fn in sorted(filenames):
-            if count >= cap:
-                truncated = True
-                break
+        files = sorted(filenames)
+        lines.append(f"{indent}{label}/  ({len(files)} file{'s' if len(files) != 1 else ''})")
+        for fn in files[:per_dir]:
             lines.append(f"{indent}  {fn}")
-            count += 1
-        if truncated:
+        if len(files) > per_dir:
+            lines.append(f"{indent}  ... (+{len(files) - per_dir} more files)")
+        total += min(len(files), per_dir) + 1
+        if total >= global_cap:
+            truncated = True
             break
     body = "\n".join(lines) or "(empty)"
     if truncated:
-        body += f"\n... (truncated at {cap} files — pass a smaller depth or a subpath)"
-    return ToolResult(True, body, {"files": count})
+        body += (f"\n... (map truncated at ~{global_cap} lines — pass a subpath or a smaller "
+                 f"depth to see more)")
+    return ToolResult(True, body, {"lines": total})
 
 
 # ---------------------------------------------------------------- mutating
@@ -453,9 +475,13 @@ TOOLS = [
     },
     {
         "name": "tree", "fn": tree,
-        "description": ("Show the directory structure as an indented tree, in ONE call. Use it "
-                        "first to map a project before a broad review, instead of globbing then "
-                        "reading to orient. 'depth' limits nesting (default 3); 'path' scopes it."),
+        "description": ("Map the project's folder structure in ONE call: directories each with a "
+                        "file COUNT and a sample of filenames. Noise/build/vendor and dependency "
+                        "caches (node_modules, .venv, vendor, pkg/mod, ...) are skipped, so what "
+                        "you see is the PROJECT, not its dependencies. Use it first to orient "
+                        "before a broad review, and weight attention by where the source actually "
+                        "lives (the file counts show which folders are substantial), not by raw "
+                        "folder size. 'depth' limits nesting (default 3); 'path' scopes it."),
         "parameters": {"type": "object", "properties": {
             "path": {"type": "string"},
             "depth": {"type": "integer", "description": "max nesting depth (default 3)"},
@@ -534,7 +560,9 @@ TOOLS = [
                         "then synthesize the summaries it returns. YOU choose the carve-up: pass "
                         "'areas' to decide how to partition the work (by folder, by concern, "
                         "grouping or skipping as you see fit, each with its own focus) — or omit it "
-                        "to auto-split by top-level folder. Optional 'focus' and 'path'."),
+                        "to auto-split by top-level folder. Do NOT make a dependency cache or "
+                        "vendored code (node_modules, vendor, pkg/mod) its own area — that audits "
+                        "third-party downloads, not the project. Optional 'focus' and 'path'."),
         "parameters": {"type": "object", "properties": {
             "path": {"type": "string", "description": "subtree to review (default: whole workspace)"},
             "focus": {"type": "string", "description": "optional lens applied to every area, e.g. 'security'"},

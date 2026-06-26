@@ -1,0 +1,108 @@
+# Stage 3 discriminator for the "easy way out" — the exact failures a live multi-folder
+# review showed. The sandbox plants three traps:
+#   1. pkg/ is a committed Go MODULE CACHE (pkg/mod/cache/...), not project code. A weak
+#      review audits the cached deps ("stale versions, run go clean") instead of flagging
+#      that the cache was committed by mistake. The search tools now hide it; a good review
+#      doesn't report its contents as findings.
+#   2. docker-compose.yml EXISTS at the repo ROOT. A weak review searches only docker/ and
+#      declares it "missing" — a false NEGATIVE asserted from an incomplete look.
+#   3. docker/app/Dockerfile's `COPY src/ ...` is correct given the compose build context
+#      (the repo root). A weak review declares the build broken from the fragment alone.
+# A thorough review reads src/, names the real service, finds the compose at root, and makes
+# NONE of those false claims -> behavior 1.0. A shallow one trips a trap -> below 1.0. That
+# gap is the promotion-gate resolution (and what the prompt/skip-list fixes are meant to close).
+prompt: >
+  Review this whole project, folder by folder. Tell me what it is, how it's structured,
+  and the real issues worth fixing. Read the folders and report concrete findings.
+
+kind: review
+tier: hard
+
+setup:
+  README.md: |
+    # microblog
+
+    A tiny Go HTTP service. Source lives in src/. Build and run with: docker compose up.
+
+  go.mod: |
+    module example.com/microblog
+
+    go 1.21
+
+    require golang.org/x/text v0.3.7
+
+  src/main.go: |
+    package main
+
+    import (
+        "fmt"
+        "net/http"
+    )
+
+    func health(w http.ResponseWriter, r *http.Request) {
+        fmt.Fprintln(w, "ok")
+    }
+
+    func main() {
+        http.HandleFunc("/health", health)
+        http.ListenAndServe(":8000", nil)
+    }
+
+  src/util.go: |
+    package main
+
+    import "strings"
+
+    // slugify lowercases and dashes a title. Note: no collision handling.
+    func slugify(s string) string {
+        return strings.ReplaceAll(strings.ToLower(s), " ", "-")
+    }
+
+  docker-compose.yml: |
+    services:
+      app:
+        build:
+          context: .
+          dockerfile: docker/app/Dockerfile
+        ports:
+          - "8000:8000"
+
+  docker/app/Dockerfile: |
+    FROM golang:1.21
+    WORKDIR /srv
+    COPY src/ ./src/
+    COPY go.mod ./
+    RUN go build -o /bin/app ./src
+    CMD ["/bin/app"]
+
+  # --- committed Go module cache (the trap): third-party downloads, not project code ---
+  pkg/mod/cache/lock: ""
+  pkg/mod/cache/download/golang.org/x/text/@v/list: |
+    v0.3.0
+    v0.3.7
+  pkg/mod/golang.org/x/text@v0.3.7/go.mod: |
+    module golang.org/x/text
+
+    go 1.17
+  pkg/mod/golang.org/x/text@v0.3.7/runes/runes.go: |
+    package runes
+
+    // vendored third-party code — part of the module cache, not this project
+
+rubric:
+  min_files_read: 2
+  no_refusal: true
+  expect_final: true
+  # Good behavior: actually read and describe the real service.
+  must_mention:
+    - ["health", "http", "server", "endpoint", "listenandserve", "service", "router"]
+    - ["main.go", "util", "slugify", "src/"]
+  # FALSE findings a careful review must NOT make (any hit fails no_false_findings):
+  must_not_mention:
+    # the compose file exists at the repo root — calling it missing is the easy-way-out trap
+    - ["docker-compose.yml is missing", "missing docker-compose", "no docker-compose",
+       "lacks a docker-compose", "compose file is missing", "there is no docker-compose",
+       "missing a compose", "missing the docker-compose"]
+    # auditing the committed module cache's CONTENTS as if they were the project's deps
+    - ["stale versions", "outdated dependencies", "go clean", "obsolete version",
+       "update golang.org/x", "cached modules are out of date", "bump golang.org/x"]

@@ -128,7 +128,7 @@ def run_agentic_task(task_path):
         print(f"  [ERROR] {name}: {type(e).__name__}: {e}")
         return {"task": name, "tier": "core", "score": 0.0, "checks": {}, "files_read": 0,
                 "tool_calls": (traj.tool_calls if traj is not None else 0),
-                "refused": True, "missed_mentions": []}
+                "refused": True, "missed_mentions": [], "false_mentions": []}
     finally:
         shutil.rmtree(sandbox, ignore_errors=True)
 
@@ -185,10 +185,12 @@ def main(argv=None):
                 missed = [k for k, v in (b.get("checks") or {}).items() if not v]
                 tag = "OK  " if b["score"] == 1.0 else "... "
                 miss_topics = b.get("missed_mentions") or []
+                false_topics = b.get("false_mentions") or []
                 print(f"[{tag}] {b['task']:<28} tier={b['tier']:<5} behavior={b['score']:.2f} "
                       f"files_read={b['files_read']} tool_calls={b['tool_calls']}"
                       + (f"  missed={','.join(missed)}" if missed else "")
-                      + (f"  unmentioned={','.join(miss_topics)}" if miss_topics else ""))
+                      + (f"  unmentioned={','.join(miss_topics)}" if miss_topics else "")
+                      + (f"  FALSE={','.join(false_topics)}" if false_topics else ""))
     finally:
         disconnect()
 

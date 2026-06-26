@@ -122,5 +122,17 @@ class Agent:
 
 
 def _short(args):
-    s = ", ".join(f"{k}={str(v)[:40]!r}" for k, v in args.items())
-    return s[:80]
+    """One-line arg preview for the console and the run log. Path-like values KEEP their
+    basename — a blind mid-name cut made logs unreadable ('Button.test.tsx' -> 'Button.tes',
+    'crypto' -> 'cryp'), which defeats reviewing a run from its log afterwards."""
+    def fmt(k, v):
+        s = str(v)
+        if len(s) > 60:
+            flat = s.replace("\\", "/")
+            if "/" in flat:
+                tail = flat.rsplit("/", 1)[-1]
+                s = (s[:20] + "..." + tail) if len(tail) <= 38 else ("..." + s[-50:])
+            else:
+                s = s[:57] + "..."
+        return f"{k}={s!r}"
+    return ", ".join(fmt(k, v) for k, v in args.items())

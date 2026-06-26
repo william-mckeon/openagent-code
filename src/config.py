@@ -37,6 +37,48 @@ def _as_bool(value: str) -> bool:
 
 
 # -----------------------------------------------------------------------------
+# Search / review traversal — ONE source of truth for the directories the search
+# tools (grep / glob / tree) and the review orchestrator skip. These sets drifted
+# before (tools.py listed 5 names, orchestrator.py 13), which let a dependency cache
+# leak into the project map and become its own review area. They are VCS, caches,
+# virtualenvs, build output, and dependency stores — third-party or generated, never
+# the project's own code.
+# -----------------------------------------------------------------------------
+SKIP_DIRS = frozenset({
+    ".git", ".hg", ".svn",
+    "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache",
+    "node_modules", ".venv", "venv", "env", "vendor",
+    "dist", "build", "target", ".next", ".nuxt", ".svelte-kit",
+    ".idea", ".vscode", ".gradle", ".terraform", "trajectories",
+})
+
+
+def skip_walk_dir(name: str, parent_path: str) -> bool:
+    """True if a directory met WHILE WALKING should be skipped: a noise/cache name above,
+    or the Go module cache — a 'mod' directory directly under 'pkg' (i.e. .../pkg/mod),
+    which is downloaded third-party code, not the project's own."""
+    if name in SKIP_DIRS:
+        return True
+    return name == "mod" and os.path.basename(parent_path.rstrip("/\\")) == "pkg"
+
+
+def skip_rel_path(rel: str) -> bool:
+    """True if a RELATIVE path lies inside a skipped dir — for tools that match on the
+    whole path (glob) rather than walking it directory by directory."""
+    parts = rel.replace("\\", "/").strip("/").split("/")
+    if any(p in SKIP_DIRS for p in parts):
+        return True
+    return any(parts[i] == "pkg" and parts[i + 1] == "mod" for i in range(len(parts) - 1))
+
+
+def looks_like_dep_cache(path: str) -> bool:
+    """True if `path` is a vendored dependency STORE rather than project code — e.g. a Go
+    module cache (it contains mod/cache). Such a directory must never become a review area:
+    reviewing it audits third-party downloads and starves the real source of attention."""
+    return os.path.isdir(os.path.join(path, "mod", "cache"))
+
+
+# -----------------------------------------------------------------------------
 # Model gateway (the swappable boundary)
 #
 # CODE_MODEL      LiteLLM model string. RunPod/vLLM: "openai/gpt-oss-120b".

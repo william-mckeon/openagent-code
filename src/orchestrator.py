@@ -25,11 +25,11 @@ from . import config
 # so a module-level import would be a circular dependency sensitive to import order. ToolResult
 # is imported lazily inside review_repo() instead.
 
-# Dirs that are never their own review area (noise / generated / vcs). Mirrors the set
-# grep/glob/tree skip, plus build/dist/egg-info that add nothing to a code review.
-_SKIP_DIRS = {".git", "__pycache__", "node_modules", ".venv", "venv", "trajectories",
-              ".pytest_cache", ".mypy_cache", ".ruff_cache", "dist", "build", ".idea",
-              ".vscode"}
+# The dirs never walked / never their own review area now live in config.SKIP_DIRS — ONE
+# source of truth shared with the search tools (grep/glob/tree), so the project MAP and the
+# review PARTITION can't disagree (they drifted before: 5 names vs 13). config.looks_like_dep_cache
+# additionally drops dependency stores (a committed Go module cache, ...) so they never
+# become a review area.
 
 
 def _areas(root):
@@ -43,8 +43,11 @@ def _areas(root):
     for e in entries:
         full = os.path.join(root, e)
         if os.path.isdir(full):
-            # Skip noise/generated/vcs dirs, hidden dirs (.git, .claude, ...), and egg-info.
-            if e not in _SKIP_DIRS and not e.startswith(".") and not e.endswith(".egg-info"):
+            # Skip noise/generated/vcs dirs, hidden dirs (.git, .claude, ...), egg-info, and
+            # vendored dependency stores (a committed Go module cache, ...) — third-party, not
+            # the project, so they must never become a review area.
+            if (e not in config.SKIP_DIRS and not e.startswith(".")
+                    and not e.endswith(".egg-info") and not config.looks_like_dep_cache(full)):
                 dirs.append(e)
         elif os.path.isfile(full):
             files.append(e)

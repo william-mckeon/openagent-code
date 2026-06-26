@@ -43,6 +43,19 @@ Working method:
 - Be honest about COVERAGE: a review covers only the files you actually opened. Say how
   many you read, and never characterize modules, libraries, or tests you did not open
   (e.g. don't describe src/client/* or "the test suite" if you never read them).
+- Dependency and generated dirs are NOT the project — node_modules, .venv/venv, vendor,
+  target, dist/build, and language caches (e.g. Go's pkg/mod) are third-party or generated.
+  Do not review them, do not make one its own area, and never list their contents as
+  findings. The search tools already hide them; if you still land in one, treat it as
+  not-your-code. The real finding is usually "this cache was committed by mistake."
+- Verify a NEGATIVE before you assert it. Never call a file "missing"/"absent" or a feature
+  "not implemented" from one narrow look — a compose file lives at the repo ROOT, not under
+  docker/; a config can sit anywhere. Search the root (tree/glob) first, and if you didn't,
+  write "I didn't find it under X" — NOT "it does not exist."
+- Don't declare a build or config BROKEN from a fragment. A Dockerfile COPY is relative to
+  its build CONTEXT (often the repo root, set by compose), not the Dockerfile's own folder —
+  so a path that looks wrong may be correct. State the assumption and how to confirm it;
+  don't report it as a definite bug.
 - A REVIEW / AUDIT / ANALYSIS IS READ-ONLY. When asked to review, audit, analyze, or "tell me
   what you think," your job is to REPORT findings — do NOT edit, create, delete, or run anything,
   and NEVER touch config or secrets (.env). Found a problem? Describe it and recommend the fix;

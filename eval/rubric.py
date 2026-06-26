@@ -94,6 +94,19 @@ def _mentions_missed(final, must_mention):
     return missed
 
 
+def _mentions_present(final, must_not_mention):
+    """Which FORBIDDEN phrases the final answer contains — false findings a careful review must
+    NOT make (calling a file 'missing' that exists at the repo root, auditing a dependency cache
+    as if it were project code, declaring a working build broken). Any hit fails the
+    'no_false_findings' check — the negative counterpart of must_mention."""
+    low = (final or "").lower()
+    hits = []
+    for entry in must_not_mention:
+        alts = entry if isinstance(entry, (list, tuple)) else [entry]
+        hits.extend(str(a) for a in alts if str(a).lower() in low)
+    return hits
+
+
 # -- scoring -----------------------------------------------------------------
 
 def score_turn(turn, rubric=None):
@@ -108,9 +121,10 @@ def score_turn(turn, rubric=None):
     over_ask = bool(asked) and len(tcs) > 1 and tcs[-1].get("tool") == "ask_user"
 
     # Delegated reviews read few files in the LEAD trajectory because each spawned child
-    # reviews a whole area in its OWN trajectory. Credit spawns toward depth so good
-    # decomposition isn't scored as shallow.
-    n_spawns = sum(1 for t in tcs if t.get("tool") == "spawn_agent" and t.get("ok"))
+    # reviews a whole area in its OWN trajectory. Credit delegation (spawn_agent AND the
+    # review_repo fan-out) toward depth so good decomposition isn't scored as shallow.
+    n_spawns = sum(1 for t in tcs
+                   if t.get("tool") in ("spawn_agent", "review_repo") and t.get("ok"))
 
     checks = {}
     if "min_files_read" in rubric:
@@ -125,10 +139,17 @@ def score_turn(turn, rubric=None):
     missed = _mentions_missed(final, rubric["must_mention"]) if rubric.get("must_mention") else []
     if rubric.get("must_mention"):
         checks["found_issues"] = not missed
+    # Negative findings check: did the review make a FALSE claim it should have avoided (a file
+    # 'missing' that exists at root, a dependency cache audited as project code, a working build
+    # called broken)? This is what catches the "easy way out" — confident, unverified assertions.
+    false_hits = _mentions_present(final, rubric["must_not_mention"]) if rubric.get("must_not_mention") else []
+    if rubric.get("must_not_mention"):
+        checks["no_false_findings"] = not false_hits
 
     passed = sum(1 for v in checks.values() if v)
     return {"checks": checks, "files_read": len(reads), "tool_calls": len(tcs),
-            "refused": refused, "missed_mentions": missed, "score": passed / (len(checks) or 1)}
+            "refused": refused, "missed_mentions": missed, "false_mentions": false_hits,
+            "score": passed / (len(checks) or 1)}
 
 
 def score(records, rubric=None):
@@ -140,6 +161,7 @@ def score(records, rubric=None):
     keys = set().union(*[set(p["checks"]) for p in per]) if per else set()
     agg = {k: all(p["checks"].get(k, True) for p in per) for k in keys}
     missed = sorted({m for p in per for m in p.get("missed_mentions", [])})
+    false_hits = sorted({m for p in per for m in p.get("false_mentions", [])})
     return {
         "score": sum(p["score"] for p in per) / n,
         "turns": per,
@@ -148,6 +170,7 @@ def score(records, rubric=None):
         "tool_calls": sum(p["tool_calls"] for p in per),
         "refused": any(p["refused"] for p in per),
         "missed_mentions": missed,
+        "false_mentions": false_hits,
     }
 
 
