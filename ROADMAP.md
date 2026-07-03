@@ -322,13 +322,29 @@ completion.** The fix makes "done" a state the HARNESS confirms, not one the mod
   deny rules travel to any workspace (a review had read a foreign repo's `.env`), and `edit_file`
   rejects a no-op `old==new` edit that had looked like progress.
 
-### Phases 7-9 (planned, strict order)
-7. **Capture integrity** — every real run captured to the central corpus, incl. sessions launched
-   from a repo with its own `.env` (some were being lost). Fuel line before engine.
-8. **Behavior eval tasks** — discriminating gate tasks for false-completion / reasoning-leak /
-   no-op, so training can measure them. Eval before training (the locked principle).
-9. **First real distillation run** — clean corpus → SFT on the SageMaker substrate (specs/0006)
-   → `eval.compare` gate → swap. The first time the MODEL improves, not the harness.
+### Phase 7 — behavior eval  ✅ BUILT
+Discriminating gate signals for the failures the live logs showed, so the flywheel can MEASURE
+them (eval before training — the locked principle):
+- `eval/rubric.py`: `no_reasoning_leak` (the final answer must not open with chain-of-thought) and
+  `verified_done` (a run that ended `unverified_completion` is a hard behavior failure — capped
+  score); plus the earlier `no_false_findings` / `must_not_mention` / delegation-aware depth.
+- `eval/tasks/verified_completion.yaml` (a real edit + a delete; a lazy "done" fails verify) and
+  `eval/agentic/review_dep_cache.yaml` (dep-cache / false-"missing" trap).
+- `eval/harness.py` maps the `unverified_completion` outcome through; `train/convert.py` keeps
+  leaked CoT and `unverified_completion` runs out of the corpus.
+
+  **NOTE — the originally-planned "capture integrity" phase was DROPPED.** Investigation showed
+  capture is NOT broken: centpilot sessions ARE captured to `trajectories/` (verified — a
+  cwd=centpilot, schema-0.6.0 run carrying `delete_file`/`update_plan.file`). The earlier "missing
+  trajectory" was a **ripgrep artifact** — the self-contained `tool_schemas` make `session_start`
+  one enormous line rg skips as binary — not data loss. That bloat is the intentional Phase-3
+  self-containment gate, not a bug. (Only nit left: REPL logs `task: "(interactive session)"` — a
+  human-searchability placeholder; the real prompts live in the per-turn stream `convert` reads.)
+
+### Phase 8 — first real distillation run  (the official test)
+Clean corpus (from real usage) → `train.convert` → SFT on the SageMaker substrate (specs/0006) or
+local Docker → `eval.compare` gate → swap `CODE_API_BASE`. The first time the MODEL improves, not
+the harness. Needs accumulated real corpus, so it waits on usage — not an instant script.
 
 ## Sequencing principles (why this order)
 

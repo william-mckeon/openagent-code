@@ -115,8 +115,13 @@ def run_agentic_task(task_path):
         ctx = make_context(sandbox, Permissions.from_config(mode_override="bypass"),
                            traj.session_id, depth=0, verbose=False)
         result = build_agent(traj).run(spec["prompt"], ctx)
-        traj.end("completed" if traj.tool_calls else "no_action", result.final,
-                 terminated=result.terminated)
+        # Honor the completion gate (Phase 6): a run that claimed done without doing it ends
+        # 'unverified_completion' so the rubric can score it (Phase 8), not silently 'completed'.
+        if result.terminated == "unverified_completion":
+            ag_outcome = "unverified_completion"
+        else:
+            ag_outcome = "completed" if traj.tool_calls else "no_action"
+        traj.end(ag_outcome, result.final, terminated=result.terminated)
         sc = rubric.score(rubric.load_records(traj.path), spec.get("rubric"))
         return {"task": name, "tier": spec.get("tier", "core"), **sc}
     except Exception as e:

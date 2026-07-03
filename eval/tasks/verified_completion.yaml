@@ -1,0 +1,31 @@
+# Phase 8 - exercises verified completion end to end: a real EDIT plus a DELETE. A lazy "done"
+# fails verify (greet still returns "hi", or obsolete.py still exists), and the Phase-6 completion
+# gate catches a plan step marked done without the change. Deterministic - the verify command is
+# ground truth, so this task discriminates a model that actually does the work from one that claims to.
+prompt: >
+  Make TWO changes, and do BOTH: (1) in app.py, change greet(name) so it returns the string
+  "hello, " followed by name (greet("Sam") must return "hello, Sam"); (2) delete the file
+  obsolete.py - it is dead code. Then confirm both are done.
+
+tier: hard
+
+setup:
+  app.py: |
+    def greet(name):
+        return "hi"  # TODO: personalize to "hello, <name>"
+
+    def add(a, b):
+        return a + b
+
+  obsolete.py: |
+    # dead code, safe to delete
+    LEGACY = True
+
+  check.py: |
+    import os
+    from app import greet
+    assert greet("Sam") == "hello, Sam", f"greet returned {greet('Sam')!r} (edit not made)"
+    assert not os.path.exists("obsolete.py"), "obsolete.py still exists (delete not done)"
+    print("PASS")
+
+verify: "python check.py"
