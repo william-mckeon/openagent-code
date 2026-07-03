@@ -11,6 +11,7 @@ every trajectory. Proficiency and trainability are the same design.
 The base prompt is mode-agnostic. The tool-invocation section is appended by the
 planner depending on CODE_TOOL_MODE (native tool-calling vs prompt-based JSON).
 """
+import re
 
 BASE_PROMPT = """You are openagent-code, a coding agent that edits real files in a real repository.
 
@@ -31,6 +32,12 @@ Working method:
   add surrounding context. If "not found", re-read the file and copy exact text.
 - After changing code, VERIFY: run the tests or the relevant command with run_command
   and read the output. Do not claim success without evidence.
+- COMPLETION IS VERIFIED, NOT DECLARED. For a task that changes files, keep an update_plan
+  checklist and set each step's `file` to what it changes. Mark a step completed ONLY after its
+  tool call SUCCEEDED — never in advance. Before reporting the task done, confirm on disk that
+  every change landed (re-read edited files; a deleted file is gone). Remove files with
+  delete_file — NEVER `rm` (it is denied). If you mark work done that the files don't reflect,
+  the harness catches the mismatch and sends you back.
 - Report faithfully. If tests fail, say so and show the output. If you skipped a step,
   say that. State plainly what you did and what you confirmed. NEVER claim an edit, fix, or
   action you did not actually perform — do not write "Updated X" or "Applied improvements" for
@@ -181,6 +188,10 @@ needed to continue the task with no loss of actionable detail:
 
 CRITICAL — preserve the LIVE thread so the agent does not lose its place and re-ask:
 - the user's MOST RECENT request and whether it is done or still pending,
+- for a MULTI-STEP or MULTI-FILE task, the FULL list of items STILL OUTSTANDING (which
+  files/changes remain), never just the one in progress — a long task must NOT be silently
+  truncated to whatever was most recent (an agent asked to change 15 files once summarized
+  down to 1 and reported "done"),
 - the agent's LAST action and its result (e.g. "just wrote temp.py; it works"),
 so that after this summary the agent continues seamlessly instead of asking the user
 what to do next.
@@ -200,4 +211,56 @@ done this session, give the best complete answer you can to the original request
 - For a task: what you changed and verified, and precisely what remains.
 
 Ground every claim in what you actually saw. This is your final answer."""
+
+
+# ---------------------------------------------------------------------------
+# Reasoning-leak detection. gpt-oss (esp. high effort) sometimes dumps its
+# chain-of-thought INTO the final answer's content — beginning with the exact
+# meta-planning phrases BASE_PROMPT forbids ("Now we...", "We need to produce...",
+# "Let's produce the final answer.") — then the real answer. BASE_PROMPT forbids it
+# and the model still does it, so a prompt rule can't close it: the eval scores it
+# (Phase 8) and the converter keeps it out of training, while the planner strips it
+# for display. Shared here so all three agree on one definition.
+# ---------------------------------------------------------------------------
+_REASONING_TELL = re.compile(
+    r"^\s*("
+    r"now (we|i|let|the)\b|"
+    r"we (need|should|can|have|must|will|now|are going)\b|"
+    r"let'?s (produce|now|start|summar|write|craft|do|get|create)\b|"
+    r"let me (produce|summar|now|start|craft|write)\b|"
+    r"according to (the )?guidelines\b|"
+    r"the user (wants|asked|is asking|also|said|needs)\b|"
+    r"i (need|should|will|'ll|'m going) to\b|"
+    r"first,? (we|i|let|the)\b|"
+    r"okay,? (so|let|we|now)\b|"
+    r"thus,?\b|alright,?\b"
+    r")",
+    re.IGNORECASE)
+# Where the REAL answer plausibly begins: a markdown heading, a bold header line,
+# a horizontal rule, or a table row.
+_ANSWER_ANCHOR = re.compile(r"^\s*(#{1,6}\s|\*\*\S|---\s*$|\|)")
+
+
+def looks_like_reasoning_preamble(text):
+    """True if `text` OPENS with a chain-of-thought preamble (a meta-planning first line)
+    rather than the answer itself. Used by the eval to score the leak and by the converter
+    to keep it out of training."""
+    for line in (text or "").splitlines():
+        if line.strip():
+            return bool(_REASONING_TELL.match(line))
+    return False
+
+
+def strip_reasoning_preamble(text):
+    """If `text` starts with a reasoning preamble AND the real answer can be anchored (a heading
+    / bold header appears on a later line), return from that anchor onward; otherwise return `text`
+    UNCHANGED. Deliberately conservative — with no clear anchor it does nothing, so it can never
+    eat a real answer (the flywheel is the real fix; this only trims the obvious leak)."""
+    if not text or not looks_like_reasoning_preamble(text):
+        return text or ""
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        if i and _ANSWER_ANCHOR.match(line):
+            return "\n".join(lines[i:]).lstrip("\n")
+    return text  # no anchor found -> don't guess; leave the answer whole
 

@@ -90,6 +90,17 @@ def main():
     check("allow edit_file(src/**) does NOT match other.py",
           not allowed(p, ctx, "edit_file", path="other.py", old_string="a", new_string="b"))
 
+    # delete_file (Phase 6) — destructive, gated like edit/write; critical targets denied
+    p = Permissions("bypass", {"deny": ["delete_file(.env)", "delete_file(.git/**)"]}, [])
+    check("deny delete_file(.env) wins under bypass", not allowed(p, ctx, "delete_file", path=".env"))
+    check("deny delete_file(.git/**) wins under bypass",
+          not allowed(p, ctx, "delete_file", path=".git/config"))
+    check("bypass allows delete_file on a normal file", allowed(p, ctx, "delete_file", path="tmp.txt"))
+    check("fence blocks delete_file outside workspace",
+          not allowed(p, ctx, "delete_file", path=outside_abs))
+    p = Permissions("plan", {}, [])
+    check("plan mode blocks delete_file", not allowed(p, ctx, "delete_file", path=inside))
+
     passed, total = sum(_results), len(_results)
     print(f"\nVERDICT: {passed}/{total} {'[OK]' if passed == total else '[FAIL]'}")
     return 0 if passed == total else 1

@@ -54,6 +54,8 @@ def _classify(result, tool_calls):
         return "no_action"
     if result.terminated == "max_steps":
         return "max_steps"
+    if result.terminated == "unverified_completion":
+        return "unverified_completion"
     return "completed"
 
 

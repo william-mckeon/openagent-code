@@ -7,7 +7,9 @@
     "run_command(curl:*)",
     "run_command(wget:*)",
     "read_file(.env)",
-    "edit_file(.git/**)"
+    "edit_file(.git/**)",
+    "delete_file(.env)",
+    "delete_file(.git/**)"
   ],
 
   "ask": [

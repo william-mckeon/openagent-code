@@ -17,6 +17,8 @@ loop and the trajectory logging are identical regardless of mode.
 """
 import json
 
+from .prompts import strip_reasoning_preamble
+
 
 class Decision:
     def __init__(self, assistant, calls, final, nudge=None, gave_up=False):
@@ -58,7 +60,10 @@ class NativePlanner:
                 except json.JSONDecodeError:
                     args = {}
                 calls.append({"id": tc.id, "name": tc.function.name, "args": args})
-        return Decision(assistant, calls, None if calls else msg.content)
+        # The final answer (calls empty) is user-facing — strip any leaked chain-of-thought
+        # preamble gpt-oss dumped before it (a no-op when there's no clear leak). The logged
+        # assistant message keeps the raw content; the converter cleans it for training.
+        return Decision(assistant, calls, None if calls else strip_reasoning_preamble(msg.content))
 
     def format_result(self, call, result):
         return {"role": "tool", "tool_call_id": call["id"], "content": result.content}

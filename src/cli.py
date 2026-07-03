@@ -111,6 +111,8 @@ def _one_shot(task, perms):
         outcome = "no_action"
     elif terminated == "max_steps":
         outcome = "max_steps"
+    elif terminated == "unverified_completion":
+        outcome = "unverified_completion"
     else:
         outcome = "completed"
 

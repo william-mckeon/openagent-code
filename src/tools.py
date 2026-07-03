@@ -48,6 +48,8 @@ class Context:
         self.depth = 0                 # this agent's nesting depth (0 = top-level)
         self.session_id = None         # this agent's trajectory id (parent link for children)
         self.plan = None               # current plan text (set by update_plan; pinned by the loop)
+        self.plan_items = []           # structured steps [{content,status,file}] for the completion gate
+        self.mutations = {}            # {workspace-rel path: "write"|"edit"|"delete"} applied this run
         self.ask = None                # callable(question) -> answer; wired by make_context
         self.interactive = False       # True only when a human is present to answer
 
@@ -223,19 +225,51 @@ def tree(args, ctx):
 
 # ---------------------------------------------------------------- mutating
 
+def _record_mutation(ctx, path, action):
+    """Note a SUCCESSFUL file mutation on the context ledger. The completion gate (agent.py)
+    checks that plan steps marked done actually correspond to a real change here — that is how
+    'done' becomes verified instead of merely declared (Phase 6 / specs/0007)."""
+    led = getattr(ctx, "mutations", None)
+    if led is not None:
+        led[_rel(ctx, _abs(ctx, path))] = action
+
+
 def write_file(args, ctx):
     path = _abs(ctx, args["path"])
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     content = args["content"]
     with open(path, "w", encoding="utf-8") as f:
         f.write(content)
+    _record_mutation(ctx, args["path"], "write")
     return ToolResult(True, f"Wrote {len(content)} bytes to {path}")
+
+
+def delete_file(args, ctx):
+    """The sanctioned, VERIFIABLE way to remove a file — use this, NEVER `rm` (denied). Fenced +
+    permission-gated like write/edit; records the deletion so the completion gate can confirm the
+    file is actually gone."""
+    path = _abs(ctx, args["path"])
+    if os.path.isdir(path):
+        return ToolResult(False, f"{args['path']} is a directory — delete_file removes files, not dirs.")
+    if not os.path.isfile(path):
+        return ToolResult(False, f"File not found: {path} (nothing to delete).")
+    try:
+        os.remove(path)
+    except OSError as e:
+        return ToolResult(False, f"Could not delete {args['path']}: {e}")
+    _record_mutation(ctx, args["path"], "delete")
+    return ToolResult(True, f"Deleted {args['path']}.")
 
 
 def edit_file(args, ctx):
     path = _abs(ctx, args["path"])
     old, new = args["old_string"], args["new_string"]
     replace_all = bool(args.get("replace_all", False))
+    # A no-op edit reports success and teaches the model nothing — it "made a change" that changed
+    # nothing (seen live: an old==new edit was reported ok, and the model declared the task done).
+    if old == new:
+        return ToolResult(False, "old_string and new_string are identical — this edit would change "
+                                 "nothing. Put the NEW text you want in new_string.")
     if not os.path.isfile(path):
         return ToolResult(False, f"File not found: {path}")
     with open(path, encoding="utf-8") as f:
@@ -249,6 +283,7 @@ def edit_file(args, ctx):
                                  f"surrounding context to make it unique, or set replace_all=true.")
     with open(path, "w", encoding="utf-8") as f:
         f.write(text.replace(old, new))
+    _record_mutation(ctx, args["path"], "edit")
     return ToolResult(True, f"Edited {path} ({count} replacement(s))")
 
 
@@ -279,16 +314,19 @@ def update_plan(args, ctx):
     """
     steps = args.get("steps") or []
     if not steps:
-        ctx.plan = None
+        ctx.plan, ctx.plan_items = None, []
         return ToolResult(True, "Plan cleared.")
-    lines = []
+    lines, items = [], []
     for s in steps:
         if isinstance(s, dict):
-            content, status = s.get("content", ""), s.get("status", "pending")
+            content = s.get("content", "")
+            status = s.get("status", "pending")
+            file = (s.get("file") or "").strip() or None
         else:
-            content, status = str(s), "pending"
-        lines.append(f"{_PLAN_MARKS.get(status, '[ ]')} {content}")
-    ctx.plan = "\n".join(lines)
+            content, status, file = str(s), "pending", None
+        lines.append(f"{_PLAN_MARKS.get(status, '[ ]')} {content}" + (f"  ({file})" if file else ""))
+        items.append({"content": content, "status": status, "file": file})
+    ctx.plan, ctx.plan_items = "\n".join(lines), items
     return ToolResult(True, "Plan updated:\n" + ctx.plan)
 
 
@@ -496,6 +534,15 @@ TOOLS = [
         }, "required": ["path", "content"]},
     },
     {
+        "name": "delete_file", "fn": delete_file,
+        "description": ("Delete a file. Use this to remove a file — NEVER `rm` (it is denied). "
+                        "Permission-gated and fenced to your workspace; the deletion is verified "
+                        "(the file must actually be gone before the task counts as done)."),
+        "parameters": {"type": "object", "properties": {
+            "path": {"type": "string"},
+        }, "required": ["path"]},
+    },
+    {
         "name": "edit_file", "fn": edit_file,
         "description": ("Replace an exact string in a file. old_string must match exactly "
                         "(including whitespace/indentation) and be unique unless replace_all=true. "
@@ -529,11 +576,15 @@ TOOLS = [
         "name": "update_plan", "fn": update_plan,
         "description": ("Record or update your plan as a tracked checklist for a multi-step task. "
                         "Call it first to lay out the steps, then again to mark progress. Statuses: "
-                        "pending, in_progress, completed. Keep exactly one step in_progress at a time."),
+                        "pending, in_progress, completed. Keep exactly one step in_progress at a time. "
+                        "For a step that changes a file, set its 'file' — the harness verifies a "
+                        "completed step actually changed that file before it accepts the task as done."),
         "parameters": {"type": "object", "properties": {
             "steps": {"type": "array", "items": {"type": "object", "properties": {
                 "content": {"type": "string"},
                 "status": {"type": "string", "enum": ["pending", "in_progress", "completed"]},
+                "file": {"type": "string", "description": "the file this step changes (lets the "
+                         "harness verify a 'completed' step really changed it)"},
             }, "required": ["content", "status"]}},
         }, "required": ["steps"]},
     },

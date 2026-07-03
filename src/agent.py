@@ -15,11 +15,46 @@ manager may summarize what the model sees, but every turn is still logged raw.
 run() returns a RunResult so the caller can label the outcome HONESTLY: a run that
 made no tool calls, or stalled on the protocol, is not a success.
 """
+import os
+
+from . import config
 from .tools import ToolResult
 from .prompts import SYNTHESIS_PROMPT
 from .logsetup import get_logger
 
 log = get_logger("agent")
+
+
+def _unverified_items(ctx):
+    """Plan steps marked completed whose named file shows NO real change this run (or a delete
+    whose file still exists / an edit whose file is gone). Returns human-readable problems; empty
+    means completion is verified. Steps without a named file can't be checked, so they're trusted."""
+    items = getattr(ctx, "plan_items", None) or []
+    muts = getattr(ctx, "mutations", None) or {}
+    problems = []
+    for it in items:
+        if it.get("status") != "completed" or not it.get("file"):
+            continue
+        rel = it["file"].replace("\\", "/").strip()
+        rel = rel[2:] if rel.startswith("./") else rel
+        rel = rel.strip("/")
+        action = muts.get(rel)
+        if action is None:
+            problems.append(f"'{it['file']}' - marked done but nothing changed it this session")
+            continue
+        exists = os.path.exists(os.path.join(ctx.cwd, rel))
+        if action == "delete" and exists:
+            problems.append(f"'{it['file']}' - marked deleted but the file still exists")
+        elif action in ("write", "edit") and not exists:
+            problems.append(f"'{it['file']}' - marked edited but the file is missing")
+    return problems
+
+
+def _completion_challenge(problems):
+    return ("Do NOT report the task done yet - these plan steps are marked complete but the "
+            "filesystem doesn't back them up:\n" + "\n".join(f"- {p}" for p in problems)
+            + "\nActually make each change with edit_file / write_file / delete_file (never rm), "
+            "then re-verify. Only mark a step completed AFTER its tool call succeeds.")
 
 
 class RunResult:
@@ -47,6 +82,7 @@ class Agent:
         self.cm.add({"role": "user", "content": task})
         consecutive_fail = {}  # tool name -> count of prior consecutive failures
         tool_calls = 0
+        verify_retries = 0     # completion-gate re-prompts used this run (Phase 6)
 
         try:
             for step in range(self.max_steps):
@@ -67,7 +103,21 @@ class Agent:
                     continue
 
                 if not decision.calls:
-                    return RunResult(decision.final, "final", tool_calls)
+                    # Verified completion (Phase 6 / specs/0007): don't accept "done" when the
+                    # agent marked plan steps complete that its actual file changes don't back up.
+                    # Re-prompt with the discrepancy (bounded), else return an HONEST outcome.
+                    unmet = _unverified_items(ctx) if config.VERIFY_COMPLETION else []
+                    if unmet and verify_retries < config.VERIFY_COMPLETION_RETRIES:
+                        verify_retries += 1
+                        if ctx.verbose:
+                            print(f"  [verify] completion challenged — {len(unmet)} item(s) not "
+                                  f"backed by a real change")
+                        log.info("completion challenge (retry %d): %s", verify_retries,
+                                 "; ".join(unmet))
+                        self.cm.add({"role": "user", "content": _completion_challenge(unmet)})
+                        continue
+                    return RunResult(decision.final,
+                                     "unverified_completion" if unmet else "final", tool_calls)
 
                 for call in decision.calls:
                     name, args = call["name"], call["args"]

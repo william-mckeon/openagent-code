@@ -30,9 +30,9 @@ import re
 from . import config
 
 # Tools that change files or run commands. Everything else is read-only for gating.
-MUTATING = {"write_file", "edit_file", "run_command"}
+MUTATING = {"write_file", "edit_file", "delete_file", "run_command"}
 # Tools whose target is a filesystem path (fence-checked, glob-matched in rules).
-PATH_TOOLS = {"read_file", "write_file", "edit_file", "grep", "glob"}
+PATH_TOOLS = {"read_file", "write_file", "edit_file", "delete_file", "grep", "glob"}
 
 
 class Decision:
@@ -130,7 +130,7 @@ class Permissions:
     # -- helpers --------------------------------------------------------------
 
     def _target(self, tool, args, ctx):
-        if tool in ("read_file", "write_file", "edit_file"):
+        if tool in ("read_file", "write_file", "edit_file", "delete_file"):
             raw = args.get("path", "")
             ap = _resolve(ctx.cwd, raw)
             return _Target("path", raw, _rel(ap, ctx.cwd), ap)

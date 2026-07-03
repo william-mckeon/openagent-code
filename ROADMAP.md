@@ -261,6 +261,9 @@ and `train/sft.py` — data bridge + LoRA-SFT + `--smoke`, verified). **Executio
 GPU, in Docker** — `docker/train/Dockerfile` (CUDA 12.8 / cu128, Blackwell-ready, ported from the proven
 boenet pattern) + `train`/`train-smoke` compose services give a clean Linux env that sidesteps the host's
 Windows DLL block + torch/peft version clash. Not RunPod, not Bedrock (both are inference, not training).
+**Cloud training alt (specs/0006):** `train/launch_sm.py` submits the SAME `train/sft.py` to AWS
+SageMaker (Script Mode, prebuilt PyTorch container) — no local Docker/GPU, spot-capable, adapter
+pulled back for merge/gate. Adapted from Arcus's launcher; local Docker stays the validation bench.
 **Next: `docker compose build train` → `train-smoke` (CPU proof) → the real `--gpus` run on gpt-oss-20b**,
 then Stage 6 (distill → gate → serve → swap) and Stage 7 (close the loop). Loose ends: grow the corpus,
 and the deferred Phase-4 **hooks** pass.
@@ -300,6 +303,32 @@ coupling is invisible until item 1 makes raw ≠ context — so the decoupling i
 prerequisite *of* item 1, not a later cleanup.
 
 ---
+
+### Phase 6 — verified completion  → specs/0007-verified-completion.md  ✅ BUILT
+Driven by a live log where the agent reported "all files updated / saved and verified" while the
+filesystem showed the deletes never happened and the claimed doc was never written — **false
+completion.** The fix makes "done" a state the HARNESS confirms, not one the model declares:
+- **Mutation ledger + completion gate** (`src/agent.py`, `src/tools.py`) — every successful
+  write/edit/delete is recorded on `ctx.mutations`; when the model tries to finish, the harness
+  checks each `update_plan` step marked completed against a real change to its named `file`
+  (a delete's file is gone, an edit's file exists). A mismatch **re-prompts** with the discrepancy
+  (bounded by `CODE_VERIFY_COMPLETION_RETRIES`), then records an honest `unverified_completion`
+  outcome (dropped from training, scored by the eval).
+- **`delete_file` tool** (`src/tools.py`, `permissions.py`, `permissions.json`) — the sanctioned,
+  verifiable removal path: `rm` is denied and there was no delete tool, so the agent literally
+  could not do (or verify) the deletions it claimed. Fenced + gated like edit/write; `.env`/`.git`
+  deletion denied.
+- Fixed alongside (from the same log): permissions config now resolves against `INSTALL_ROOT` so
+  deny rules travel to any workspace (a review had read a foreign repo's `.env`), and `edit_file`
+  rejects a no-op `old==new` edit that had looked like progress.
+
+### Phases 7-9 (planned, strict order)
+7. **Capture integrity** — every real run captured to the central corpus, incl. sessions launched
+   from a repo with its own `.env` (some were being lost). Fuel line before engine.
+8. **Behavior eval tasks** — discriminating gate tasks for false-completion / reasoning-leak /
+   no-op, so training can measure them. Eval before training (the locked principle).
+9. **First real distillation run** — clean corpus → SFT on the SageMaker substrate (specs/0006)
+   → `eval.compare` gate → swap. The first time the MODEL improves, not the harness.
 
 ## Sequencing principles (why this order)
 

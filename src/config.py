@@ -192,10 +192,29 @@ LOG_LEVEL = os.environ.get("CODE_LOG_LEVEL", "INFO").strip().upper()
 #   (os.pathsep- or comma-separated). The workspace root is always allowed; this
 #   widens the fence. Set to the filesystem root to effectively disable confinement.
 # -----------------------------------------------------------------------------
+def _resolve_install_path(raw: str) -> str:
+    """Resolve a config-file path so it's found no matter WHERE the agent runs from. Absolute
+    paths are used as-is; a bare/relative path resolves against INSTALL_ROOT (where .env and
+    permissions.json live), NOT the current workspace. Without this, running `oac` from another
+    repo left a relative CODE_PERMISSIONS_CONFIG unresolvable, load_permission_rules() returned
+    EMPTY, and every deny rule (read_file(.env), rm, curl, ...) silently evaporated under bypass."""
+    raw = (raw or "").strip()
+    if not raw or os.path.isabs(raw):
+        return raw
+    at_root = os.path.join(INSTALL_ROOT, raw)
+    return at_root if os.path.isfile(at_root) else raw
+
+
 _MODES = {"default", "acceptEdits", "plan", "bypass"}
 PERMISSION_MODE = os.environ.get("CODE_PERMISSION_MODE", "").strip()
-PERMISSIONS_CONFIG = os.environ.get("CODE_PERMISSIONS_CONFIG", "").strip()
+PERMISSIONS_CONFIG = _resolve_install_path(os.environ.get("CODE_PERMISSIONS_CONFIG", ""))
 ADD_DIRS = os.environ.get("CODE_ADD_DIRS", "").strip()
+
+# Verified completion (Phase 6 / specs/0007). When on, the agent may not report a task DONE
+# while it has update_plan steps marked completed whose named file shows no real change — the
+# harness challenges the mismatch (up to N times), then records an honest 'unverified_completion'.
+VERIFY_COMPLETION = _as_bool(os.environ.get("CODE_VERIFY_COMPLETION", "true"))
+VERIFY_COMPLETION_RETRIES = int(os.environ.get("CODE_VERIFY_COMPLETION_RETRIES", "2"))
 
 
 def resolved_permission_mode() -> str:

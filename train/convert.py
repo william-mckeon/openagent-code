@@ -36,6 +36,7 @@ from src.tools import TOOLS, openai_schemas  # noqa: E402
 from src.trajectory import Trajectory  # noqa: E402  (for SCHEMA_VERSION)
 from src import config  # noqa: E402  (for SFT_VIEW)
 from eval import rubric  # noqa: E402  (behavior gate — specs/0004-agentic-evals.md)
+from src.prompts import strip_reasoning_preamble  # noqa: E402  (keep leaked CoT out of targets)
 
 TRAJ_GLOB = os.path.join(ROOT, "trajectories", "**", "*.jsonl")
 # TRAIN/EVAL FIREWALL: the eval suite is the HELD-OUT promotion gate. Converting its
@@ -131,9 +132,13 @@ def _step_row(step, view, tools, base_meta):
     else:
         prefix = list(mc["request"]["messages"])
         used = "as_sent" if view == "as_sent" else "as_sent_fallback"
+    completion = _assistant_from_response(mc["response"])
+    # Data hygiene: strip any leaked reasoning preamble from the TARGET so the corpus never
+    # teaches the model to dump chain-of-thought before its answer (seen live with gpt-oss).
+    completion["content"] = strip_reasoning_preamble(completion.get("content") or "")
     return {
         "messages": prefix,                                  # the input the agent saw
-        "completion": _assistant_from_response(mc["response"]),  # the action it took
+        "completion": completion,                            # the action it took (preamble-stripped)
         "tools": tools,
         "meta": {
             **base_meta,
