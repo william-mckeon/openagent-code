@@ -106,6 +106,37 @@ Checkpoints land in the mounted `train/checkpoints/` on the host. Adjust the CUD
 versions in `docker/train/Dockerfile` if your card isn't Blackwell (an Ampere/Ada card can use a
 cu124 wheel).
 
+### Or run it on AWS SageMaker — `train/launch_sm.py`  (specs/0006)
+
+No local GPU, no Docker, no Blackwell/`sm_120` wheel hunting: submit the SAME `train/sft.py` as a
+**Script Mode** job on SageMaker's prebuilt PyTorch container. Spot-capable (~50–70% off). The
+launcher uploads `sft.jsonl` to S3, runs the job, and pulls the trained LoRA adapter back to
+`train/checkpoints/student` so `train/merge.py` finds it unchanged. Local Docker stays the cheap
+validation bench; SageMaker is the "real run" (the same laptop-vs-cloud split Arcus uses).
+
+```bash
+pip install -e ".[sagemaker]"      # launcher deps (sagemaker SDK + boto3)
+
+# ONE-TIME AWS setup — REAL IAM keys (NOT the Bedrock bearer token):
+aws configure                       # AKIA... key + secret, region us-east-1
+aws s3 mb s3://openagent-training-<you> --region us-east-1
+#   IAM role (console): OpenAgentSageMakerRole = AmazonSageMakerFullAccess + AmazonS3FullAccess
+#   then set CODE_SM_BUCKET / CODE_SM_ROLE in .env (or the constants atop launch_sm.py)
+
+python -m train.convert            # produce train/dataset/sft.jsonl first
+
+# smoke (cheap — prove IAM/S3/spot for ~$1, tiny model):
+python -m train.launch_sm --model Qwen/Qwen2.5-0.5B-Instruct --instance ml.g5.xlarge --spot
+
+# the real run (a 3B LoRA on a 24GB instance; 20B needs --load_4bit + a g6e instance):
+python -m train.launch_sm --model Qwen/Qwen2.5-3B-Instruct --instance ml.g5.xlarge --spot
+#   -> adapter downloaded to train/checkpoints/student
+python -m train.merge --adapter train/checkpoints/student   # then serve + gate as below
+```
+
+Watch progress in the SageMaker console → Training jobs → **View logs**. Because `train/sft.py`
+reads `SM_CHANNEL_TRAIN` / `SM_MODEL_DIR`, the exact same trainer runs here and locally — no fork.
+
 **The data bridge** (`build_example`): each row's `messages + completion` is rendered through
 the tokenizer's chat template (with the row's `tools`), and the **prompt is masked (-100)** so
 loss falls only on the agent's ACTION — we clone the *decisions*, not the user/tool text

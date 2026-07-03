@@ -64,6 +64,15 @@ train = [
 serve = [
     "vllm>=0.6.0",
 ]
+# AWS SageMaker training substrate (specs/0006). The launcher (train/launch_sm.py) submits
+# train/sft.py as a Script-Mode job on SageMaker's prebuilt PyTorch container — no local GPU /
+# Docker. Needed only to LAUNCH; the training deps install into the container from
+# train/requirements-sm.txt. Also needs real IAM creds (aws configure), NOT the Bedrock token.
+#   pip install -e ".[sagemaker]"
+sagemaker = [
+    "sagemaker>=2.200.0",
+    "boto3>=1.34.0",
+]
 
 # `openagent-code` -> src/cli.py:main(). The function returns an exit code, which
 # setuptools' console-script wrapper passes to sys.exit().

@@ -12,6 +12,13 @@ Run:
   # real Tier-1 run on a GPU box
   python -m train.sft --model openai/gpt-oss-20b --epochs 1 --out train/checkpoints/student
 
+  # on AWS SageMaker (no local GPU / Docker) — submit via the launcher (specs/0006):
+  python -m train.launch_sm --model Qwen/Qwen2.5-3B-Instruct --instance ml.g5.xlarge --spot
+
+This SAME script runs locally AND inside a SageMaker job: when SageMaker sets SM_CHANNEL_TRAIN
+(the S3 data channel) and SM_MODEL_DIR (the output dir), main() reads them; off SageMaker the
+local --data / --out defaults stand.
+
 What it does:
   1. load_rows      — read the SFT rows (each = {messages, completion, tools, meta}).
   2. build_example  — THE DATA BRIDGE: render messages+completion through the tokenizer's
@@ -135,10 +142,25 @@ def main(argv=None):
     ap.add_argument("--batch", type=int, default=1)
     ap.add_argument("--grad-accum", type=int, default=8)
     ap.add_argument("--max-len", type=int, default=4096)
-    ap.add_argument("--load-4bit", action="store_true", help="4-bit base (bitsandbytes; needs CUDA)")
-    ap.add_argument("--smoke", action="store_true",
+    # store_true locally, BUT SageMaker passes every hyperparameter as `--key value`, so accept
+    # BOTH a bare flag (`--smoke`) and a value (`--smoke true`) via nargs="?" + a truthy parse.
+    ap.add_argument("--load-4bit", nargs="?", const="true", default="false",
+                    help="4-bit base (bitsandbytes; needs CUDA)")
+    ap.add_argument("--smoke", nargs="?", const="true", default="false",
                     help="tiny model + few steps + few rows: prove the pipeline anywhere")
     args = ap.parse_args(argv)
+
+    # SageMaker mounts the data channel at SM_CHANNEL_TRAIN (a dir) and expects the trained model
+    # under SM_MODEL_DIR; off SageMaker these are unset and the local defaults stand. Same script,
+    # both places (the pattern from Arcus's scripts/train_arcus.py).
+    sm_channel = os.environ.get("SM_CHANNEL_TRAIN")
+    if sm_channel:
+        cand = os.path.join(sm_channel, "sft.jsonl")
+        args.data = cand if os.path.isfile(cand) else sm_channel
+    args.out = os.environ.get("SM_MODEL_DIR", args.out)
+    # store_true args arrive as strings under SageMaker; normalize to bool so the rest is unchanged.
+    args.load_4bit = str(args.load_4bit).lower() in ("true", "1", "yes")
+    args.smoke = str(args.smoke).lower() in ("true", "1", "yes")
 
     model_id = args.model or (SMOKE_MODEL if args.smoke else None)
     if not model_id:
