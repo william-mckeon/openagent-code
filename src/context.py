@@ -14,6 +14,11 @@ what we LOG are two different things once compaction exists.
     whatever this object trims. A `compaction` event is logged when it summarizes.
 
 So compaction shrinks the model's context but never what we capture.
+
+Bounded-fragment invariant (specs/0009): every DYNAMIC fragment that enters the live context —
+tool results, user turns, the pinned plan, a compaction summary — passes through `_capped`, so no
+single item can grow unbounded and blow the model's window (Codex's "no unbounded model-visible
+items", adapted). The full text is always kept raw in the trajectory.
 """
 import json
 
@@ -47,8 +52,10 @@ class ContextManager:
         else:
             # Resumed session (src/session.py): pre-populate from the rehydrated raw
             # history. These messages are ALREADY in the trajectory file, so do NOT
-            # re-log them — only new turns get logged from here on.
-            self.working = list(initial_working)
+            # re-log them — only new turns get logged from here on. Cap each so the
+            # bounded-fragment invariant (specs/0009) holds on resume too: a huge
+            # historical message must not re-enter the live context uncapped.
+            self.working = [self._capped(m) for m in initial_working]
 
     def add(self, message):
         """Append one message. Logged raw (never compacted) and added to the live set.
@@ -62,15 +69,55 @@ class ContextManager:
         self.working.append(self._capped(message))
 
     def _capped(self, message):
+        """Bound ONE fragment to the live-context cap — the primitive behind the bounded-fragment
+        invariant (specs/0009). EVERY dynamic fragment (tool results, user turns, the pinned plan, a
+        compaction summary, resumed history) passes through here, so no single item grows unbounded.
+        BOTH places a huge string can hide are bounded: the message `content` (a big file READ, a long
+        subagent return) AND a native-mode tool call's `arguments` (a big file WRITE/edit — the whole
+        file body the model emits, with only short reasoning in `content`). The full text is always
+        preserved raw in the trajectory; a truncation is LOGGED so an oversized fragment is visible
+        for review rather than silent (Codex flags large model-visible items)."""
         limit = config.MAX_MESSAGE_CHARS
-        content = message.get("content")
-        if not limit or not isinstance(content, str) or len(content) <= limit:
+        if not limit:
             return message
-        trimmed = dict(message)
-        trimmed["content"] = (content[:limit]
-                              + f"\n...[truncated {len(content) - limit} chars to fit the live "
-                                "context; the full text is preserved in the trajectory]")
-        return trimmed
+        role = message.get("role", "?")
+        trimmed = None  # copy lazily — only if something actually needs capping
+
+        content = message.get("content")
+        if isinstance(content, str) and len(content) > limit:
+            trimmed = dict(message)
+            trimmed["content"] = self._truncate(content, limit, role, "content")
+
+        # Native-mode tool calls carry the model's raw arguments string; for a write_file/edit_file
+        # that is the ENTIRE file body while `content` is only short reasoning — so the symmetric
+        # huge-WRITE case would slip the cap the huge-READ case (a capped tool RESULT) is caught by.
+        # The id/type are preserved, so the tool_call<->result pairing the API requires is intact.
+        calls = message.get("tool_calls")
+        if isinstance(calls, list):
+            new_calls, changed = [], False
+            for tc in calls:
+                fn = tc.get("function") if isinstance(tc, dict) else None
+                argstr = fn.get("arguments") if isinstance(fn, dict) else None
+                if isinstance(argstr, str) and len(argstr) > limit:
+                    label = f"tool-call args ({fn.get('name', '?')})"
+                    new_calls.append({**tc, "function": {**fn, "arguments": self._truncate(argstr, limit, role, label)}})
+                    changed = True
+                else:
+                    new_calls.append(tc)
+            if changed:
+                if trimmed is None:
+                    trimmed = dict(message)
+                trimmed["tool_calls"] = new_calls
+
+        return trimmed if trimmed is not None else message
+
+    def _truncate(self, text, limit, role, what):
+        over = len(text) - limit
+        log.info("capped a %s %s fragment to fit the live context: %d -> %d chars (-%d)",
+                 role, what, len(text), limit, over)
+        return (text[:limit]
+                + f"\n...[truncated {over} chars to fit the live context; "
+                  "the full text is preserved in the trajectory]")
 
     def mark(self):
         """Snapshot the live working-set length so a failed turn can be rolled back to a
@@ -95,7 +142,10 @@ class ContextManager:
         is already in the raw history as the update_plan tool call, so pinning never
         adds to the captured `turn` stream.
         """
-        self.pinned = ({"role": "user", "content": "Current plan (keep it updated as you work):\n" + text}
+        # Bound the pinned fragment too (specs/0009): it is always sent AND never compacted, so an
+        # unbounded plan would silently eat the window every single turn.
+        self.pinned = (self._capped({"role": "user",
+                                     "content": "Current plan (keep it updated as you work):\n" + text})
                        if text else None)
 
     def _base(self):
@@ -129,10 +179,10 @@ class ContextManager:
         before = estimate_tokens(self._base() + self.working)
 
         summary = self.model.summarize(old)
-        summary_msg = {
+        summary_msg = self._capped({
             "role": "user",
             "content": "[Earlier conversation summarized to save context]\n" + summary,
-        }
+        })
         candidate = [summary_msg] + keep
         after = estimate_tokens(self._base() + candidate)
 

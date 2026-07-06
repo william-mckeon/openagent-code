@@ -346,6 +346,23 @@ Clean corpus (from real usage) → `train.convert` → SFT on the SageMaker subs
 local Docker → `eval.compare` gate → swap `CODE_API_BASE`. The first time the MODEL improves, not
 the harness. Needs accumulated real corpus, so it waits on usage — not an instant script.
 
+### Capability Track (Codex as reference) — parallel to the Phase-8 wait
+Axis-1 harness improvements adapted from OpenAI Codex (used as a *reference*, never copied — our own
+Python), run DURING the Phase-8 corpus wait so the trajectories we accumulate are sharper. Each phase
+is spec-driven, verified offline, and hardened by an adversarial review-by-concern pass before commit.
+- **C1 — skills foundation** ✅ → specs/0008: a `SKILL.md` workflow system + `run_skill` (opt-in,
+  self-locating, gated) + a decomposed `code-review` skill whose concerns fan out through the harness
+  (like `review_repo`, not model-driven). Skill runs ride `run_subagent`, so each one feeds the flywheel.
+- **C2 — skills breadth** ✅: a `review-log` skill bundling a stdlib Python helper (`summarize_log.py`),
+  proving the skill+script packaging pattern (Codex's babysit-pr shape).
+- **C3 — context discipline** ✅ → specs/0009: the bounded-fragment invariant — EVERY dynamic fragment
+  entering the live context (tool results, user turns, the pinned plan, a compaction summary) passes
+  through the cap, so no unbounded item can blow the window (Codex's model-visible-context rule). Closed
+  the real gap where `set_pinned` (always sent, never compacted) bypassed the cap.
+
+The adversarial reviews earned their cost: they caught 8 real bugs the offline tests missed across the
+track (incl. two Windows cp1252 encoding bugs and the unbounded-pinned-plan gap) — the ultracode rigor.
+
 ## Sequencing principles (why this order)
 
 - **Eval before the converter:** the eval batch teaches what good vs bad
