@@ -216,6 +216,17 @@ ADD_DIRS = os.environ.get("CODE_ADD_DIRS", "").strip()
 VERIFY_COMPLETION = _as_bool(os.environ.get("CODE_VERIFY_COMPLETION", "true"))
 VERIFY_COMPLETION_RETRIES = int(os.environ.get("CODE_VERIFY_COMPLETION_RETRIES", "2"))
 
+# Grounding check (Phase 10 / specs/0010). After verified completion accepts a "done", the harness
+# checks that the CLAIMS in the closing answer are grounded in the sources the agent cited/touched.
+# Tier 1 (deterministic) flags a cited path that doesn't exist. Tier 2 (semantic, CODE_VERIFY_
+# GROUNDING_SEMANTIC) spawns a CAPTURED verifier subagent that re-reads the sources and flags factual
+# claims they don't support — the honest-but-wrong class (a real path, but the wrong one). A grounding
+# failure is re-prompted (up to N), then recorded as an honest 'ungrounded_completion'. Tier 2 is on
+# by default: it is the more agentic check AND each verifier is a captured trajectory for the flywheel.
+VERIFY_GROUNDING = _as_bool(os.environ.get("CODE_VERIFY_GROUNDING", "true"))
+VERIFY_GROUNDING_RETRIES = int(os.environ.get("CODE_VERIFY_GROUNDING_RETRIES", "2"))
+VERIFY_GROUNDING_SEMANTIC = _as_bool(os.environ.get("CODE_VERIFY_GROUNDING_SEMANTIC", "true"))
+
 
 def resolved_permission_mode() -> str:
     """The effective mode: explicit CODE_PERMISSION_MODE, else derived from

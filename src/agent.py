@@ -18,6 +18,7 @@ made no tool calls, or stalled on the protocol, is not a success.
 import os
 
 from . import config
+from . import grounding
 from .tools import ToolResult
 from .prompts import SYNTHESIS_PROMPT
 from .logsetup import get_logger
@@ -61,6 +62,7 @@ class RunResult:
     def __init__(self, final, terminated, tool_calls):
         self.final = final              # the model's closing text (may be empty)
         self.terminated = terminated    # "final" | "nudge_exhausted" | "max_steps"
+                                        # | "unverified_completion" | "ungrounded_completion"
         self.tool_calls = tool_calls    # how many tool calls actually executed
 
 
@@ -83,6 +85,7 @@ class Agent:
         consecutive_fail = {}  # tool name -> count of prior consecutive failures
         tool_calls = 0
         verify_retries = 0     # completion-gate re-prompts used this run (Phase 6)
+        ground_retries = 0     # grounding-gate re-prompts used this run (Phase 10)
 
         try:
             for step in range(self.max_steps):
@@ -116,8 +119,25 @@ class Agent:
                                  "; ".join(unmet))
                         self.cm.add({"role": "user", "content": _completion_challenge(unmet)})
                         continue
+                    if unmet:
+                        return RunResult(decision.final, "unverified_completion", tool_calls)
+
+                    # Grounding gate (Phase 10 / specs/0010): completion is verified — the plan's
+                    # changes are real. Now check the closing answer's CLAIMS are grounded in the
+                    # sources it cited/touched (catches honest-but-wrong: a real file, wrong facts).
+                    # Re-prompt with the discrepancy (bounded), else return an HONEST outcome.
+                    ungrounded = grounding.problems(decision.final, ctx) if config.VERIFY_GROUNDING else []
+                    if ungrounded and ground_retries < config.VERIFY_GROUNDING_RETRIES:
+                        ground_retries += 1
+                        if ctx.verbose:
+                            print(f"  [grounding] {len(ungrounded)} claim(s) not backed by the "
+                                  f"cited sources")
+                        log.info("grounding challenge (retry %d): %s", ground_retries,
+                                 "; ".join(ungrounded))
+                        self.cm.add({"role": "user", "content": grounding.challenge(ungrounded)})
+                        continue
                     return RunResult(decision.final,
-                                     "unverified_completion" if unmet else "final", tool_calls)
+                                     "ungrounded_completion" if ungrounded else "final", tool_calls)
 
                 for call in decision.calls:
                     name, args = call["name"], call["args"]

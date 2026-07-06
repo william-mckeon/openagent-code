@@ -29,41 +29,54 @@ def _terminal_ask(question):
     return ans or "(no answer given)"
 
 
-def make_context(cwd, permissions, session_id, depth=0, verbose=False, interactive=False):
+def make_context(cwd, permissions, session_id, depth=0, verbose=False, interactive=False,
+                 traj_dir=None):
     """A Context with `ctx.spawn` and `ctx.ask` wired.
 
     `session_id` is THIS agent's trajectory id — a spawned child records it as its
     `parent_session_id`, which is how nested runs link together. `interactive`
-    enables ask_user to actually prompt a human (else it degrades).
+    enables ask_user to actually prompt a human (else it degrades). `traj_dir` is where
+    spawned children write their trajectory: None -> the corpus (config.trajectory_dir());
+    an eval run passes trajectories/eval/ so children (e.g. the Phase-10 grounding verifier)
+    stay behind the train/eval firewall (specs/0005) instead of leaking held-out eval
+    content into the SFT corpus.
     """
     ctx = Context(cwd, permissions)
     ctx.verbose = verbose
     ctx.depth = depth
     ctx.session_id = session_id
     ctx.interactive = interactive
+    ctx.traj_dir = traj_dir
     ctx.spawn = lambda task: run_subagent(task, ctx)
     ctx.ask = _terminal_ask if interactive else None
     return ctx
 
 
 def _classify(result, tool_calls):
-    """Honest outcome for a subagent (no verify command). Mirrors cli.py."""
+    """Honest outcome for a subagent (no verify command). Mirrors cli.py — honest gate outcomes are
+    checked BEFORE the tool_calls==0 fallback (a gate can fire with zero tool calls)."""
     if result.terminated == "nudge_exhausted":
         return "protocol_stalled"
+    if result.terminated == "unverified_completion":
+        return "unverified_completion"
+    if result.terminated == "ungrounded_completion":
+        return "ungrounded_completion"
     if tool_calls == 0:
         return "no_action"
     if result.terminated == "max_steps":
         return "max_steps"
-    if result.terminated == "unverified_completion":
-        return "unverified_completion"
     return "completed"
 
 
 def run_subagent(task, parent_ctx):
     """Build a child agent for `task`, run it in isolation, return its final text."""
     child_depth = parent_ctx.depth + 1
+    # Children write to the parent's trajectory dir (None -> the corpus). This keeps subagents spawned
+    # INSIDE an eval — e.g. the Phase-10 grounding verifier — under trajectories/eval/ (the firewall),
+    # not in the training corpus (specs/0005).
+    traj_dir = getattr(parent_ctx, "traj_dir", None) or config.trajectory_dir()
     traj = Trajectory(
-        config.trajectory_dir(), task, config.MODEL, parent_ctx.cwd,
+        traj_dir, task, config.MODEL, parent_ctx.cwd,
         parent_session_id=parent_ctx.session_id,
         depth=child_depth,   # tool_schemas defaults to the active toolset
     )
@@ -73,7 +86,7 @@ def run_subagent(task, parent_ctx):
     # mid-review. The human talks to the lead; children just do their bounded task and report.
     child_ctx = make_context(parent_ctx.cwd, parent_ctx.permissions, traj.session_id,
                              depth=child_depth, verbose=parent_ctx.verbose,
-                             interactive=False)
+                             interactive=False, traj_dir=getattr(parent_ctx, "traj_dir", None))
     if parent_ctx.verbose:
         print(f"  [subagent depth={child_depth}] {task[:70]}")
 

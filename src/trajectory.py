@@ -208,7 +208,7 @@ class Trajectory:
             "session_id": self.session_id,
             "ts": _ts(),
             # success | completed | verify_failed | no_action | protocol_stalled |
-            # max_steps | error
+            # max_steps | error | unverified_completion (Phase 6) | ungrounded_completion (Phase 10)
             "outcome": outcome,
             "terminated": terminated,                 # how the loop ended (agent.RunResult)
             "steps": self.steps,

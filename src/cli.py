@@ -107,12 +107,17 @@ def _one_shot(task, perms):
 
     if terminated == "nudge_exhausted":
         outcome = "protocol_stalled"
+    # Honest gate outcomes win over the tool_calls==0 fallback: grounding (unlike the completion
+    # gate, which needs update_plan) can fire with ZERO tool calls (Tier 1, or Tier 2's verifier is
+    # a separate child), so a 0-tool-call ungrounded run must NOT be relabeled no_action.
+    elif terminated == "unverified_completion":
+        outcome = "unverified_completion"
+    elif terminated == "ungrounded_completion":
+        outcome = "ungrounded_completion"
     elif traj.tool_calls == 0:
         outcome = "no_action"
     elif terminated == "max_steps":
         outcome = "max_steps"
-    elif terminated == "unverified_completion":
-        outcome = "unverified_completion"
     else:
         outcome = "completed"
 

@@ -56,8 +56,9 @@ def run_task(task_path, traj_dir=EVAL_TRAJ_DIR):
         # Trajectory persists outside the sandbox so the batch survives.
         traj = Trajectory(traj_dir, spec["prompt"], config.MODEL, sandbox)
         # Force bypass: eval runs headless and must auto-approve to exercise the agent.
+        # traj_dir keeps any spawned child (e.g. a grounding verifier) under the eval firewall.
         ctx = make_context(sandbox, Permissions.from_config(mode_override="bypass"),
-                           traj.session_id, depth=0, verbose=False)
+                           traj.session_id, depth=0, verbose=False, traj_dir=traj_dir)
         agent = build_agent(traj)
 
         result = agent.run(spec["prompt"], ctx)
@@ -112,13 +113,15 @@ def run_agentic_task(task_path):
                 f.write(content)
 
         traj = Trajectory(EVAL_TRAJ_DIR, spec["prompt"], config.MODEL, sandbox)
+        # traj_dir keeps any spawned child (e.g. the grounding verifier) under the eval firewall.
         ctx = make_context(sandbox, Permissions.from_config(mode_override="bypass"),
-                           traj.session_id, depth=0, verbose=False)
+                           traj.session_id, depth=0, verbose=False, traj_dir=EVAL_TRAJ_DIR)
         result = build_agent(traj).run(spec["prompt"], ctx)
-        # Honor the completion gate (Phase 6): a run that claimed done without doing it ends
-        # 'unverified_completion' so the rubric can score it (Phase 8), not silently 'completed'.
-        if result.terminated == "unverified_completion":
-            ag_outcome = "unverified_completion"
+        # Honor the completion (Phase 6) and grounding (Phase 10) gates: a run that claimed done
+        # without doing it, or whose claims aren't grounded in the sources, keeps its honest terminated
+        # label so the rubric can score it (Phase 8), not silently 'completed'.
+        if result.terminated in ("unverified_completion", "ungrounded_completion"):
+            ag_outcome = result.terminated
         else:
             ag_outcome = "completed" if traj.tool_calls else "no_action"
         traj.end(ag_outcome, result.final, terminated=result.terminated)

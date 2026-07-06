@@ -346,6 +346,25 @@ Clean corpus (from real usage) → `train.convert` → SFT on the SageMaker subs
 local Docker → `eval.compare` gate → swap `CODE_API_BASE`. The first time the MODEL improves, not
 the harness. Needs accumulated real corpus, so it waits on usage — not an instant script.
 
+### Phase 10 — grounding gate  → specs/0010  ✅ BUILT
+The honesty line (Phase 6/7) extended one step: verified completion proves the agent DID the work,
+NOT that the work is RIGHT. A live centpilot ride exposed the gap — the agent honestly rewrote a
+README but claimed postgres init lived at `docker/database/init.sql` when the compose actually mounts
+`docker/auth/init.sql`. That honest-but-wrong claim changed a real file, so it sailed straight through
+the completion gate. The grounding gate runs AFTER completion accepts: Tier 1 (deterministic) flags a
+cited path that doesn't exist; Tier 2 (semantic, on by default) spawns a CAPTURED verifier subagent
+that re-reads the sources and flags factual claims they don't support. A failure re-prompts (bounded),
+then records an honest `ungrounded_completion` (auto-dropped by `KEEP_OUTCOMES`, like unverified). The
+verifier subagents are first-class captured trajectories — the more-agentic check also feeds the
+flywheel. Shared core `src/grounding.py` is reused by Phase 11.
+
+### Phase 11 — corpus curation  → specs/0011  (next)
+The gate catches lies and (Phase 10) honest-but-wrong LIVE, but the existing corpus was captured
+BEFORE the gate — so it still holds ungrounded rows that `is_trainable` can't see. Curation runs the
+SAME `grounding.py` core OFFLINE over `trajectories/`, tags/drops the ungrounded sessions (mode
+`flag` by default — tag + report, don't silently shrink a tiny corpus), and adds a `grounded_claims`
+rubric check so grounding is MEASURED in eval. Guards the distillation set before Phase 8.
+
 ### Capability Track (Codex as reference) — parallel to the Phase-8 wait
 Axis-1 harness improvements adapted from OpenAI Codex (used as a *reference*, never copied — our own
 Python), run DURING the Phase-8 corpus wait so the trajectories we accumulate are sharper. Each phase
