@@ -292,7 +292,11 @@ def run_command(args, ctx):
     shell_cmd = (["powershell", "-NoProfile", "-Command", cmd] if os.name == "nt"
                  else ["bash", "-lc", cmd])
     try:
-        p = subprocess.run(shell_cmd, cwd=ctx.cwd, capture_output=True, text=True, timeout=120)
+        # encoding='utf-8', errors='replace': the default text=True decodes command output with the
+        # PLATFORM encoding (cp1252 on Windows), which RAISES on any byte undefined there and nulls
+        # stdout while returncode stays 0 - silently dropping real output into the trajectory.
+        p = subprocess.run(shell_cmd, cwd=ctx.cwd, capture_output=True,
+                           encoding="utf-8", errors="replace", timeout=120)
     except subprocess.TimeoutExpired:
         return ToolResult(False, "Command timed out after 120s")
     out = (p.stdout or "")
