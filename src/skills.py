@@ -103,6 +103,18 @@ def find_subskills(skill):
             if s.dirname != skill.dirname and fnmatch.fnmatch(s.dirname, pat)]
 
 
+def bundled_scripts(skill):
+    """Absolute paths of files under the skill's scripts/ dir — the Codex 'skill + helper script'
+    pattern (C2). The model runs them via run_command / reads them via read_file. [] if there's no
+    scripts/ dir. Never raises."""
+    d = os.path.join(os.path.dirname(skill.path), "scripts")
+    try:
+        return [os.path.join(d, f) for f in sorted(os.listdir(d))
+                if os.path.isfile(os.path.join(d, f))]
+    except OSError:
+        return []
+
+
 def _current_diff(cwd, target=None):
     """(diff_text, changed_files) for the workspace, or (None, reason). Runs git in `cwd` via
     subprocess (NOT the run_command tool, so it isn't permission-gated and children stay pure-read).
@@ -167,8 +179,17 @@ def run_skill(args, ctx):
 
     subs = find_subskills(skill)
     if not subs:
-        # Leaf skill: inject its guidance (a concern invoked directly, or a simple prompt skill).
-        return ToolResult(True, skill.body)
+        # Leaf skill: inject its guidance. Expose any BUNDLED scripts by ABSOLUTE path (C2) so the
+        # model can run them via run_command / read them via read_file, and pass the target through.
+        body = skill.body
+        scripts = bundled_scripts(skill)
+        if scripts:
+            body += ("\n\nBundled scripts for this skill (run with run_command, or read_file them):\n"
+                     + "\n".join(f"  - {p}" for p in scripts))
+        target = (args.get("target") or "").strip()
+        if target:
+            body += f"\n\ntarget: {target}"
+        return ToolResult(True, body)
 
     # Orchestrator: harness-driven concern fan-out (guards mirror review_repo).
     if ctx.spawn is None:

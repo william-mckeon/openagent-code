@@ -35,8 +35,8 @@ semantic). Frontmatter is parsed by a small hand-rolled `key: value` reader (**n
 `src/` yaml-free and never-raising); a malformed/missing block degrades to `name=<dirname>`, empty
 description, whole file as body, and **never raises** (same posture as `config.load_permission_rules`).
 
-Bundled `scripts/` / `references/` dirs beside `SKILL.md` are **format-supported but C1 ships none**
-(anti-scope-creep). C1 ships exactly **4** `SKILL.md` files.
+Bundled `scripts/` / `references/` dirs beside `SKILL.md` are **format-supported**; C1 shipped none,
+**C2 adds the first** (`review-log`'s `summarize_log.py` — see "Skill + script bundling" below).
 
 ## Loader — `src/skills.py`
 
@@ -103,6 +103,17 @@ One orchestrator + three concern leaves (matching the repo's own review vocabula
   schemas in `tools.py`, `CODE_*` env-var names/defaults in `config.py`, permission-rule matchers,
   and the trajectory/JSONL shape the flywheel converter reads (adapts Codex `code-review-breaking-changes`).
 
+## Skill + script bundling (C2)
+
+A skill dir may bundle helper scripts under `scripts/`. `bundled_scripts(skill)` returns their
+absolute paths; a LEAF skill's `run_skill` return appends them (and any `target`) so the model can
+run them via `run_command` / read them via `read_file`. The first such skill is **`review-log`** — a
+leaf that reviews an openagent-code session log, bundling `summarize_log.py` (extracts the log's
+signals — tool counts, fails, retries, compactions, completion-challenges, reasoning-leak, `.env`
+touches, thrash — into a bounded digest the reviewer confirms against the log). This proves the
+platform generalizes past the orchestrator shape and exercises the Codex `babysit-pr` skill+script
+pattern. The summarizer is **stdlib-only and defensive** (an unrecognized log line is ignored).
+
 ## Config
 
 In `src/config.py`, alongside the MEMORY (opt-in gate) and trajectory (self-location) blocks:
@@ -164,7 +175,7 @@ file:line, no-confab, read-only discipline the Phase-7 behavior eval scores and
 ## Non-goals (C1)
 
 - **Model-driven decomposition** (the model spawning the subagents) — rejected; the harness fans out.
-- **Bundled script execution**, a generic skill marketplace/discovery UI, or any second shipped skill
-  — those are C2+.
+- A generic skill **marketplace / discovery UI** or dynamic skill installation — beyond the current
+  file-based library (bundled helper scripts, run by the model via `run_command`, are supported).
 - **A trajectory schema bump** for a structured `skill`/`concern` tag — the concern is already in the
   child's task text; a structured tag is a later option, not C1.

@@ -111,6 +111,53 @@ def main():
     check("non-git workspace -> 'Nothing to review', spawns nothing",
           r.ok and "Nothing to review" in r.content and len(calls) == before)
 
+    # -- C2: review-log leaf skill + bundled helper script -------------------
+    rl = skills.load_skill("review-log")
+    check("review-log skill loads as a leaf (no subskills)",
+          rl is not None and not skills.find_subskills(rl))
+    scr = skills.bundled_scripts(rl)
+    check("bundled_scripts finds summarize_log.py",
+          any(os.path.basename(p) == "summarize_log.py" for p in scr))
+    ctxL = Context(ROOT, None)
+    ctxL.spawn, ctxL.depth = None, 0
+    r = skills.run_skill({"name": "review-log", "target": "logs/x.log"}, ctxL)
+    check("run_skill(review-log) returns body + bundled script path + target",
+          r.ok and "summarize_log.py" in r.content and "logs/x.log" in r.content)
+
+    # -- C2: summarize_log.py must not MISPARSE (regression guards for the review findings) -------
+    import subprocess as _sp
+    summ = os.path.join(ROOT, "skills", "review-log", "scripts", "summarize_log.py")
+
+    def _digest(loglines):
+        p = os.path.join(tempfile.mkdtemp(prefix="skill_log_"), "s.log")
+        open(p, "w", encoding="utf-8").write("\n".join(loglines) + "\n")
+        return _sp.run([sys.executable, summ, p], capture_output=True,
+                       encoding="utf-8", errors="replace").stdout
+
+    dg = _digest([
+        "12:00:01 INFO    [openagent_code.cli] REPL start | model=m mode=bypass workspace=/x",
+        "12:00:02 INFO    [openagent_code.cli] turn 1 | you> do a thing",
+        # a step whose RESULT snippet contains 'retrying' -> counts as a tool call, NOT a retry
+        "12:00:03 INFO    [openagent_code.agent] step 1 [FAIL] run_command(cmd='pytest') -> ConnectionError: retrying...",
+        # a read whose RESULT contains '.env' and a second ') ->' -> must NOT false-flag .env-touch
+        "12:00:04 INFO    [openagent_code.agent] step 2 [ok] read_file(path='src/config.py') -> import os  # .env parse; def load() -> dict:",
+        # the genuine model retry (a non-step line)
+        "12:00:05 WARNING [openagent_code.model] model call TimeoutError (attempt 1/6) - retrying",
+        # a clean 'According to the spec' answer -> must NOT flag reasoning-leak
+        "12:00:06 INFO    [openagent_code.cli] result (terminated=False): According to the spec, the loader works.",
+        # a prefix-less CONTINUATION line quoting a log -> must be SKIPPED (no phantom edit_file)
+        "step 3 [FAIL] edit_file(path='x.py') -> phantom, retrying",
+        "12:00:07 INFO    [openagent_code.cli] REPL end | 1 turn(s) tool_calls=2",
+    ])
+    check("step w/ 'retrying' in its result counts as a tool call, not a model retry",
+          "tool calls: 2 |" in dg and "model retries: 1 |" in dg and "run_command [FAIL] x1" in dg)
+    check("read whose result contains '.env' is NOT false-flagged .env-touch", "[.ENV-TOUCH]" not in dg)
+    check("'According to the spec' is NOT flagged reasoning-leak", "[REASONING-LEAK]" not in dg)
+    check("a prefix-less continuation line makes no phantom tool call", "edit_file" not in dg)
+
+    dg2 = _digest(["12:00:01 INFO    [openagent_code.cli] result (terminated=False): Now we need to produce a review."])
+    check("a real CoT-opening answer IS flagged reasoning-leak", "[REASONING-LEAK]" in dg2)
+
     passed, total = sum(_results), len(_results)
     print(f"\nVERDICT: {passed}/{total} {'[OK]' if passed == total else '[FAIL]'}")
     return 0 if passed == total else 1
