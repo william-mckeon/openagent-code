@@ -119,9 +119,9 @@ pip install -e ".[sagemaker]"      # launcher deps (sagemaker SDK + boto3)
 
 # ONE-TIME AWS setup — REAL IAM keys (NOT the Bedrock bearer token):
 aws configure                       # AKIA... key + secret, region us-east-1
-aws s3 mb s3://openagent-training-<you> --region us-east-1
 #   IAM role (console): OpenAgentSageMakerRole = AmazonSageMakerFullAccess + AmazonS3FullAccess
-#   then set CODE_SM_BUCKET / CODE_SM_ROLE in .env (or the constants atop launch_sm.py)
+#   set CODE_SM_ROLE in .env. No data bucket needed — the dataset is bundled into the job and
+#   SageMaker's default bucket carries it. (CODE_SM_BUCKET is optional.) (or the constants atop launch_sm.py)
 
 python -m train.convert            # produce train/dataset/sft.jsonl first
 

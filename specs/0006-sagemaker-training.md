@@ -32,9 +32,12 @@ openagent-code's parked Tier-3 student, so putting both on one SageMaker substra
   sets them; off SageMaker the local defaults stand. `store_true` flags (`--smoke`, `--load-4bit`)
   became `nargs="?"` so SageMaker's `--key value` hyperparameter passing works. (Both are the
   exact patterns Arcus's `scripts/train_arcus.py` uses — `SM_CHANNEL_TRAIN or args.shards`.)
-- **Data + output over S3.** The launcher uploads the tiny `sft.jsonl` to S3, runs the job, and
-  the trained LoRA adapter comes back as SageMaker's model artifact (`model.tar.gz`). The launcher
-  downloads + unpacks it into `train/checkpoints/student` so `train/merge.py` finds it unchanged.
+- **Data bundled; output via S3.** The tiny `sft.jsonl` is BUNDLED into `source_dir` (it rides to
+  SageMaker's default bucket with the code) — no data bucket to create, no separate upload; it
+  lands next to `sft.py` in `/opt/ml/code`, where `sft.py` finds it. The trained LoRA adapter comes
+  back as SageMaker's model artifact (`model.tar.gz`); the launcher downloads + unpacks it into
+  `train/checkpoints/student` so `train/merge.py` finds it unchanged. (For a much larger corpus
+  later, switch to an S3 data channel; bundling is the right call while the dataset is small.)
 - **Secrets from the shell.** `HF_TOKEN` is forwarded to the job only if set (private base models),
   never committed. Bucket/role via env (`CODE_SM_BUCKET` / `CODE_SM_ROLE`).
 

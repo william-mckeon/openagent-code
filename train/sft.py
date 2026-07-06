@@ -150,13 +150,17 @@ def main(argv=None):
                     help="tiny model + few steps + few rows: prove the pipeline anywhere")
     args = ap.parse_args(argv)
 
-    # SageMaker mounts the data channel at SM_CHANNEL_TRAIN (a dir) and expects the trained model
-    # under SM_MODEL_DIR; off SageMaker these are unset and the local defaults stand. Same script,
-    # both places (the pattern from Arcus's scripts/train_arcus.py).
+    # SageMaker: read the data channel at SM_CHANNEL_TRAIN (a dir) if one was passed; else the
+    # dataset was BUNDLED into source_dir and arrives next to this script (/opt/ml/code/sft.jsonl).
+    # The trained model goes under SM_MODEL_DIR. Off SageMaker (all unset) the local defaults stand.
+    # Same script, both places (the pattern from Arcus's scripts/train_arcus.py).
     sm_channel = os.environ.get("SM_CHANNEL_TRAIN")
+    bundled = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sft.jsonl")
     if sm_channel:
         cand = os.path.join(sm_channel, "sft.jsonl")
         args.data = cand if os.path.isfile(cand) else sm_channel
+    elif os.path.isfile(bundled) and not os.path.isfile(args.data):
+        args.data = bundled
     args.out = os.environ.get("SM_MODEL_DIR", args.out)
     # store_true args arrive as strings under SageMaker; normalize to bool so the rest is unchanged.
     args.load_4bit = str(args.load_4bit).lower() in ("true", "1", "yes")
