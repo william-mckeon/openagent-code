@@ -472,6 +472,7 @@ def web_search(args, ctx):
 # Imported here (not at top) so orchestrator.py can import ToolResult from this module
 # without a circular import — ToolResult is defined above by now.
 from .orchestrator import review_repo  # noqa: E402
+from .skills import run_skill  # noqa: E402  (skills.py imports ToolResult lazily -> no cycle)
 
 TOOLS = [
     {
@@ -675,6 +676,24 @@ MEMORY_TOOLS = [
         "parameters": {"type": "object", "properties": {
             "note": {"type": "string"},
         }, "required": ["note"]},
+    },
+]
+
+
+# Opt-in skills tool (specs/0008) — added to the active toolset by src/toolset.py only when
+# CODE_SKILLS is on. run_skill loads a SKILL.md workflow by name; an orchestrator skill fans out
+# one captured subagent per concern (harness-driven, like review_repo). Non-mutating (a review).
+SKILL_TOOLS = [
+    {
+        "name": "run_skill", "fn": run_skill,
+        "description": ("Run a named skill — a reusable review workflow. 'code-review' reviews the "
+                        "CURRENT git diff by concern (correctness, tests, breaking-changes), one "
+                        "subagent each, and returns one numbered report. READ-ONLY. Optional "
+                        "'target' scopes it to a path."),
+        "parameters": {"type": "object", "properties": {
+            "name": {"type": "string", "description": "the skill to run, e.g. 'code-review'"},
+            "target": {"type": "string", "description": "optional path to scope the diff"},
+        }, "required": ["name"]},
     },
 ]
 

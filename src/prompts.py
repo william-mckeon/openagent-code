@@ -161,6 +161,19 @@ def build_system_prompt(mode, tools, memory=None, granted_dirs=None):
                  + listed + "\nTo look in one, pass its ABSOLUTE path to read_file / grep / "
                  "glob. If the user names one of these, review THAT directory — do not "
                  "default to the workspace.")
+    # Skills (specs/0008): advertise the reusable workflows the model can invoke via run_skill —
+    # only the ENTRY-POINT skills (an orchestrator's concern sub-skills stay internal).
+    if any(t["name"] == "run_skill" for t in tools):
+        from . import skills  # lazy import keeps prompts.py dependency-light at module load
+        all_skills = skills.list_skills()
+        internal = {sub.dirname for s in all_skills for sub in skills.find_subskills(s)}
+        listed = "\n".join(f"  - {s.name}: {s.description}"
+                           for s in all_skills if s.dirname not in internal)
+        if listed:
+            note += ("\n\nSkills you can run with run_skill(name=...) — reusable review workflows:\n"
+                     + listed + "\nUse code-review to review the current diff by concern rather "
+                     "than reviewing files ad hoc.")
+
     # Cross-session memory (Phase 4 #7): prior-session notes about THIS repo. Lands in
     # the system prompt, which is logged as the first raw turn -> self-containment holds.
     mem = ""

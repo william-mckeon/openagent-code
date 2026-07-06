@@ -354,6 +354,22 @@ def trajectory_dir() -> str:
     return d if os.path.isabs(d) else os.path.join(INSTALL_ROOT, d)
 
 
+# -----------------------------------------------------------------------------
+# Skills (specs/0008) — reusable, harness-orchestrated workflows (SKILL.md files).
+# Opt-in like memory; the skills dir SELF-LOCATES against the install root (like trajectories),
+# so `oac` finds the skills corpus no matter which repo it runs in.
+# -----------------------------------------------------------------------------
+SKILLS = _as_bool(os.environ.get("CODE_SKILLS", "false"))
+SKILLS_DIR = os.environ.get("CODE_SKILLS_DIR", "skills")
+
+
+def skills_dir() -> str:
+    """Absolute skills dir — a clone of trajectory_dir(): relative values resolve against the
+    INSTALL ROOT, so the skills library is found regardless of the current workspace."""
+    d = SKILLS_DIR
+    return d if os.path.isabs(d) else os.path.join(INSTALL_ROOT, d)
+
+
 def display_model() -> str:
     """The model id as FORWARDED to the endpoint, for banners only.
 

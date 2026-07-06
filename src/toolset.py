@@ -12,7 +12,7 @@ per-run agreement is what keeps the Phase-3 self-containment gate accurate as th
 toolset varies.
 """
 from . import config
-from .tools import TOOLS, WEB_TOOLS, MEMORY_TOOLS, openai_schemas
+from .tools import TOOLS, WEB_TOOLS, MEMORY_TOOLS, SKILL_TOOLS, openai_schemas
 from .mcp_client import mcp_tools
 
 
@@ -21,6 +21,8 @@ def active_tools():
     tools = list(TOOLS)
     if config.MEMORY:
         tools += MEMORY_TOOLS
+    if config.SKILLS:
+        tools += SKILL_TOOLS
     if config.ENABLE_WEB:
         tools += WEB_TOOLS
     tools += mcp_tools()
