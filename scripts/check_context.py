@@ -108,6 +108,15 @@ def main():
     check("a small tool_calls arguments is left untouched",
           cmT.working[-1]["tool_calls"][0]["function"]["arguments"] == '{"path": "x.py"}')
 
+    # 9. the current user REQUEST is pinned and survives compaction (can't be summarized away — the
+    #    live-run failure where "what project is this?" got compacted out and the agent lost the question)
+    cmT = ContextManager("s", _Model(), _Traj(), compact_at_tokens=1, keep_recent=1)
+    cmT.set_task("what project are we in?")
+    for i in range(6):
+        cmT.add({"role": "user", "content": f"noise {i} " + "." * 40})
+    check("the pinned user request survives compaction",
+          any("what project are we in?" in (m.get("content") or "") for m in cmT.context()))
+
     passed, total = sum(_results), len(_results)
     print(f"\nVERDICT: {passed}/{total} {'[OK]' if passed == total else '[FAIL]'}")
     return 0 if passed == total else 1

@@ -159,7 +159,9 @@ def _verifier_task(final_text, paths):
         "files in this workspace. Read the files it references AND any config they depend on (a "
         "docker-compose / Dockerfile / manifest decides the real wiring - a claim about which file does "
         "X is only true if that config says so). Do NOT perform the task and do NOT suggest "
-        "improvements. Flag ONLY claims that CONTRADICT or are UNSUPPORTED by the files.\n\n"
+        "improvements. Flag ONLY a claim a file directly CONTRADICTS (states something DIFFERENT). A "
+        "reasonable high-level characterization ('X is a Next.js app' when package.json lists it) is "
+        "GROUNDED - do NOT flag a fair summary merely because every detail wasn't exhaustively verified.\n\n"
         f"Files the answer references:\n{listed}\n\n"
         "=== ANSWER TO VERIFY ===\n" + (final_text or "").strip() + "\n=== END ANSWER ===\n\n"
         "Output one line per problem, exactly:\n"
@@ -184,26 +186,33 @@ def _parse_verdict(out):
 
 
 def challenge(problems):
-    """The re-prompt (mirror of agent._completion_challenge), sent when grounding finds a problem and
-    a retry remains."""
-    return ("Do NOT report the task done yet - these claims in your answer aren't grounded in the "
-            "actual files:\n" + "\n".join(f"- {p}" for p in problems)
-            + "\nRe-check each against the real source (read the file, and any config - compose, "
-              "Dockerfile, manifest - that determines the TRUE wiring), then fix your answer or the "
-              "code and re-verify. Only report done once every claim matches the files.")
+    """The re-prompt, sent when grounding finds a problem and a retry remains. Deliberately NARROW and
+    NON-HIJACKING: a TARGETED re-check of the flagged claim plus a reminder to still answer the user's
+    ORIGINAL request — an earlier version drove the agent to re-audit the whole repo and lose the
+    question it was asked."""
+    return ("One or more claims in your answer aren't backed by the files:\n"
+            + "\n".join(f"- {p}" for p in problems)
+            + "\nDo a TARGETED read of just what confirms or corrects each flagged claim - do NOT "
+              "re-investigate the whole repo. Then answer the USER'S ORIGINAL request directly with the "
+              "claim fixed, keeping the rest of your answer as-is.")
 
 
 def problems(final_text, ctx):
     """Runtime entry (Feature B): the live-ctx adapter. Grounding checks ONLY the top-level, user-facing
-    answer (ctx.depth == 0). A subagent's answer is intermediate — the parent re-checks its own final
-    synthesis — and a Tier-2 verifier must never grounding-check ITSELF (its job is to quote paths,
-    including ones it asserts are ABSENT, which a path-existence check would wrongly flag). So a depth>0
-    agent is skipped entirely; this also means the verifier can't trigger a verify-the-verifier cascade.
+    answer (ctx.depth == 0). A subagent's answer is intermediate and a Tier-2 verifier must never
+    grounding-check ITSELF (its job is to quote paths, incl. ones it asserts are ABSENT), so a depth>0
+    agent is skipped entirely — which also means the verifier can't trigger a verify-the-verifier cascade.
 
-    At depth 0: when semantic grounding is on (default) with a spawn available, the verifier subagent is
-    the AUTHORITY — it reads the workspace and judges, so it won't false-flag an import/date/prose token
-    the way a bare path-existence check would. Only when semantic is OFF (or no spawn) do we fall back to
-    the deterministic cited-path-existence check."""
+    PROPORTIONALITY lives in the verifier's LENIENCY + a non-hijacking challenge, NOT in skipping the
+    check. The Tier-2 verifier flags ONLY a CONTRADICTED claim (see _verifier_task), so a fair overview
+    ("src/homepage is a Next.js app") is CLEARED — not turned into a repo audit — while a read-only
+    REVIEW's honest-but-wrong claim is still caught. (An earlier attempt gated Tier 2 on mutations to
+    tame a live run that ballooned a one-line question into 58 tool calls; but that lost the
+    honest-but-wrong catch on the highest-value read-only deliverable — a review — so the real fix is the
+    lenient verifier + a targeted, non-hijacking challenge, not gating on mutations.)
+
+    Only when semantic is OFF (or no spawn) do we fall back to the deterministic cited-path-existence
+    check — which flags only a SPECIFIC missing path, never a bare basename it can't cheaply locate."""
     if getattr(ctx, "depth", 0) != 0:
         return []
     if config.VERIFY_GROUNDING_SEMANTIC and getattr(ctx, "spawn", None) is not None:
@@ -213,4 +222,10 @@ def problems(final_text, ctx):
     if not paths:
         return []
     muts = getattr(ctx, "mutations", None) or {}
-    return deterministic_problems(paths, lambda p: (p in muts) or os.path.exists(os.path.join(ctx.cwd, p)))
+
+    def _exists(p):
+        # A bare basename ('config.py') is often a subdir file (src/config.py) we can't cheaply locate,
+        # so NEVER hard-flag it — only a SPECIFIC path (with a slash) missing from disk AND the mutation
+        # ledger is a clear phantom (mirrors the offline curator's grounded_by basename leniency).
+        return "/" not in p or (p in muts) or os.path.exists(os.path.join(ctx.cwd, p))
+    return deterministic_problems(paths, _exists)

@@ -74,7 +74,8 @@ def main():
             tool_counts[(name, flag)] += 1
             if flag == "FAIL":
                 fails.append((i, name))
-            if ".env" in argstr and name in _MUTATORS:
+            if (".env" in argstr and name in _MUTATORS
+                    and not any(t in argstr for t in (".example", ".sample", ".template", ".dist"))):
                 env_touch.append((i, name))
             continue
         if msg.startswith(("one-shot start", "REPL start")):

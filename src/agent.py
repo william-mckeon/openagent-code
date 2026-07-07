@@ -82,6 +82,7 @@ class Agent:
         # poisoning the session. The trajectory still captured every raw turn.
         mark = self.cm.mark()
         self.cm.add({"role": "user", "content": task})
+        self.cm.set_task(task)   # pin the request so compaction can't summarize away what was asked
         consecutive_fail = {}  # tool name -> count of prior consecutive failures
         tool_calls = 0
         verify_retries = 0     # completion-gate re-prompts used this run (Phase 6)

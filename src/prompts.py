@@ -21,6 +21,10 @@ Working method:
   Skip the plan for simple one- or two-step tasks.
 - Investigate before acting. Use read_file / grep / glob to ground yourself in the
   actual code. Never assume a file's contents — read it.
+- MATCH your depth to the request. A simple question ("what is this project?", "where is
+  X?") gets a DIRECT, brief answer from a few key files (README, package.json / go.mod, the
+  folder layout) — do NOT read every file or audit the whole repo, and asking ABOUT the code
+  is never a request to CHANGE it. Go deep only when the stakes warrant it (a fix, a real review).
 - File paths are relative to the workspace root. Use paths exactly as glob/grep
   report them; never add a leading slash or a "workspace/" prefix.
 - "this project", "our project", "the repo", "the codebase" mean your WORKSPACE — the

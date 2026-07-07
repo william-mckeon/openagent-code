@@ -44,7 +44,8 @@ class ContextManager:
         self.verbose = verbose
 
         self.system = {"role": "system", "content": system_prompt}
-        self.pinned = None  # always-visible, never-compacted message (e.g. the plan)
+        self.pinned = None       # always-visible, never-compacted message (e.g. the plan)
+        self.pinned_task = None   # the current user request, pinned so compaction can't lose it
         if initial_working is None:
             # Fresh session: empty working set; the system prompt is the first raw turn.
             self.working = []
@@ -148,8 +149,22 @@ class ContextManager:
                                      "content": "Current plan (keep it updated as you work):\n" + text})
                        if text else None)
 
+    def set_task(self, text):
+        """Pin the CURRENT user request just after the system prompt — always sent, never compacted.
+
+        A live run turned "what project is this?" into a whole-repo audit: after 80+ tool calls the
+        turn compacted, the original question was summarized away, and the agent ended up answering the
+        grounding gate instead of the user. Pinning the request keeps it visible through compaction so
+        the agent stays on what was actually asked. Bounded like the plan pin (specs/0009).
+        """
+        self.pinned_task = (self._capped({"role": "user",
+                                          "content": "The user's current request (answer THIS directly):\n" + text})
+                            if text else None)
+
     def _base(self):
-        return [self.system] + ([self.pinned] if self.pinned else [])
+        return ([self.system]
+                + ([self.pinned_task] if self.pinned_task else [])   # the request first — the anchor
+                + ([self.pinned] if self.pinned else []))            # then the working plan
 
     def context(self):
         """The message list to send the model this step — compacting first if needed."""

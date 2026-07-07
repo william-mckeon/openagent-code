@@ -172,6 +172,14 @@ def main():
     ])
     check("a clean multi-line answer is NOT flagged reasoning-leak", "[REASONING-LEAK]" not in dg4)
 
+    # .env-touch: a real .env write is flagged, but reading a safe .env.example template is NOT.
+    check("a real .env write IS flagged .env-touch",
+          "[.ENV-TOUCH]" in _digest(
+              ["12:00:01 INFO    [openagent_code.agent] step 1 [ok] write_file(path='.env') -> wrote"]))
+    check(".env.example (a safe template) is NOT flagged .env-touch",
+          "[.ENV-TOUCH]" not in _digest(
+              ["12:00:01 INFO    [openagent_code.agent] step 1 [ok] read_file(path='.env.example') -> KEY=val"]))
+
     # -- prompts reasoning-leak: the mid-answer detect + strip that keep the CORPUS clean -------------
     from src.prompts import has_reasoning_leak, strip_reasoning_preamble  # noqa: E402
     _leak = ("The README now matches the compose file.\n\nNow we need to output final answer: "

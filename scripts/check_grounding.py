@@ -79,11 +79,14 @@ def main():
     ctx_del = _ctx(tmp, mutations={"docker/old.md": "delete"})
     check("semantic OFF: a deleted (mutated) path is not flagged phantom",
           grounding.problems("Removed `docker/old.md`.", ctx_del) == [])
+    check("semantic OFF: a bare basename (config.py, actually at src/config.py) is NOT false-flagged",
+          grounding.problems("The config lives in `config.py`.", _ctx(tmp)) == [])
     config.VERIFY_GROUNDING_SEMANTIC = True
 
     # -- semantic ON: the verifier subagent is the AUTHORITY (not path-existence) ----
     check("semantic ON: verifier is the authority (a phantom path it clears -> clean)",
-          grounding.problems("I made `docker/ghost.md`.", _ctx(tmp, spawn=lambda t, effort=None: "GROUNDED")) == [])
+          grounding.problems("I made `docker/ghost.md`.",
+                             _ctx(tmp, spawn=lambda t, effort=None: "GROUNDED")) == [])
     dir_calls = []
     grounding.problems("Auth is wired via `docker/auth` per the compose.",
                        _ctx(tmp, spawn=lambda t, effort=None: dir_calls.append(t) or "GROUNDED"))
@@ -99,6 +102,14 @@ def main():
           len(calls) == 1 and len(out) == 1 and "docker/auth" in out[0])
     check("the verifier task carries the answer + the cited files",
           "GROUNDING VERIFIER" in calls[0] and "docker/README.md" in calls[0])
+    # PROPORTIONALITY is the verifier's LENIENCY + a non-hijacking challenge, NOT skipping the check: a
+    # READ-ONLY run STILL fires the verifier (so a read-only review's wrong claim is caught), but a
+    # GROUNDED verdict clears a fair overview — it is not turned into a repo audit.
+    ro_calls = []
+    check("read-only run fires the verifier; a GROUNDED verdict clears it (no over-flag)",
+          grounding.problems("This project is documented in `docker/README.md`.",
+                             _ctx(tmp, spawn=lambda t, effort=None: ro_calls.append(t) or "GROUNDED")) == []
+          and len(ro_calls) == 1)
     check("Tier 2 empty/error verdict -> fail-open",
           grounding.semantic_problems("x", {"a.md"}, lambda t, effort=None: "") == []
           and grounding.semantic_problems("x", {"a.md"}, lambda t, effort=None: "(subagent error: boom)") == [])
@@ -117,7 +128,8 @@ def main():
 
     # -- challenge() + empty cases -------------------------------------------
     ch = grounding.challenge(["'x.md' - cited in the answer but not found in the workspace"])
-    check("challenge() names the problem and says not-done", "x.md" in ch and "Do NOT report" in ch)
+    check("challenge() names the problem, stays targeted + non-hijacking",
+          "x.md" in ch and "whole repo" in ch and "ORIGINAL request" in ch)
     check("an answer with no cited paths -> clean",
           grounding.problems("All good, nothing to cite here.", _ctx(tmp)) == [])
 
