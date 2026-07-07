@@ -59,21 +59,25 @@ def _non_retryable(e):
     ))
 
 
-def _reasoning_kwargs():
+def _reasoning_kwargs(effort=None):
     """Provider-aware reasoning_effort. The LiteLLM `bedrock/` provider takes it as a
     TOP-LEVEL param (it maps to additionalModelRequestFields), where extra_body is ignored;
     OpenAI-compatible endpoints (vLLM / Bedrock's /openai/v1) take it via extra_body, which
-    lands verbatim in the request body. Empty config = send nothing."""
-    if not config.REASONING_EFFORT:
+    lands verbatim in the request body. `effort` overrides the global for ONE Model (e.g. the
+    grounding verifier subagent at CODE_GROUNDING_EFFORT); None/empty inherits config.REASONING_EFFORT.
+    Both empty = send nothing."""
+    effort = effort or config.REASONING_EFFORT
+    if not effort:
         return {}
     if config.MODEL.startswith("bedrock/"):
-        return {"reasoning_effort": config.REASONING_EFFORT}
-    return {"extra_body": {"reasoning_effort": config.REASONING_EFFORT}}
+        return {"reasoning_effort": effort}
+    return {"extra_body": {"reasoning_effort": effort}}
 
 
 class Model:
-    def __init__(self, trajectory):
+    def __init__(self, trajectory, effort=None):
         self.traj = trajectory
+        self.effort = effort   # per-instance reasoning-effort override (None = inherit the global)
 
     def _params(self):
         # timeout is generous on purpose (config.REQUEST_TIMEOUT, default 600s):
@@ -86,7 +90,7 @@ class Model:
             kw["api_base"] = config.API_BASE
         if config.API_KEY:
             kw["api_key"] = config.API_KEY
-        kw.update(_reasoning_kwargs())   # provider-aware (bedrock top-level vs extra_body)
+        kw.update(_reasoning_kwargs(self.effort))   # provider-aware (bedrock top-level vs extra_body)
         return kw
 
     def summarize(self, messages):

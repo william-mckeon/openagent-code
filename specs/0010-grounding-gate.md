@@ -70,6 +70,11 @@ from the SFT corpus like `unverified_completion`.
 - `CODE_VERIFY_GROUNDING` (default `true`) — the gate.
 - `CODE_VERIFY_GROUNDING_RETRIES` (default `2`) — bounded re-prompts.
 - `CODE_VERIFY_GROUNDING_SEMANTIC` (default `true`) — Tier 2 (the verifier subagent).
+- `CODE_GROUNDING_EFFORT` (default empty = inherit `CODE_REASONING_EFFORT`) — the reasoning effort the
+  Tier-2 verifier subagent runs at, INDEPENDENT of the coding agent, so the judge can run 120b-low
+  while the agent stays high. Threaded via the `Model` instance (`build_agent` → `run_subagent` →
+  `Model(effort=…)`), so no signature churn on `planner`/`agent`/`context`. Calibrate the right value
+  with `scripts/calibrate_grounding.py`.
 
 ## Files
 

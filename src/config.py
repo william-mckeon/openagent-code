@@ -226,6 +226,11 @@ VERIFY_COMPLETION_RETRIES = int(os.environ.get("CODE_VERIFY_COMPLETION_RETRIES",
 VERIFY_GROUNDING = _as_bool(os.environ.get("CODE_VERIFY_GROUNDING", "true"))
 VERIFY_GROUNDING_RETRIES = int(os.environ.get("CODE_VERIFY_GROUNDING_RETRIES", "2"))
 VERIFY_GROUNDING_SEMANTIC = _as_bool(os.environ.get("CODE_VERIFY_GROUNDING_SEMANTIC", "true"))
+# The reasoning effort the runtime Tier-2 grounding VERIFIER subagent runs at, INDEPENDENT of the
+# coding agent's global CODE_REASONING_EFFORT — so the judge can run cheap/low while the agent stays
+# high (calibrate with scripts/calibrate_grounding.py). Empty = inherit the global; else low|medium|high.
+_g_effort = os.environ.get("CODE_GROUNDING_EFFORT", "").strip().lower()
+GROUNDING_EFFORT = _g_effort if _g_effort in _EFFORTS else ""
 
 # Corpus curation (Phase 11 / specs/0011). An OFFLINE batch pass (train/curate.py) over captured
 # trajectories that flags PHANTOM CITATIONS — a closing answer referencing a file the run never opened.

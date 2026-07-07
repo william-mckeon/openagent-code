@@ -129,16 +129,19 @@ def grounded_by(cited, evidence):
     return any(e.rsplit("/", 1)[-1] == base for e in evidence)
 
 
-def semantic_problems(final_text, paths, spawn):
+def semantic_problems(final_text, paths, spawn, effort=None):
     """Tier 2. Spawn ONE captured verifier subagent to check the answer's factual claims against the
     REAL sources; return the claims it flags ([] == all grounded). spawn(task) -> final text is
-    ctx.spawn (the run_subagent path), so the verification is itself captured to the corpus. Fail-OPEN:
+    ctx.spawn (the run_subagent path), so the verification is itself captured to the corpus. `effort`
+    runs the verifier at a specific reasoning effort (CODE_GROUNDING_EFFORT); it is passed to spawn ONLY
+    when set, so a plain 1-arg spawn stub (and the inherit-the-global default) keeps working. Fail-OPEN:
     a missing or errored verdict is logged and treated as "no problems", so an infra hiccup never traps
     the agent in a re-prompt loop (the completion gate already guaranteed the real work was done)."""
     if not spawn or not paths:
         return []
+    task = _verifier_task(final_text, paths)
     try:
-        out = spawn(_verifier_task(final_text, paths))
+        out = spawn(task, effort=effort) if effort else spawn(task)
     except Exception as e:  # noqa: BLE001 - a verifier failure must never crash the parent turn
         log.warning("grounding verifier raised (%s) - skipping, fail-open", e)
         return []
@@ -205,7 +208,7 @@ def problems(final_text, ctx):
         return []
     if config.VERIFY_GROUNDING_SEMANTIC and getattr(ctx, "spawn", None) is not None:
         paths = cited_paths(final_text, strict=False)   # BROAD: the verifier judges, so include dirs
-        return semantic_problems(final_text, paths, ctx.spawn) if paths else []
+        return semantic_problems(final_text, paths, ctx.spawn, config.GROUNDING_EFFORT) if paths else []
     paths = cited_paths(final_text, strict=True)         # NARROW: a hard existence check must not misfire
     if not paths:
         return []
