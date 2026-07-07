@@ -45,6 +45,16 @@ _DOMAIN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]*\.[A-Za-z]{2,}$")  # github.com,
 _DATE = re.compile(r"^\d{1,4}([/-]\d{1,4}){2}$")                   # 2024/01/15
 
 
+def _norm(p):
+    """Normalize a path token to the workspace-relative, forward-slash form a CITATION and a piece of
+    EVIDENCE are BOTH compared in — so `.\\docker\\README.md`, `./docker/README.md`, and
+    `docker/README.md` all match. cited_paths and touched_paths MUST use this identically, or a correct
+    citation gets wrongly flagged ungrounded (the offline path-normalization-mismatch bug)."""
+    p = (p or "").replace("\\", "/").strip()
+    p = p[2:] if p.startswith("./") else p
+    return p.strip("/")
+
+
 def cited_paths(final_text, strict=False):
     """LOCAL file/dir paths the closing answer references (backtick/quote-wrapped). Two strictnesses:
 
@@ -62,11 +72,9 @@ def cited_paths(final_text, strict=False):
         raw = m.group(1)
         if "://" in raw or raw.startswith("@"):
             continue                       # a URL or a scoped package, not a local file
-        p = raw.replace("\\", "/").strip()
-        if p.startswith("/"):
+        if raw.replace("\\", "/").strip().startswith("/"):
             continue                       # absolute path - not judgeable against the workspace; skip
-        p = p[2:] if p.startswith("./") else p
-        p = p.strip("/")
+        p = _norm(raw)
         if not p or p in (".", ".."):
             continue
         if strict:
@@ -86,6 +94,39 @@ def deterministic_problems(paths, exists_fn):
     the trajectory shows the agent actually touched. Returns human-readable problems ([] == clean)."""
     return [f"'{p}' - cited in the answer but not found in the workspace"
             for p in sorted(paths) if not exists_fn(p)]
+
+
+# Tools that ENGAGE a specific file (its path is in the tool ARGS, untruncated) — as opposed to
+# tree/glob/grep, which LIST many files into the (capped, unreliable) result content. touched_paths is
+# the offline existence oracle: "which files did the agent actually open/modify?" Shared by the
+# grounded_claims rubric check (eval) and train/curate.py, so a citation and its evidence can't drift.
+_ENGAGED = {"read_file", "write_file", "edit_file", "delete_file"}
+
+
+def touched_paths(records):
+    """OFFLINE existence oracle: the set of workspace-relative paths a trajectory shows the agent
+    actually engaged (read/wrote/edited/deleted), normalized to match cited_paths. Reconstructed from
+    ok tool_call ARGS ONLY (never the [:4000]-capped result content), so it is precise but strict — the
+    uncontrolled curator layers extra conservatism (a listing hit) on top; a controlled eval fixture
+    doesn't need to. Works on a full record list or a single turn's segment."""
+    out = set()
+    for r in records:
+        if r.get("type") == "tool_call" and r.get("ok") and r.get("tool") in _ENGAGED:
+            p = (r.get("args") or {}).get("path")
+            if p:
+                out.add(_norm(p))
+    return out
+
+
+def grounded_by(cited, evidence):
+    """True if a cited path is backed by the evidence set — an EXACT normalized match, OR the same
+    BASENAME (a file engaged at `src/config.py` but cited in prose as just `config.py`). The basename
+    leniency keeps the deterministic check CONSERVATIVE — err toward grounded — so a correct citation is
+    never wrongly flagged a phantom just because it named a subdirectory file by its bare name."""
+    if cited in evidence:
+        return True
+    base = cited.rsplit("/", 1)[-1]
+    return any(e.rsplit("/", 1)[-1] == base for e in evidence)
 
 
 def semantic_problems(final_text, paths, spawn):

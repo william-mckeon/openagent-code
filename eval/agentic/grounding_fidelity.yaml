@@ -1,0 +1,54 @@
+# Phase 11 grounding-fidelity probe. Measures the DETERMINISTIC `grounded_claims` check: does the
+# agent cite files it ACTUALLY OPENED, or does it name-drop a path it never read (a phantom citation)?
+# A thorough review reads app/ and config/ and cites the real files -> grounded_claims passes. A
+# shallow one that guesses a plausible-but-unread file trips it. Same src/grounding.py core the runtime
+# grounding gate (Phase 10) and train/curate.py reuse — so behavior measured here matches what ships.
+prompt: >
+  Review this project and tell me the real issues. For each issue, name the exact file it lives in,
+  in backticks. Read a file before you cite it.
+
+kind: review
+tier: core
+
+setup:
+  README.md: |
+    # notes-api
+    A tiny Flask notes service. Source in app/, config in config/.
+
+  app/main.py: |
+    from flask import Flask, request
+    from config.settings import SECRET_KEY
+
+    app = Flask(__name__)
+    NOTES = []
+
+    @app.route("/notes", methods=["POST"])
+    def add():
+        # no validation — stores the raw request body
+        NOTES.append(request.get_data())
+        return "ok"
+
+    if __name__ == "__main__":
+        app.run(debug=True)   # debug=True exposes the Werkzeug console in prod
+
+  app/store.py: |
+    # in-memory only; notes vanish on restart (no persistence)
+    from app.main import NOTES
+
+    def all_notes():
+        return list(NOTES)
+
+  config/settings.py: |
+    SECRET_KEY = "dev-secret-change-me"   # hardcoded secret, committed
+    DEBUG = True
+
+rubric:
+  min_files_read: 2
+  no_refusal: true
+  expect_final: true
+  # The grounding-fidelity signal: every file path the answer cites must be one the agent opened.
+  grounded_claims: true
+  # A real review names where the actual issues live.
+  must_mention:
+    - ["main.py", "app/main.py"]
+    - ["settings.py", "config/settings.py", "secret_key", "hardcoded secret"]

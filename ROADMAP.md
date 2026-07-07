@@ -358,12 +358,17 @@ then records an honest `ungrounded_completion` (auto-dropped by `KEEP_OUTCOMES`,
 verifier subagents are first-class captured trajectories — the more-agentic check also feeds the
 flywheel. Shared core `src/grounding.py` is reused by Phase 11.
 
-### Phase 11 — corpus curation  → specs/0011  (next)
+### Phase 11 — corpus curation  → specs/0011  ✅ BUILT
 The gate catches lies and (Phase 10) honest-but-wrong LIVE, but the existing corpus was captured
-BEFORE the gate — so it still holds ungrounded rows that `is_trainable` can't see. Curation runs the
-SAME `grounding.py` core OFFLINE over `trajectories/`, tags/drops the ungrounded sessions (mode
-`flag` by default — tag + report, don't silently shrink a tiny corpus), and adds a `grounded_claims`
-rubric check so grounding is MEASURED in eval. Guards the distillation set before Phase 8.
+BEFORE the gate — so it still holds ungrounded rows that `is_trainable` can't see. `train/curate.py`
+runs the DETERMINISTIC half of the `grounding.py` core OFFLINE over `trajectories/`: it flags PHANTOM
+CITATIONS (a closing answer referencing a file the run never opened), reconstructed from the JSONL
+records with no model — conservative, so discovery-without-read never causes a false drop. Mode `flag`
+by default (tag every row's `meta.curation`, don't shrink the tiny corpus) or `exclude` (drop, counted
+in the report). A deterministic `grounded_claims` rubric check + `grounding_fidelity.yaml` MEASURE it in
+the promotion gate. The SEMANTIC honest-but-wrong class stays with the runtime gate (offline re-judging
+is unsound — the sandbox is gone); the "120b-low judge" belongs to the runtime verifier (Phases 10.x:
+per-call effort + calibration), not here.
 
 ### Capability Track (Codex as reference) — parallel to the Phase-8 wait
 Axis-1 harness improvements adapted from OpenAI Codex (used as a *reference*, never copied — our own

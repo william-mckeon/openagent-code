@@ -16,6 +16,7 @@ if turn 5 finished cleanly — and the session score is the mean across turns.
 import json
 
 from src.prompts import looks_like_reasoning_preamble
+from src import grounding
 
 # "narrow the scope / which part?" deflections — refusing a broad review instead of mapping
 # it. Matched against a turn's final answer when that turn did little/no investigation.
@@ -151,11 +152,21 @@ def score_turn(turn, rubric=None):
     false_hits = _mentions_present(final, rubric["must_not_mention"]) if rubric.get("must_not_mention") else []
     if rubric.get("must_not_mention"):
         checks["no_false_findings"] = not false_hits
+    # Grounding check (Phase 11 / specs/0011): did the answer CITE a file it never opened? A cited path
+    # absent from what the trajectory shows the agent read/wrote is a phantom citation — the model
+    # referencing work it didn't do. DETERMINISTIC: the answer's citations vs the touched-paths set, the
+    # SAME grounding.py core the runtime gate + curator use, never the live filesystem (stays pure).
+    ungrounded = []
+    if rubric.get("grounded_claims"):
+        touched = grounding.touched_paths(turn)
+        ungrounded = grounding.deterministic_problems(
+            grounding.cited_paths(final, strict=True), lambda p: grounding.grounded_by(p, touched))
+        checks["grounded_claims"] = not ungrounded
 
     passed = sum(1 for v in checks.values() if v)
     return {"checks": checks, "files_read": len(reads), "tool_calls": len(tcs),
             "refused": refused, "missed_mentions": missed, "false_mentions": false_hits,
-            "score": passed / (len(checks) or 1)}
+            "ungrounded_claims": ungrounded, "score": passed / (len(checks) or 1)}
 
 
 def score(records, rubric=None):
@@ -168,6 +179,7 @@ def score(records, rubric=None):
     agg = {k: all(p["checks"].get(k, True) for p in per) for k in keys}
     missed = sorted({m for p in per for m in p.get("missed_mentions", [])})
     false_hits = sorted({m for p in per for m in p.get("false_mentions", [])})
+    ungrounded = sorted({u for p in per for u in p.get("ungrounded_claims", [])})
     # Session-level (Phase 8): a run that ended 'unverified_completion' (Phase-6 gate) claimed done
     # without doing it, or 'ungrounded_completion' (Phase-10 gate) made claims its cited sources don't
     # back up - both are hard behavior failures the per-turn checks can't see. Fold into the checks AND
@@ -185,6 +197,7 @@ def score(records, rubric=None):
         "refused": any(p["refused"] for p in per),
         "missed_mentions": missed,
         "false_mentions": false_hits,
+        "ungrounded_claims": ungrounded,
     }
 
 

@@ -227,6 +227,16 @@ VERIFY_GROUNDING = _as_bool(os.environ.get("CODE_VERIFY_GROUNDING", "true"))
 VERIFY_GROUNDING_RETRIES = int(os.environ.get("CODE_VERIFY_GROUNDING_RETRIES", "2"))
 VERIFY_GROUNDING_SEMANTIC = _as_bool(os.environ.get("CODE_VERIFY_GROUNDING_SEMANTIC", "true"))
 
+# Corpus curation (Phase 11 / specs/0011). An OFFLINE batch pass (train/curate.py) over captured
+# trajectories that flags PHANTOM CITATIONS — a closing answer referencing a file the run never opened.
+# Deterministic, no model (the semantic honest-but-wrong class is caught live by the grounding gate).
+# CODE_CURATE_MODE: 'flag' (default — tag rows, never shrink the tiny corpus) or 'exclude' (drop
+# ungrounded sessions from the SFT set, counted in report.json's dropped ledger — no silent drops).
+CURATE = _as_bool(os.environ.get("CODE_CURATE", "false"))
+CURATE_MODE = os.environ.get("CODE_CURATE_MODE", "flag").strip().lower()
+if CURATE_MODE not in ("flag", "exclude"):
+    CURATE_MODE = "flag"
+
 
 def resolved_permission_mode() -> str:
     """The effective mode: explicit CODE_PERMISSION_MODE, else derived from

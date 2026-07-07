@@ -37,6 +37,7 @@ from src.trajectory import Trajectory  # noqa: E402  (for SCHEMA_VERSION)
 from src import config  # noqa: E402  (for SFT_VIEW)
 from eval import rubric  # noqa: E402  (behavior gate — specs/0004-agentic-evals.md)
 from src.prompts import strip_reasoning_preamble  # noqa: E402  (keep leaked CoT out of targets)
+from train import curate  # noqa: E402  (Phase 11 corpus curation — specs/0011)
 
 TRAJ_GLOB = os.path.join(ROOT, "trajectories", "**", "*.jsonl")
 # TRAIN/EVAL FIREWALL: the eval suite is the HELD-OUT promotion gate. Converting its
@@ -97,6 +98,12 @@ def is_trainable(records):
     # agent REFUSED (a "narrow the scope" deflection) — we don't want to teach that.
     if rubric.is_refusal(records):
         return False, "refusal"
+    # Corpus curation (Phase 11): in EXCLUDE mode, drop a session whose closing answer cites a file it
+    # never opened (a phantom citation). In FLAG mode (default) keep it — to_rows tags the rows instead.
+    if config.CURATE and config.CURATE_MODE == "exclude":
+        grounded, _ung = curate.curation_verdict(records)
+        if not grounded:
+            return False, "ungrounded_answer"
     return True, "kept"
 
 
@@ -169,6 +176,11 @@ def to_rows(records, view):
         "parent_session_id": start.get("parent_session_id"),  # links subagent rows
         "depth": start.get("depth", 0),
     }
+    # Curation tag (Phase 11): stamp every row of the session with the grounding verdict so downstream
+    # step-level / DPO filtering can drop or down-weight phantom-citation rows even in FLAG mode.
+    if config.CURATE:
+        grounded, ungrounded = curate.curation_verdict(records)
+        base_meta["curation"] = {"grounded": grounded, "ungrounded": ungrounded}
 
     rows, raw_prefix, pending = [], [], None
     for r in records:
