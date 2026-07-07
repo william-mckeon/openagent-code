@@ -253,27 +253,60 @@ _REASONING_TELL = re.compile(
 # a horizontal rule, or a table row.
 _ANSWER_ANCHOR = re.compile(r"^\s*(#{1,6}\s|\*\*\S|---\s*$|\|)")
 
+# A meta-transition ABOUT producing THE FINAL ANSWER ("now we need to output the final answer", "let me
+# produce the final response") — pure chain-of-thought that leaks MID-answer, after a legitimate first
+# sentence, where the opening-only preamble check misses it (a live centpilot run: "The README now
+# matches the compose file.  Now we need to output final answer: list changed file(s).**Changed
+# files**..."). The DISCRIMINATOR is the deliverable phrase "FINAL answer/response" after a first-person
+# output verb — ordinary content says "a response schema" or "a summary of the diff", never "output the
+# final answer" — so this CANNOT match "we provide a response" / "we should list the changed files".
+_ANSWER_META = re.compile(
+    r"\b(?:now\s+)?(?:we|i|let'?s|let\s+me)\s+"
+    r"(?:need\s+to|will|should|must|'?ll|are\s+going\s+to|can|now\s+|)\s*"
+    r"(?:output|produce|write|give|provide|generate|craft|compose|emit|present)\s+"
+    r"(?:the\s+|a\s+|our\s+)?final\s+(?:answer|response|reply|output)\b",
+    re.IGNORECASE)
+# Excise the leaked meta clause from the meta phrase up to a real-answer anchor GLUED onto its tail on
+# the SAME line ("...output final answer: list changed file(s).**Changed files**" -> "**Changed
+# files**"). REQUIRES the anchor (no bare end-of-line cut): without one we can't tell where the meta
+# ends and content begins, so we DON'T strip — never eat real answer text (detection still flags it).
+_META_STRIP = re.compile(_ANSWER_META.pattern + r".*?(?=\*\*\S|#{1,6}\s)",
+                         re.IGNORECASE | re.MULTILINE)
+
 
 def looks_like_reasoning_preamble(text):
-    """True if `text` OPENS with a chain-of-thought preamble (a meta-planning first line)
-    rather than the answer itself. Used by the eval to score the leak and by the converter
-    to keep it out of training."""
+    """True if `text` OPENS with a chain-of-thought preamble (a meta-planning first line) rather than
+    the answer itself. The LEADING-only check — see has_reasoning_leak for the whole-text one."""
     for line in (text or "").splitlines():
         if line.strip():
             return bool(_REASONING_TELL.match(line))
     return False
 
 
+def has_reasoning_leak(text):
+    """True if `text` leaks chain-of-thought ANYWHERE — it OPENS with a preamble
+    (looks_like_reasoning_preamble) OR contains a mid-answer meta-transition about producing the answer
+    (_ANSWER_META). The whole-text check the eval + log summarizer use, so a leak sandwiched after a
+    legit first sentence is caught, not just a leading one."""
+    return looks_like_reasoning_preamble(text) or bool(_ANSWER_META.search(text or ""))
+
+
 def strip_reasoning_preamble(text):
-    """If `text` starts with a reasoning preamble AND the real answer can be anchored (a heading
-    / bold header appears on a later line), return from that anchor onward; otherwise return `text`
-    UNCHANGED. Deliberately conservative — with no clear anchor it does nothing, so it can never
-    eat a real answer (the flywheel is the real fix; this only trims the obvious leak)."""
-    if not text or not looks_like_reasoning_preamble(text):
-        return text or ""
-    lines = text.splitlines()
-    for i, line in enumerate(lines):
-        if i and _ANSWER_ANCHOR.match(line):
-            return "\n".join(lines[i:]).lstrip("\n")
-    return text  # no anchor found -> don't guess; leave the answer whole
+    """Trim leaked chain-of-thought — both a LEADING preamble and a MID-answer meta-transition — while
+    keeping the real answer. Deliberately conservative: the leading cut only fires with a clear anchor,
+    and the mid-answer cut only removes the narrow _ANSWER_META clause, so it can never eat ordinary
+    content. Returns `text` VERBATIM when nothing is stripped (the flywheel is the real fix)."""
+    if not text:
+        return ""
+    original = text
+    if looks_like_reasoning_preamble(text):
+        lines = text.splitlines()
+        for i, line in enumerate(lines):
+            if i and _ANSWER_ANCHOR.match(line):
+                text = "\n".join(lines[i:]).lstrip("\n")
+                break
+    text = _META_STRIP.sub("", text)
+    if text == original:
+        return original  # nothing stripped -> leave the answer whole (old conservative behavior)
+    return re.sub(r"\n{3,}", "\n\n", re.sub(r"[ \t]+\n", "\n", text)).strip()
 

@@ -15,7 +15,7 @@ if turn 5 finished cleanly — and the session score is the mean across turns.
 """
 import json
 
-from src.prompts import looks_like_reasoning_preamble
+from src.prompts import has_reasoning_leak
 from src import grounding
 
 # "narrow the scope / which part?" deflections — refusing a broad review instead of mapping
@@ -140,7 +140,7 @@ def score_turn(turn, rubric=None):
     # Reasoning-leak check (Phase 8): the final answer must not OPEN with a chain-of-thought
     # preamble ("Now we... We need to produce..."). General — applies to every task — so the
     # flywheel can select against exactly the gpt-oss leak the live logs kept showing.
-    checks["no_reasoning_leak"] = not looks_like_reasoning_preamble(final)
+    checks["no_reasoning_leak"] = not has_reasoning_leak(final)
     # Findings check (Stage 3): did the review actually NAME the planted issues? This is
     # the discriminating one — reading files isn't enough, you must catch what matters.
     missed = _mentions_missed(final, rubric["must_mention"]) if rubric.get("must_mention") else []

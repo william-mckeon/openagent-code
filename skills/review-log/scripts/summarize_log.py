@@ -21,6 +21,13 @@ _TELL = re.compile(
     r"^\s*(now (we|i|let|the)|we (need|should|can|have|must|will)|let'?s (produce|now|start)|"
     r"let me (produce|summar|now)|according to (the )?guidelines|the user (wants|asked|is asking|also)|"
     r"i (need|should|will|'ll) to|first,? (we|i)|okay,? (so|let|we)|thus\b)", re.I)
+# a meta-transition ABOUT producing the answer that leaks MID-answer, after a legit first sentence
+# ("...compose file.  Now we need to output final answer:  **Changed files**") — the opening-anchored
+# _TELL above misses it. Mirrors src/prompts.py's _ANSWER_META; SEARCHED anywhere in the answer.
+_META = re.compile(
+    r"\b(now\s+)?(we|i|let'?s|let\s+me)\s+(need\s+to|will|should|must|'?ll|are\s+going\s+to|can|now\s+|)\s*"
+    r"(output|produce|write|give|provide|generate|craft|compose|emit|present)\s+"
+    r"(the\s+|a\s+|our\s+)?final\s+(answer|response|reply|output)\b", re.I)
 _MUTATORS = {"read_file", "edit_file", "write_file", "delete_file"}
 
 
@@ -80,7 +87,15 @@ def main():
             outcomes.append(msg)
         elif msg.startswith("result (terminated") or re.match(r"turn \d+ result:", msg):
             body = _RESULT_LABEL.sub("", msg)
-            if _TELL.match(body):
+            # The final answer can span prefix-less CONTINUATION lines; gather them so a MID-answer
+            # leak (after a legit first line) is caught, not just the opening. i is 1-based, so
+            # lines[i:] are the lines AFTER this one.
+            block = [body]
+            for cont in lines[i:]:
+                if _PREFIX.match(cont):
+                    break
+                block.append(cont)
+            if _TELL.match(body) or _META.search("\n".join(block)):
                 leaks.append(i)
         elif "compacted" in msg and "msgs" in msg:
             compactions.append(i)
@@ -106,7 +121,7 @@ def main():
     out.append("\n--- REVIEW FLAGS (each is a place to LOOK; confirm against the log line) ---")
     flagged = False
     for ln in leaks:
-        out.append(f"  [REASONING-LEAK]  L{ln}: a final answer opens with chain-of-thought"); flagged = True
+        out.append(f"  [REASONING-LEAK]  L{ln}: a final answer leaks chain-of-thought (opening or mid-answer)"); flagged = True
     for ln, n in env_touch:
         out.append(f"  [.ENV-TOUCH]      L{ln}: {n} on a .env path"); flagged = True
     for ln in challenges:

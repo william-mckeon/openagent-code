@@ -66,7 +66,7 @@ def main():
 
     # -- problems() is TOP-LEVEL ONLY: a depth>0 agent is skipped entirely ----
     deep_calls = []
-    ctx_deep = _ctx(tmp, depth=1, spawn=lambda t: deep_calls.append(t) or "UNGROUNDED: x -> y")
+    ctx_deep = _ctx(tmp, depth=1, spawn=lambda t, effort=None: deep_calls.append(t) or "UNGROUNDED: x -> y")
     check("depth>0 skips grounding entirely (verifier can't self-ground)",
           grounding.problems("I updated `docker/ghost.md`.", ctx_deep) == [] and not deep_calls)
 
@@ -83,15 +83,15 @@ def main():
 
     # -- semantic ON: the verifier subagent is the AUTHORITY (not path-existence) ----
     check("semantic ON: verifier is the authority (a phantom path it clears -> clean)",
-          grounding.problems("I made `docker/ghost.md`.", _ctx(tmp, spawn=lambda t: "GROUNDED")) == [])
+          grounding.problems("I made `docker/ghost.md`.", _ctx(tmp, spawn=lambda t, effort=None: "GROUNDED")) == [])
     dir_calls = []
     grounding.problems("Auth is wired via `docker/auth` per the compose.",
-                       _ctx(tmp, spawn=lambda t: dir_calls.append(t) or "GROUNDED"))
+                       _ctx(tmp, spawn=lambda t, effort=None: dir_calls.append(t) or "GROUNDED"))
     check("semantic ON: a DIRECTORY citation still spawns the verifier (no false-negative)",
           len(dir_calls) == 1)
     calls = []
 
-    def spawn_flag(task):
+    def spawn_flag(task, effort=None):
         calls.append(task)
         return "UNGROUNDED: init.sql is at docker/database -> compose mounts docker/auth/init.sql"
     out = grounding.problems("Init lives in `docker/README.md`.", _ctx(tmp, spawn=spawn_flag))
@@ -100,8 +100,8 @@ def main():
     check("the verifier task carries the answer + the cited files",
           "GROUNDING VERIFIER" in calls[0] and "docker/README.md" in calls[0])
     check("Tier 2 empty/error verdict -> fail-open",
-          grounding.semantic_problems("x", {"a.md"}, lambda t: "") == []
-          and grounding.semantic_problems("x", {"a.md"}, lambda t: "(subagent error: boom)") == [])
+          grounding.semantic_problems("x", {"a.md"}, lambda t, effort=None: "") == []
+          and grounding.semantic_problems("x", {"a.md"}, lambda t, effort=None: "(subagent error: boom)") == [])
 
     # -- _parse_verdict tolerates markdown BUT preserves the claim body -------
     check("_parse_verdict handles a plain UNGROUNDED line",

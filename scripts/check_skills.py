@@ -158,6 +158,42 @@ def main():
     dg2 = _digest(["12:00:01 INFO    [openagent_code.cli] result (terminated=False): Now we need to produce a review."])
     check("a real CoT-opening answer IS flagged reasoning-leak", "[REASONING-LEAK]" in dg2)
 
+    # a MID-answer leak on a CONTINUATION line (the live centpilot case) — a legit first line, then
+    # "Now we need to output final answer:" before the real answer — must still be flagged.
+    dg3 = _digest([
+        "12:00:01 INFO    [openagent_code.cli] result (terminated=False): The README now matches the compose file.",
+        "Now we need to output final answer: list changed file(s).**Changed files**",
+        "- docker/README.md updated the init path.",
+    ])
+    check("a MID-answer leak (after a legit first line) IS flagged reasoning-leak", "[REASONING-LEAK]" in dg3)
+    dg4 = _digest([
+        "12:00:01 INFO    [openagent_code.cli] result (terminated=False): The README now matches the compose file.",
+        "- docker/README.md: updated the init path to docker/auth/init.sql.",
+    ])
+    check("a clean multi-line answer is NOT flagged reasoning-leak", "[REASONING-LEAK]" not in dg4)
+
+    # -- prompts reasoning-leak: the mid-answer detect + strip that keep the CORPUS clean -------------
+    from src.prompts import has_reasoning_leak, strip_reasoning_preamble  # noqa: E402
+    _leak = ("The README now matches the compose file.\n\nNow we need to output final answer: "
+             "list changed file(s).**Changed files**\n- x")
+    check("prompts.has_reasoning_leak catches a mid-answer leak", has_reasoning_leak(_leak))
+    _s = strip_reasoning_preamble(_leak)
+    check("prompts.strip removes the meta, keeps the summary + header",
+          "Now we need to output" not in _s and "The README now matches the compose file." in _s
+          and "**Changed files**" in _s)
+    # ordinary FIRST-person prose must NOT be flagged or stripped (the adversarial-review false-positive
+    # class): the discriminator is the deliverable phrase "final answer", which real content never uses.
+    _legit = ["We provide a response schema for every endpoint.",
+              "For the SLA: we will provide a response within 24 hours.",
+              "We generate a response and return the summary to the caller.",
+              "We provide a response, and the **key** fields are validated.",
+              "This refactor is solid. To make the PR reviewable, we should list the changed files.",
+              "The handler writes the response to disk in server.js."]
+    check("prompts does NOT flag/strip ordinary first-person prose (the false-positive class)",
+          all((not has_reasoning_leak(x)) and strip_reasoning_preamble(x) == x for x in _legit))
+    check("prompts leaves a clean answer verbatim",
+          strip_reasoning_preamble("## Review\n- a.py fine") == "## Review\n- a.py fine")
+
     passed, total = sum(_results), len(_results)
     print(f"\nVERDICT: {passed}/{total} {'[OK]' if passed == total else '[FAIL]'}")
     return 0 if passed == total else 1
