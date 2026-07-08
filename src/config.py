@@ -242,6 +242,14 @@ CURATE_MODE = os.environ.get("CODE_CURATE_MODE", "flag").strip().lower()
 if CURATE_MODE not in ("flag", "exclude"):
     CURATE_MODE = "flag"
 
+# Situational-context injection (Phase 12 / specs/0012). When on, a per-turn block of the agent's real
+# environment (cwd, OS, shell, date, granted dirs) is injected as a refreshed, compaction-safe pin so the
+# model conditions on live state instead of confabulating it. SITUATIONAL_GIT additionally appends a
+# bounded git branch/status line (one git call per turn, not per step); only consulted when
+# SITUATIONAL_CONTEXT is on. Both default OFF (opt-in, near-zero risk).
+SITUATIONAL_CONTEXT = _as_bool(os.environ.get("CODE_SITUATIONAL_CONTEXT", "false"))
+SITUATIONAL_GIT = _as_bool(os.environ.get("CODE_SITUATIONAL_GIT", "false"))
+
 
 def resolved_permission_mode() -> str:
     """The effective mode: explicit CODE_PERMISSION_MODE, else derived from

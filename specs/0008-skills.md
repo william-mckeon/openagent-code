@@ -2,17 +2,17 @@
 
 > A skill is a Markdown file (`SKILL.md`) that packages a reusable agent workflow. C1 ships the
 > system + one skill: a **decomposed code review** (review by concern, one captured subagent per
-> concern). Referenced from OpenAI Codex's `.codex/skills/`; re-implemented as our own small Python.
+> concern). A Markdown-defined, directory-per-skill workflow convention — our own small Python.
 
 ## Why
 
-Codex's `.codex/skills/` is the one pattern from that (huge, Rust) project worth adapting: reusable,
+A directory-per-skill Markdown convention is a proven pattern worth adapting: reusable,
 subagent-orchestrated workflows defined in Markdown. We already have the primitives (`spawn_agent`,
 `review_repo`, `subagent.run_subagent`); a skills layer formalizes them into named, invokable,
 **capturable** units. This is Phase C1 of the capability track (runs parallel to the Phase-8 wait).
 
-The key decision — settled, not open: **the harness does the decomposition, not the model.** Codex's
-orchestrator skill tells the *model* to "spawn one subagent per sub-skill." On this weak gpt-oss that
+The key decision — settled, not open: **the harness does the decomposition, not the model.** A
+model-driven orchestrator would tell the *model* to "spawn one subagent per sub-skill." On this weak gpt-oss that
 fails a new way every run — the exact failure that `src/orchestrator.py` was built to fix. So
 `run_skill` fans out **in code**, mirroring `review_repo`. review_repo partitions by FOLDER;
 `run_skill` partitions by CONCERN over one diff. Orthogonal; neither reinvents the other; review_repo
@@ -20,7 +20,7 @@ is untouched.
 
 ## The SKILL.md format
 
-Directory-per-skill under a self-located `skills/` dir, mirroring Codex:
+Directory-per-skill under a self-located `skills/` dir:
 `skills/<name>/SKILL.md` = a `---`-fenced frontmatter block + a Markdown body. **Two kinds**,
 distinguished by one optional frontmatter field:
 
@@ -30,7 +30,7 @@ distinguished by one optional frontmatter field:
 
 The glob (not a `concerns: [list]`) is deliberate: **scalar-only frontmatter**, fully data-driven —
 dropping a new `skills/code-review-<x>/SKILL.md` adds a concern with **zero code change**, and the
-glob `code-review-*` naturally excludes the `code-review` orchestrator itself (Codex's exact
+glob `code-review-*` naturally excludes the `code-review` orchestrator itself (the intended
 semantic). Frontmatter is parsed by a small hand-rolled `key: value` reader (**not** PyYAML — keeps
 `src/` yaml-free and never-raising); a malformed/missing block degrades to `name=<dirname>`, empty
 description, whole file as body, and **never raises** (same posture as `config.load_permission_rules`).
@@ -98,10 +98,10 @@ One orchestrator + three concern leaves (matching the repo's own review vocabula
 - `skills/code-review-correctness/SKILL.md` — logic bugs, edge cases, error handling, `ok=False`
   contracts introduced by the diff.
 - `skills/code-review-tests/SKILL.md` — does changed logic add/adjust a pytest under the test dir?
-  flag untested changed behavior (adapts Codex `code-review-testing`).
+  flag untested changed behavior.
 - `skills/code-review-breaking-changes/SKILL.md` — this repo's real external surfaces: tool JSON
   schemas in `tools.py`, `CODE_*` env-var names/defaults in `config.py`, permission-rule matchers,
-  and the trajectory/JSONL shape the flywheel converter reads (adapts Codex `code-review-breaking-changes`).
+  and the trajectory/JSONL shape the flywheel converter reads.
 
 ## Skill + script bundling (C2)
 
@@ -111,7 +111,7 @@ run them via `run_command` / read them via `read_file`. The first such skill is 
 leaf that reviews an openagent-code session log, bundling `summarize_log.py` (extracts the log's
 signals — tool counts, fails, retries, compactions, completion-challenges, reasoning-leak, `.env`
 touches, thrash — into a bounded digest the reviewer confirms against the log). This proves the
-platform generalizes past the orchestrator shape and exercises the Codex `babysit-pr` skill+script
+platform generalizes past the orchestrator shape and exercises the skill+script bundling
 pattern. The summarizer is **stdlib-only and defensive** (an unrecognized log line is ignored).
 
 ## Config
@@ -158,8 +158,7 @@ file:line, no-confab, read-only discipline the Phase-7 behavior eval scores and
 3. **Leaf discoverability:** advertise only the `code-review` orchestrator; leaves stay invokable by
    name but aren't listed. *(Override → advertise concerns individually.)*
 4. **Fan-out cap:** reuse `MAX_REVIEW_AREAS`. *(Override → a dedicated `CODE_MAX_SKILL_CONCERNS`.)*
-5. **Concern naming:** `code-review-tests` (repo's "tests" vocabulary), not Codex's
-   `code-review-testing`.
+5. **Concern naming:** `code-review-tests` (repo's "tests" vocabulary).
 
 ## Acceptance (checkable)
 

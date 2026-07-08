@@ -117,6 +117,25 @@ def main():
     check("the pinned user request survives compaction",
           any("what project are we in?" in (m.get("content") or "") for m in cmT.context()))
 
+    # 10. a completed review_repo digest is pinned and survives compaction (the live failure where the
+    #     digest — the per-area findings AND the "don't re-review" trailer — got summarized away, so the
+    #     lead lost its own review, re-ran review_repo, and called an auth service it had read 'empty').
+    #     A new task must clear it (no stale review pin), and it must be bounded like the other pins.
+    cmR = ContextManager("s", _Model(), _Traj(), compact_at_tokens=1, keep_recent=1)
+    cmR.set_task("review the whole project")
+    cmR.set_review_digest("### src/auth\nHas Go source: config.go, handlers/auth.go. UNIQUEDIGEST42")
+    for i in range(6):
+        cmR.add({"role": "user", "content": f"noise {i} " + "." * 40})
+    check("a pinned review digest survives compaction",
+          any("UNIQUEDIGEST42" in (m.get("content") or "") for m in cmR.context()))
+    cmR.set_task("now do something unrelated")
+    check("a new task clears the prior review digest (no stale review pin)",
+          cmR.pinned_review is None
+          and not any("UNIQUEDIGEST42" in (m.get("content") or "") for m in cmR.context()))
+    cmR.set_review_digest("R" * (cap * 3))
+    check("a pinned review digest is bounded to the cap",
+          cmR.pinned_review is not None and _clen(cmR.pinned_review) <= cap + margin)
+
     passed, total = sum(_results), len(_results)
     print(f"\nVERDICT: {passed}/{total} {'[OK]' if passed == total else '[FAIL]'}")
     return 0 if passed == total else 1

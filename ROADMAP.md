@@ -370,22 +370,59 @@ the promotion gate. The SEMANTIC honest-but-wrong class stays with the runtime g
 is unsound — the sandbox is gone); the "120b-low judge" belongs to the runtime verifier (Phases 10.x:
 per-call effort + calibration), not here.
 
-### Capability Track (Codex as reference) — parallel to the Phase-8 wait
-Axis-1 harness improvements adapted from OpenAI Codex (used as a *reference*, never copied — our own
-Python), run DURING the Phase-8 corpus wait so the trajectories we accumulate are sharper. Each phase
+### Capability Track — parallel to the Phase-8 wait
+Axis-1 harness improvements adapting proven agent patterns as our own Python (never copied),
+run DURING the Phase-8 corpus wait so the trajectories we accumulate are sharper. Each phase
 is spec-driven, verified offline, and hardened by an adversarial review-by-concern pass before commit.
 - **C1 — skills foundation** ✅ → specs/0008: a `SKILL.md` workflow system + `run_skill` (opt-in,
   self-locating, gated) + a decomposed `code-review` skill whose concerns fan out through the harness
   (like `review_repo`, not model-driven). Skill runs ride `run_subagent`, so each one feeds the flywheel.
 - **C2 — skills breadth** ✅: a `review-log` skill bundling a stdlib Python helper (`summarize_log.py`),
-  proving the skill+script packaging pattern (Codex's babysit-pr shape).
+  proving the skill+script packaging pattern.
 - **C3 — context discipline** ✅ → specs/0009: the bounded-fragment invariant — EVERY dynamic fragment
   entering the live context (tool results, user turns, the pinned plan, a compaction summary) passes
-  through the cap, so no unbounded item can blow the window (Codex's model-visible-context rule). Closed
+  through the cap, so no unbounded item can blow the window (the model-visible-context rule). Closed
   the real gap where `set_pinned` (always sent, never compacted) bypassed the cap.
 
 The adversarial reviews earned their cost: they caught 8 real bugs the offline tests missed across the
 track (incl. two Windows cp1252 encoding bugs and the unbounded-pinned-plan gap) — the ultracode rigor.
+
+### Post-gate hardening (live centpilot log reviews) ✅ BUILT
+Two harness bugs surfaced by reviewing real centpilot runs line-by-line, both fixed and covered by the
+existing dep-free harnesses:
+- **`review_repo` digest pin** (`src/context.py` `set_review_digest` + `_base`; `src/agent.py`) — a
+  completed `review_repo` digest (its per-area findings AND its "synthesize now, don't re-review"
+  trailer) was an ordinary working message, so the review's own token weight tripped compaction on the
+  very next step and summarized it away. A live run then re-ran `review_repo` twice and, having lost a
+  child's read of an auth service, declared it "empty." The digest is now a never-compacted pin (like
+  the task/plan pins), cleared on each new task. `scripts/check_context.py` → 16/16.
+- **grounding absence-claim check** (`src/grounding.py`) — the Tier-2 verifier now actively checks an
+  ABSENCE claim ("X is empty / missing / can't be built") by listing the path itself, catching the
+  honest-but-wrong "the service is missing" class the cited-path-existence check couldn't. Proportionate
+  (still flags only a contradicted claim). `scripts/check_grounding.py` → 23/23.
+
+### Adoption Track (Phase 12–19) — convergence roadmap
+A cross-agent convergence study of proven agent patterns surfaced the capability gaps most worth closing
+next. Each is a spec-driven phase with a `CODE_*` flag (default off) and a dep-free `scripts/check_*.py`,
+built in independently shippable sub-phases. Build order is by *what unblocks what*, not raw priority:
+- **0012 situational-context** — a per-turn cwd / OS / shell / date / granted-dirs / git-status block
+  injected as a refreshed pin, so every trajectory is grounded in real state. Quick win, **next up**.
+- **0013 edit-layer** — a SAFE fuzzy fallback under exact-match `edit_file` (refuse-on-ambiguity), then
+  an atomic grammar-validated `apply_patch` for multi-file Add/Update/Delete/Move.
+- **0014 auto-verify** — run lint/test/compile on TOUCHED files, feed errors back as a bounded reflection
+  turn (a third gate, after completion + grounding), record pass/fail as an objective reward label. The
+  highest-value flywheel upgrade; moved ahead of sandbox (its deps are soft).
+- **0015 hooks** — opt-in, fail-open lifecycle scripts (PreToolUse / PostToolUse / PermissionRequest) —
+  the deferred Phase-4 hooks item, promoted to a full phase; closes "deny is only tool-scoped."
+- **0016 execpolicy** — parse `run_command` (bash + PowerShell 5.1) into segments, classify read-only vs
+  mutating / dangerous, gate on the parse instead of a raw prefix; additive precision, feeds 0017/0019.
+- **0017 sandbox — FS confinement** — a Windows restricted-token launcher fencing `run_command` writes to
+  the workspace, keyed off permission mode; no-op passthrough default so nothing regresses.
+- **0018 sandbox — WFP net egress** — carved out of 0017 (admin / AppContainer-gated); optional, own timeline.
+- **0019 guardian** — a captured, fail-CLOSED LLM approval-reviewer for the `ask` tier ONLY (never
+  allow / deny / read-only), emitting reviewer trajectories that feed the flywheel.
+
+All donor patterns are **rewritten clean as our own Python**; no external agent is named in our code or specs.
 
 ## Sequencing principles (why this order)
 
@@ -418,4 +455,4 @@ track (incl. two Windows cp1252 encoding bugs and the unbounded-pinned-plan gap)
 
 ## Status line
 
-Phase 0 ✅ · Phase 1 ✅ (eval now 13 tasks, 13/13 — harder tier added, ceiling not yet found) · Phase 2 ✅ · Phase 3 ✅ · **Phase 4 — compaction ✅ + subagents ✅ + planning ✅ + interactivity ✅ + tool-breadth ✅ + cold-start handling ✅ + permissions Core ✅ + cross-session memory ✅. Remaining: permission hooks (#6 pass 2) + the always-open robustness/eval-ceiling tail** · **Phase 5 — distillation flywheel (gpt-oss-120b/Bedrock teacher → distilled student): Stage 1 (documented) ✅; Stages 2-7 staged (specs/0005)**.
+Phase 0 ✅ · Phase 1 ✅ (eval now 13 tasks, 13/13 — harder tier added, ceiling not yet found) · Phase 2 ✅ · Phase 3 ✅ · **Phase 4 — compaction ✅ + subagents ✅ + planning ✅ + interactivity ✅ + tool-breadth ✅ + cold-start handling ✅ + permissions Core ✅ + cross-session memory ✅. Remaining: permission hooks (#6 pass 2) + the always-open robustness/eval-ceiling tail** · **Phase 5 — distillation flywheel (gpt-oss-120b/Bedrock teacher → distilled student): Stage 1 (documented) ✅; Stages 2-7 staged (specs/0005)** · **Adoption Track (Phase 12–19) — spec'd (convergence roadmap); `0012` situational-context next**.

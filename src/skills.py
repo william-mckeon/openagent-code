@@ -2,7 +2,7 @@
 src/skills.py
 
 Skills (specs/0008) — reusable, harness-orchestrated workflows defined as Markdown SKILL.md files.
-Referenced from OpenAI Codex's .codex/skills/; re-implemented as our own small Python.
+A directory-per-skill Markdown convention, implemented as our own small Python.
 
 A skill is a directory skills/<name>/SKILL.md = a `---` frontmatter block + a Markdown body. Two kinds:
   * LEAF (a concern): frontmatter name/description; body = a review rubric.
@@ -104,8 +104,8 @@ def find_subskills(skill):
 
 
 def bundled_scripts(skill):
-    """Absolute paths of files under the skill's scripts/ dir — the Codex 'skill + helper script'
-    pattern (C2). The model runs them via run_command / reads them via read_file. [] if there's no
+    """Absolute paths of files under the skill's scripts/ dir — the 'skill + helper script'
+    bundling pattern (C2). The model runs them via run_command / reads them via read_file. [] if there's no
     scripts/ dir. Never raises."""
     d = os.path.join(os.path.dirname(skill.path), "scripts")
     try:

@@ -79,6 +79,7 @@ openagent-code/
 │   ├── skills.py             # skills (specs/0008): SKILL.md workflows; run_skill fans out captured concern subagents
 │   ├── memory.py             # cross-session project memory — load + remember (Phase 4)
 │   ├── context.py            # ContextManager — live context + compaction (Phase 4)
+│   ├── envcontext.py         # per-turn environment block — situational context (specs/0012)
 │   ├── planner.py            # native vs json tool-calling protocols
 │   ├── agent.py              # the loop
 │   ├── subagent.py           # spawn_agent runner — nested, captured subagents (Phase 4)

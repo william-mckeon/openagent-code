@@ -17,8 +17,8 @@ So compaction shrinks the model's context but never what we capture.
 
 Bounded-fragment invariant (specs/0009): every DYNAMIC fragment that enters the live context —
 tool results, user turns, the pinned plan, a compaction summary — passes through `_capped`, so no
-single item can grow unbounded and blow the model's window (Codex's "no unbounded model-visible
-items", adapted). The full text is always kept raw in the trajectory.
+single item can grow unbounded and blow the model's window (our "no unbounded model-visible
+items" rule). The full text is always kept raw in the trajectory.
 """
 import json
 
@@ -46,6 +46,8 @@ class ContextManager:
         self.system = {"role": "system", "content": system_prompt}
         self.pinned = None       # always-visible, never-compacted message (e.g. the plan)
         self.pinned_task = None   # the current user request, pinned so compaction can't lose it
+        self.pinned_review = None  # a completed review_repo digest, pinned so compaction can't drop it
+        self.pinned_env = None    # per-turn environment block (specs/0012), refreshed each turn
         if initial_working is None:
             # Fresh session: empty working set; the system prompt is the first raw turn.
             self.working = []
@@ -77,7 +79,7 @@ class ContextManager:
         subagent return) AND a native-mode tool call's `arguments` (a big file WRITE/edit — the whole
         file body the model emits, with only short reasoning in `content`). The full text is always
         preserved raw in the trajectory; a truncation is LOGGED so an oversized fragment is visible
-        for review rather than silent (Codex flags large model-visible items)."""
+        for review rather than silent (oversized model-visible fragments are flagged, not hidden)."""
         limit = config.MAX_MESSAGE_CHARS
         if not limit:
             return message
@@ -157,14 +159,46 @@ class ContextManager:
         grounding gate instead of the user. Pinning the request keeps it visible through compaction so
         the agent stays on what was actually asked. Bounded like the plan pin (specs/0009).
         """
+        self.pinned_review = None  # a new task invalidates any prior turn's review digest
         self.pinned_task = (self._capped({"role": "user",
                                           "content": "The user's current request (answer THIS directly):\n" + text})
                             if text else None)
 
+    def set_review_digest(self, text):
+        """Pin the digest a review_repo fan-out returned — always sent, never compacted.
+
+        The digest carries BOTH the per-area findings the lead must write its final review from AND a
+        trailer telling it to synthesize now and not re-run review_repo (orchestrator.py). But it enters
+        as an ordinary working message, and the review's own token weight trips compaction on the very
+        next step — lossy-summarizing the findings away. A live run then re-ran review_repo twice and,
+        having lost the child's read of the auth service, declared it 'empty'. Pinning the digest keeps
+        the completed review's evidence (and its stop-trailer) intact through compaction, so the lead
+        synthesizes from real per-area findings instead of re-deriving them wrong. A new task clears it
+        (see set_task). Bounded like the other pins (specs/0009).
+
+        This is a CONTEXT device only: the digest is already in the raw trajectory as the review_repo
+        tool result, so pinning a copy never adds to the captured turn stream.
+        """
+        self.pinned_review = (self._capped({"role": "user",
+                                            "content": "Your COMPLETED review_repo fan-out (write the final "
+                                            "review by synthesizing THIS; do not re-run review_repo):\n" + text})
+                              if text else None)
+
+    def set_env_context(self, text):
+        """Pin the per-turn environment block (cwd/OS/shell/date/git — see envcontext.py) just before
+        the live working messages. It is DYNAMIC state, so unlike the system prompt it must REFRESH each
+        turn: this REPLACES the slot on every call (never appends), and being in _base() it is always
+        sent and never compacted (it can't go stale from summarization, only from being re-set). Bounded
+        like the other pins (specs/0009). A context device only — agent.py also logs a copy as a normal
+        turn, so capture is unaffected."""
+        self.pinned_env = (self._capped({"role": "user", "content": text}) if text else None)
+
     def _base(self):
         return ([self.system]
                 + ([self.pinned_task] if self.pinned_task else [])   # the request first — the anchor
-                + ([self.pinned] if self.pinned else []))            # then the working plan
+                + ([self.pinned] if self.pinned else [])             # then the working plan
+                + ([self.pinned_review] if self.pinned_review else [])   # then a completed review digest
+                + ([self.pinned_env] if self.pinned_env else []))    # then the live environment block
 
     def context(self):
         """The message list to send the model this step — compacting first if needed."""

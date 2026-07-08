@@ -19,6 +19,7 @@ import os
 
 from . import config
 from . import grounding
+from . import envcontext
 from .tools import ToolResult
 from .prompts import SYNTHESIS_PROMPT
 from .logsetup import get_logger
@@ -83,6 +84,16 @@ class Agent:
         mark = self.cm.mark()
         self.cm.add({"role": "user", "content": task})
         self.cm.set_task(task)   # pin the request so compaction can't summarize away what was asked
+        # Situational context (specs/0012): inject the agent's real environment (cwd / OS / shell / date
+        # / granted dirs, + git branch when enabled) once per turn as a refreshed pin, so it conditions
+        # on live state instead of confabulating it. Pinned (survives compaction) AND logged as a turn
+        # (raw capture) — the same dual the task itself uses. Off by default => today's behavior verbatim.
+        if config.SITUATIONAL_CONTEXT:
+            env = envcontext.build_env_context(
+                ctx.cwd, getattr(ctx.permissions, "extra_roots", None),
+                include_git=config.SITUATIONAL_GIT)
+            self.cm.set_env_context(env)
+            self.cm.add({"role": "user", "content": env})
         consecutive_fail = {}  # tool name -> count of prior consecutive failures
         tool_calls = 0
         verify_retries = 0     # completion-gate re-prompts used this run (Phase 6)
@@ -157,6 +168,15 @@ class Agent:
                     retry_index = consecutive_fail.get(name, 0)
                     self.traj.log_tool_call(step, name, args, result, retry_index)
                     consecutive_fail[name] = 0 if result.ok else retry_index + 1
+
+                    # A completed review_repo digest carries the per-area findings the lead must
+                    # synthesize from PLUS a "synthesize now, don't re-review" trailer. The review's own
+                    # token weight trips compaction on the next step, which would lossy-summarize both
+                    # away (a live run then re-reviewed twice and called an auth service it had read
+                    # 'empty'). Pin a COPY so it survives compaction; the normal tool-result is still
+                    # added below, keeping the assistant/tool_result pairing Bedrock requires intact.
+                    if name == "review_repo" and result.ok:
+                        self.cm.set_review_digest(result.content)
 
                     flag = "deny" if not pd.allowed else ("ok" if result.ok else "FAIL")
                     if ctx.verbose:

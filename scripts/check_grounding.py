@@ -102,6 +102,8 @@ def main():
           len(calls) == 1 and len(out) == 1 and "docker/auth" in out[0])
     check("the verifier task carries the answer + the cited files",
           "GROUNDING VERIFIER" in calls[0] and "docker/README.md" in calls[0])
+    check("the verifier task instructs it to check ABSENCE/emptiness claims by looking (S3 fix)",
+          "ABSENCE" in calls[0] and "empty" in calls[0].lower())
     # PROPORTIONALITY is the verifier's LENIENCY + a non-hijacking challenge, NOT skipping the check: a
     # READ-ONLY run STILL fires the verifier (so a read-only review's wrong claim is caught), but a
     # GROUNDED verdict clears a fair overview — it is not turned into a repo audit.
