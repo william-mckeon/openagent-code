@@ -180,8 +180,15 @@ def main():
           "[.ENV-TOUCH]" not in _digest(
               ["12:00:01 INFO    [openagent_code.agent] step 1 [ok] read_file(path='.env.example') -> KEY=val"]))
 
+    # a repetition-loop degeneration (the live rename turn) is flagged; a normal log is not
+    check("a repetition loop IS flagged in the digest",
+          "[REPETITION-LOOP]" in _digest(
+              ["12:00:01 INFO    [openagent_code.cli] REPL start | model=m mode=bypass workspace=/x"]
+              + ["Now we also need to rename the comment at line 578? Already done."] * 15))
+    check("a normal log is NOT flagged for repetition", "[REPETITION-LOOP]" not in dg)
+
     # -- prompts reasoning-leak: the mid-answer detect + strip that keep the CORPUS clean -------------
-    from src.prompts import has_reasoning_leak, strip_reasoning_preamble  # noqa: E402
+    from src.prompts import has_reasoning_leak, strip_reasoning_preamble, looks_degenerate  # noqa: E402
     _leak = ("The README now matches the compose file.\n\nNow we need to output final answer: "
              "list changed file(s).**Changed files**\n- x")
     check("prompts.has_reasoning_leak catches a mid-answer leak", has_reasoning_leak(_leak))
@@ -201,6 +208,15 @@ def main():
           all((not has_reasoning_leak(x)) and strip_reasoning_preamble(x) == x for x in _legit))
     check("prompts leaves a clean answer verbatim",
           strip_reasoning_preamble("## Review\n- a.py fine") == "## Review\n- a.py fine")
+
+    # Phase-13 degeneracy guard: a repeated substantive line is a repetition loop; ordinary prose isn't.
+    check("looks_degenerate catches a repetition loop",
+          looks_degenerate("\n".join(["Now we also need to rename the comment at line 578? Already done."] * 20)))
+    check("looks_degenerate ignores short/varied interjections (each line < min_line)",
+          not looks_degenerate("Ok.\nStop.\nAlright.\nOk.\nStop.\nOk.\nStop.\nOk.\nStop.\nOk."))
+    check("looks_degenerate does NOT flag a normal multi-line answer",
+          not looks_degenerate("## Review\n- Button.tsx: fixed the clsx import.\n- validation.ts: added a "
+                               "strict YYYY-MM-DD check.\n- No other issues found."))
 
     passed, total = sum(_results), len(_results)
     print(f"\nVERDICT: {passed}/{total} {'[OK]' if passed == total else '[FAIL]'}")

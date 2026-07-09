@@ -114,6 +114,8 @@ def _one_shot(task, perms):
         outcome = "unverified_completion"
     elif terminated == "ungrounded_completion":
         outcome = "ungrounded_completion"
+    elif terminated == "degenerate":
+        outcome = "degenerate"
     elif traj.tool_calls == 0:
         outcome = "no_action"
     elif terminated == "max_steps":

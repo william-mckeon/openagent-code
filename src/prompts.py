@@ -302,6 +302,23 @@ def has_reasoning_leak(text):
     return looks_like_reasoning_preamble(text) or bool(_ANSWER_META.search(text or ""))
 
 
+def looks_degenerate(text, min_repeats=6, min_line=12):
+    """True if `text` is a repetition-loop degeneration - the same non-trivial line (>= min_line chars)
+    repeated >= min_repeats times. This is the weak-model failure where the model gets stuck emitting one
+    phrase over and over (seen live: '...rename the comment at line 578? Already done.' x hundreds); left
+    unchecked it never finishes, bloats the context into a forced compaction, and poisons the corpus.
+    Kept conservative - an ordinary answer never repeats one substantive line six times - so it does not
+    false-flag normal prose (the same reason the reasoning-leak tells are narrow)."""
+    counts = {}
+    for line in (text or "").splitlines():
+        s = line.strip()
+        if len(s) >= min_line:
+            counts[s] = counts.get(s, 0) + 1
+            if counts[s] >= min_repeats:
+                return True
+    return False
+
+
 def strip_reasoning_preamble(text):
     """Trim leaked chain-of-thought — both a LEADING preamble and a MID-answer meta-transition — while
     keeping the real answer. Deliberately conservative: the leading cut only fires with a clear anchor,

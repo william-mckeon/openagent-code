@@ -21,7 +21,7 @@ from . import config
 from . import grounding
 from . import envcontext
 from .tools import ToolResult
-from .prompts import SYNTHESIS_PROMPT
+from .prompts import SYNTHESIS_PROMPT, looks_degenerate
 from .logsetup import get_logger
 
 log = get_logger("agent")
@@ -62,7 +62,7 @@ def _completion_challenge(problems):
 class RunResult:
     def __init__(self, final, terminated, tool_calls):
         self.final = final              # the model's closing text (may be empty)
-        self.terminated = terminated    # "final" | "nudge_exhausted" | "max_steps"
+        self.terminated = terminated    # "final" | "nudge_exhausted" | "max_steps" | "degenerate" | gate outcomes
                                         # | "unverified_completion" | "ungrounded_completion"
         self.tool_calls = tool_calls    # how many tool calls actually executed
 
@@ -104,6 +104,20 @@ class Agent:
                 self.traj.steps = step + 1
                 self.cm.set_pinned(ctx.plan)   # keep the current plan visible (Phase 4 planning)
                 decision = self.planner.step(self.cm.context(), step)
+
+                # Degeneracy guard (repetition loop): a weak model can get stuck emitting the same line
+                # over and over (seen live: "...rename the comment at line 578? Already done." x
+                # hundreds). Left unchecked it never finishes, bloats the window into a forced compaction
+                # next turn, and poisons the corpus. Detect it, SUPPRESS the raw garbage (log a short
+                # marker so it enters neither the live context nor the trajectory), end the turn honestly.
+                _out = (decision.assistant or {}).get("content") or decision.final or ""
+                if looks_degenerate(_out):
+                    log.info("degenerate repetition loop at step %d - ending turn (outcome=degenerate)", step)
+                    self.cm.add({"role": "assistant",
+                                 "content": "[degenerate repetition output detected and suppressed]"})
+                    return RunResult(decision.final or "(the model produced a repetition loop; the turn "
+                                     "was ended before it could finish)", "degenerate", tool_calls)
+
                 self.cm.add(decision.assistant)
 
                 # Model never produced a usable action (json protocol exhausted).

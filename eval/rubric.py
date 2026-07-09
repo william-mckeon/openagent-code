@@ -181,11 +181,12 @@ def score(records, rubric=None):
     false_hits = sorted({m for p in per for m in p.get("false_mentions", [])})
     ungrounded = sorted({u for p in per for u in p.get("ungrounded_claims", [])})
     # Session-level (Phase 8): a run that ended 'unverified_completion' (Phase-6 gate) claimed done
-    # without doing it, or 'ungrounded_completion' (Phase-10 gate) made claims its cited sources don't
-    # back up - both are hard behavior failures the per-turn checks can't see. Fold into the checks AND
-    # cap the score, so the flywheel selects hard against a lying OR an honest-but-wrong run.
+    # without doing it, 'ungrounded_completion' (Phase-10 gate) made claims its cited sources don't
+    # back up, or 'degenerate' (Phase-13 guard) got stuck in a repetition loop - all hard behavior
+    # failures the per-turn checks can't see. Fold into the checks AND cap the score, so the flywheel
+    # selects hard against a lying, an honest-but-wrong, OR a degenerate run.
     end = next((r for r in records if r.get("type") == "session_end"), {})
-    verified_done = end.get("outcome") not in ("unverified_completion", "ungrounded_completion")
+    verified_done = end.get("outcome") not in ("unverified_completion", "ungrounded_completion", "degenerate")
     agg["verified_done"] = verified_done
     base_score = sum(p["score"] for p in per) / n
     return {

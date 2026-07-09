@@ -63,6 +63,8 @@ def _classify(result, tool_calls):
         return "unverified_completion"
     if result.terminated == "ungrounded_completion":
         return "ungrounded_completion"
+    if result.terminated == "degenerate":
+        return "degenerate"
     if tool_calls == 0:
         return "no_action"
     if result.terminated == "max_steps":

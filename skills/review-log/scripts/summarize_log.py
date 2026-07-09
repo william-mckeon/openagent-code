@@ -107,6 +107,12 @@ def main():
         elif "rolling back the turn" in msg:
             crashes.append(i)
 
+    # Repetition-loop degeneration (Phase-13 guard): a weak model can get stuck emitting one line
+    # hundreds of times (a live rename turn did exactly this), poisoning the corpus + forcing a
+    # compaction. Flag the most-repeated non-trivial line if it recurs far more than any real log line.
+    rep_counts = Counter(s for s in (ln.strip() for ln in lines) if len(s) >= 12)
+    rep_line, rep_n = rep_counts.most_common(1)[0] if rep_counts else ("", 0)
+
     out = ["=== SESSION LOG DIGEST ===", start or "(no start line found - is this a session log?)"]
     total = sum(tool_counts.values())
     out.append(f"tool calls: {total} | fails: {len(fails)} | model retries: {retries} | "
@@ -123,6 +129,8 @@ def main():
     flagged = False
     for ln in leaks:
         out.append(f"  [REASONING-LEAK]  L{ln}: a final answer leaks chain-of-thought (opening or mid-answer)"); flagged = True
+    if rep_n >= 10:
+        out.append(f"  [REPETITION-LOOP] a line repeats x{rep_n}: {rep_line[:60]!r} - model degeneration"); flagged = True
     for ln, n in env_touch:
         out.append(f"  [.ENV-TOUCH]      L{ln}: {n} on a .env path"); flagged = True
     for ln in challenges:
