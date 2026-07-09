@@ -65,7 +65,8 @@ openagent-code/
 ├── README.md                 # this file
 ├── ROADMAP.md                # the committed build order + phase gates
 ├── docs/
-│   └── DATASHEET.md          # the contract reference (invocation, schema, failure modes)
+│   ├── DATASHEET.md          # the contract reference (invocation, schema, failure modes)
+│   └── VALIDATION.md         # run-after-every-phase checks (harnesses + live-ride query menu)
 ├── docker/
 │   └── code/
 │       └── Dockerfile        # CLI image (non-root, no port, no healthcheck)

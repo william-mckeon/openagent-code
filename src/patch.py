@@ -171,6 +171,19 @@ def _apply_hunk(path, content, old, new):
     raise PatchError(f"Update File '{path}': a SEARCH block wasn't found in the file")
 
 
+def _read_text(rel, path):
+    """Read a file as text for patching. On a BINARY / undecodable file raise PatchError (a clean
+    teaching refusal), NOT a UnicodeDecodeError - so apply_patch never crashes on a PNG the way a naive
+    utf-8 read would (read_file has the same guard on the read side)."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            return f.read()
+    except UnicodeDecodeError:
+        raise PatchError(f"Update File '{rel}': looks like a BINARY file - apply_patch edits text, not binary")
+    except OSError as e:
+        raise PatchError(f"Update File '{rel}': can't read ({e})")
+
+
 def apply_patch(args, ctx):
     """Tool entry: parse + validate + resolve the whole patch in memory, then apply ALL-OR-NOTHING."""
     from .tools import ToolResult, _record_mutation, _abs  # lazy — avoid the tools<->patch cycle
@@ -200,16 +213,16 @@ def apply_patch(args, ctx):
                     raise PatchError(f"Move File '{op['old']}': source not found")
                 if os.path.exists(new_p):
                     raise PatchError(f"Move File: destination '{op['new']}' already exists")
-                with open(old_p, encoding="utf-8") as f:
-                    plan.append(("move", new_p, f.read(), old_p))
+                # A Move is a byte-preserving RENAME - never read the content as text (a binary file
+                # like a PNG would crash a utf-8 read; this is the android-chrome-*.png case that failed).
+                plan.append(("rename", new_p, None, old_p))
                 touched.append((op["old"], "delete"))
                 touched.append((op["new"], "write"))
             else:  # update
                 path = _abs(ctx, op["path"])
                 if not os.path.isfile(path):
                     raise PatchError(f"Update File '{op['path']}': not found")
-                with open(path, encoding="utf-8") as f:
-                    content = f.read()
+                content = _read_text(op["path"], path)   # PatchError (not a crash) on a binary target
                 for old, new in op["hunks"]:
                     content = _apply_hunk(op["path"], content, old, new)
                 plan.append(("write", path, content, None))
@@ -218,15 +231,19 @@ def apply_patch(args, ctx):
         return ToolResult(False, f"apply_patch: {e}. No files were changed (atomic).")
 
     # Every op validated in memory — now do the writes/deletes/renames.
-    for action, path, content, old_p in plan:
-        if action == "delete":
-            os.remove(path)
-        else:  # write or move (write new, then remove old)
-            os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(content)
-            if action == "move":
-                os.remove(old_p)
+    try:
+        for action, path, content, old_p in plan:
+            if action == "delete":
+                os.remove(path)
+            elif action == "rename":   # Move: byte-preserving, so it works on binary files too
+                os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+                os.rename(old_p, path)
+            else:  # write (Add / Update)
+                os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(content)
+    except OSError as e:  # rare (permissions / disk); never crash the turn (the never-raises contract)
+        return ToolResult(False, f"apply_patch: failed while applying ({e}). The patch may be partially applied.")
     for rel, act in touched:
         _record_mutation(ctx, rel, act)
 

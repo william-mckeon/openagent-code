@@ -276,8 +276,11 @@ def edit_file(args, ctx):
                                  "nothing. Put the NEW text you want in new_string.")
     if not os.path.isfile(path):
         return ToolResult(False, f"File not found: {path}")
-    with open(path, encoding="utf-8") as f:
-        text = f.read()
+    try:
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+    except UnicodeDecodeError:
+        return ToolResult(False, f"{args['path']} looks like a BINARY file — edit_file edits text, not binary.")
     count = text.count(old)
     if count == 0:
         # Exact match found nothing. With the opt-in fuzzy fallback (specs/0013), try to recover a

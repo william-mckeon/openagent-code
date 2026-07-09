@@ -109,6 +109,26 @@ def main():
     check("apply_patch PRESENT in active_tools() when CODE_APPLY_PATCH on",
           "apply_patch" in {t["name"] for t in active_tools()})
 
+    # -- 6. binary files: Move renames byte-for-byte; Update refuses cleanly (the live PNG crash) ---
+    d5 = tempfile.mkdtemp(prefix="applypatch_")
+    raw = b"\x89PNG\r\n\x1a\n\x00\x01\x02 binary image bytes"   # 0x89 -> a naive utf-8 read would crash
+    with open(os.path.join(d5, "icon.png"), "wb") as f:
+        f.write(raw)
+    ctx5 = Context(d5, None)
+    r = patch.apply_patch({"patch": _env(
+        "*** Begin Patch", "*** Move File: icon.png -> logo.png", "*** End Patch")}, ctx5)
+    with open(os.path.join(d5, "logo.png"), "rb") as f:
+        moved = f.read()
+    check("Move of a BINARY file renames it byte-for-byte (no utf-8 crash)",
+          r.ok and (not os.path.exists(os.path.join(d5, "icon.png"))) and moved == raw)
+    r = patch.apply_patch({"patch": _env(
+        "*** Begin Patch", "*** Update File: logo.png",
+        "<<<<<<< SEARCH", "x", "=======", "y", ">>>>>>> REPLACE", "*** End Patch")}, ctx5)
+    with open(os.path.join(d5, "logo.png"), "rb") as f:
+        after = f.read()
+    check("Update of a BINARY file refuses cleanly (no crash, file unchanged)",
+          (not r.ok) and "binary" in r.content.lower() and after == raw)
+
     passed, total = sum(_results), len(_results)
     print(f"\nVERDICT: {passed}/{total} {'[OK]' if passed == total else '[FAIL]'}")
     return 0 if passed == total else 1
