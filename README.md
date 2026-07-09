@@ -75,7 +75,9 @@ openagent-code/
 ├── src/                      # the agent
 │   ├── config.py             # CODE_* env -> config (no YAML; .env is the source)
 │   ├── model.py              # LiteLLM gateway (+ summarize() for compaction)
-│   ├── tools.py              # tools: read/grep/glob/tree/write/edit/delete/run_command/update_plan/spawn_agent/review_repo/run_skill/request_dir/remember
+│   ├── tools.py              # tools: read/grep/glob/tree/write/edit/delete/run_command/update_plan/spawn_agent/review_repo/run_skill/apply_patch/request_dir/remember
+│   ├── editmatch.py          # safe fuzzy fallback for edit_file (specs/0013)
+│   ├── patch.py              # atomic multi-file apply_patch (specs/0013)
 │   ├── skills.py             # skills (specs/0008): SKILL.md workflows; run_skill fans out captured concern subagents
 │   ├── memory.py             # cross-session project memory — load + remember (Phase 4)
 │   ├── context.py            # ContextManager — live context + compaction (Phase 4)

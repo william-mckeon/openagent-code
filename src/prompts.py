@@ -178,6 +178,13 @@ def build_system_prompt(mode, tools, memory=None, granted_dirs=None):
                      + listed + "\nUse code-review to review the current diff by concern rather "
                      "than reviewing files ad hoc.")
 
+    # apply_patch (specs/0013): advertise the atomic multi-file patch tool when it's active, so the
+    # model reaches for it on a COORDINATED change instead of a sequence of separate edit_file calls.
+    if any(t["name"] == "apply_patch" for t in tools):
+        note += ("\n\napply_patch applies a multi-file change ATOMICALLY (all-or-nothing) in one call - "
+                 "prefer it for a coordinated Add/Update/Delete/Move across files; a single edit is "
+                 "still fine with edit_file.")
+
     # Cross-session memory (Phase 4 #7): prior-session notes about THIS repo. Lands in
     # the system prompt, which is logged as the first raw turn -> self-containment holds.
     mem = ""

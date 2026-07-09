@@ -250,6 +250,23 @@ if CURATE_MODE not in ("flag", "exclude"):
 SITUATIONAL_CONTEXT = _as_bool(os.environ.get("CODE_SITUATIONAL_CONTEXT", "false"))
 SITUATIONAL_GIT = _as_bool(os.environ.get("CODE_SITUATIONAL_GIT", "false"))
 
+# Edit-layer (Phase 13 / specs/0013). CODE_EDIT_FUZZY: a SAFE fuzzy fallback UNDER exact-match edit_file
+# - when the exact old_string isn't found, editmatch.resolve locates it (whitespace-insensitive, then
+# most-similar chunk) and applies ONLY a UNIQUE, above-threshold match; any ambiguity refuses, so
+# exact-match-first's never-silently-corrupt guarantee holds. Off by default. THRESHOLD is the similarity
+# floor for the fuzziest tier - keep it conservative (a loose value is what reintroduces the risk).
+EDIT_FUZZY = _as_bool(os.environ.get("CODE_EDIT_FUZZY", "false"))
+try:
+    EDIT_FUZZY_THRESHOLD = float(os.environ.get("CODE_EDIT_FUZZY_THRESHOLD", "0.9"))
+except ValueError:
+    EDIT_FUZZY_THRESHOLD = 0.9
+
+# CODE_APPLY_PATCH (Phase 13 / specs/0013): offer the apply_patch tool - ONE envelope makes several file
+# ops (Add/Update/Delete/Move) ATOMICALLY (all-or-nothing). Off by default; gated into the toolset by
+# src/toolset.py. Every touched path is recorded on the mutation ledger, so the completion + grounding
+# gates cover it with no other change.
+APPLY_PATCH = _as_bool(os.environ.get("CODE_APPLY_PATCH", "false"))
+
 
 def resolved_permission_mode() -> str:
     """The effective mode: explicit CODE_PERMISSION_MODE, else derived from

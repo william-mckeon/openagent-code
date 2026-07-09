@@ -7,9 +7,12 @@ Tool ERGONOMICS are the single most underrated lever for agent proficiency —
 more than the model in many cases. The choices here are deliberate:
 
   * read_file returns LINE NUMBERS -> enables precise edits and references.
-  * edit_file is EXACT-MATCH-OR-FAIL and requires a UNIQUE match -> forces the
-    model to ground every edit in text it actually read, fails loudly instead of
-    silently corrupting, and the error message TEACHES the next attempt.
+  * edit_file is EXACT-MATCH-FIRST and requires a UNIQUE match -> forces the model
+    to ground every edit in text it actually read, fails loudly instead of silently
+    corrupting, and the error message TEACHES the next attempt. An OPT-IN fuzzy
+    fallback (specs/0013, CODE_EDIT_FUZZY) may recover a whitespace/indentation-drift
+    miss, but ONLY at a unique, above-threshold location -> any ambiguity still
+    refuses, so it never silently corrupts and a genuine miss still teaches.
   * grep/glob are dedicated structured tools, not raw shell -> clean output,
     less token waste, no quoting hell.
   * Permissions are enforced at DISPATCH (src/agent.py calls permissions.decide
@@ -27,6 +30,7 @@ import subprocess
 from dataclasses import dataclass, field
 
 from . import config
+from . import editmatch
 
 
 @dataclass
@@ -276,6 +280,21 @@ def edit_file(args, ctx):
         text = f.read()
     count = text.count(old)
     if count == 0:
+        # Exact match found nothing. With the opt-in fuzzy fallback (specs/0013), try to recover a
+        # whitespace/indentation-drift miss — but ONLY at a UNIQUE, above-threshold location; a tie or
+        # a low score refuses with the same teaching error, so we never silently edit the wrong place.
+        if config.EDIT_FUZZY:
+            res = editmatch.resolve(text, old, config.EDIT_FUZZY_THRESHOLD)
+            if res.status == editmatch.MATCH:
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(text[:res.start] + new + text[res.end:])
+                _record_mutation(ctx, args["path"], "edit")
+                return ToolResult(True, f"Edited {path} (fuzzy match: {res.strategy})",
+                                  {"edit_strategy": res.strategy})
+            if res.status == editmatch.AMBIGUOUS:
+                return ToolResult(False, "old_string wasn't found exactly, and more than one part of "
+                                         "the file is a close match — I won't guess which. Copy the "
+                                         "exact text with enough surrounding context to be unique.")
         return ToolResult(False, "old_string not found. Read the file and copy the exact "
                                  "text including whitespace and indentation.")
     if count > 1 and not replace_all:
@@ -477,6 +496,7 @@ def web_search(args, ctx):
 # without a circular import — ToolResult is defined above by now.
 from .orchestrator import review_repo  # noqa: E402
 from .skills import run_skill  # noqa: E402  (skills.py imports ToolResult lazily -> no cycle)
+from .patch import apply_patch  # noqa: E402  (patch.py imports ToolResult lazily -> no cycle)
 
 TOOLS = [
     {
@@ -698,6 +718,29 @@ SKILL_TOOLS = [
             "name": {"type": "string", "description": "the skill to run, e.g. 'code-review'"},
             "target": {"type": "string", "description": "optional path to scope the diff"},
         }, "required": ["name"]},
+    },
+]
+
+
+# Opt-in apply_patch tool (specs/0013) — added to the active toolset by src/toolset.py only when
+# CODE_APPLY_PATCH is on. One envelope makes several file ops (Add/Update/Delete/Move) ATOMICALLY;
+# every touched path goes through _record_mutation, so the completion + grounding gates already cover it.
+PATCH_TOOLS = [
+    {
+        "name": "apply_patch", "fn": apply_patch,
+        "description": ("Apply a multi-file patch ATOMICALLY (all-or-nothing) - ONE envelope does "
+                        "several file operations. Prefer it for a COORDINATED change across files. On "
+                        "ANY error, NO file is changed. Format:\n"
+                        "*** Begin Patch\n"
+                        "*** Add File: path      (then '+'-prefixed content lines)\n"
+                        "*** Update File: path   (then <<<<<<< SEARCH / old / ======= / new / "
+                        ">>>>>>> REPLACE hunks)\n"
+                        "*** Delete File: path\n"
+                        "*** Move File: old -> new\n"
+                        "*** End Patch"),
+        "parameters": {"type": "object", "properties": {
+            "patch": {"type": "string", "description": "the *** Begin Patch ... *** End Patch envelope"},
+        }, "required": ["patch"]},
     },
 ]
 
