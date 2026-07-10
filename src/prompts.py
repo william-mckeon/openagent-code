@@ -287,6 +287,18 @@ _ANSWER_META = re.compile(
 # ends and content begins, so we DON'T strip — never eat real answer text (detection still flags it).
 _META_STRIP = re.compile(_ANSWER_META.pattern + r".*?(?=\*\*\S|#{1,6}\s)",
                          re.IGNORECASE | re.MULTILINE)
+# A CONCLUSION-marker transition to THE FINAL ANSWER ("Thus the final answer:", "therefore the final
+# response is", "so, the final answer:") — the "However... but maybe... thus the final answer:"
+# deliberation shape that _ANSWER_META (which requires a first-person 'we/I output') does NOT catch. Same
+# discriminator as _ANSWER_META: the deliverable phrase "final answer/response/reply", which ordinary
+# content never uses — so this can't match "the final release" or "we return a response".
+_CONCLUSION_META = re.compile(
+    r"\b(?:thus|therefore|hence|so|in\s+conclusion|to\s+conclude|finally|in\s+summary)\b[,:]?\s+"
+    r"(?:the\s+|our\s+|my\s+)?final\s+(?:answer|response|reply)\b"
+    r"|\bthe\s+final\s+(?:answer|response|reply)\s+(?:is|would\s+be|:)",
+    re.IGNORECASE)
+_CONCLUSION_STRIP = re.compile(r"(?:" + _CONCLUSION_META.pattern + r").*?(?=\*\*\S|#{1,6}\s)",
+                               re.IGNORECASE | re.MULTILINE)
 
 
 def looks_like_reasoning_preamble(text):
@@ -303,23 +315,37 @@ def has_reasoning_leak(text):
     (looks_like_reasoning_preamble) OR contains a mid-answer meta-transition about producing the answer
     (_ANSWER_META). The whole-text check the eval + log summarizer use, so a leak sandwiched after a
     legit first sentence is caught, not just a leading one."""
-    return looks_like_reasoning_preamble(text) or bool(_ANSWER_META.search(text or ""))
+    return (looks_like_reasoning_preamble(text) or bool(_ANSWER_META.search(text or ""))
+            or bool(_CONCLUSION_META.search(text or "")))
 
 
-def looks_degenerate(text, min_repeats=6, min_line=12):
-    """True if `text` is a repetition-loop degeneration - the same non-trivial line (>= min_line chars)
-    repeated >= min_repeats times. This is the weak-model failure where the model gets stuck emitting one
-    phrase over and over (seen live: '...rename the comment at line 578? Already done.' x hundreds); left
-    unchecked it never finishes, bloats the context into a forced compaction, and poisons the corpus.
-    Kept conservative - an ordinary answer never repeats one substantive line six times - so it does not
-    false-flag normal prose (the same reason the reasoning-leak tells are narrow)."""
-    counts = {}
+_DEGEN_DIGITS = re.compile(r"\d+")
+
+
+def looks_degenerate(text, min_repeats=6, min_line=8):
+    """True if `text` is a repetition-loop degeneration - the same non-trivial line repeated BACK-TO-BACK
+    (a CONSECUTIVE run of >= min_repeats), tolerating a per-line number that ticks ('...rename line 578?
+    Already done.' then '...rename line 579? Already done.'). This is the weak-model failure where the
+    model gets stuck emitting one phrase over and over; left unchecked it never finishes, bloats the
+    context into a forced compaction, and poisons the corpus.
+
+    Two deliberate properties keep it from false-flagging normal prose: (1) the run must be CONSECUTIVE -
+    six IDENTICAL lines scattered through a table / list / diff is normal, six in a ROW is not; (2) a
+    short (< min_line) or blank line BREAKS the run, so ordinary indentation / bullets never trip it.
+    Digit-normalization catches the common loop that only differs by a ticking counter."""
+    prev, run = None, 0
     for line in (text or "").splitlines():
         s = line.strip()
-        if len(s) >= min_line:
-            counts[s] = counts.get(s, 0) + 1
-            if counts[s] >= min_repeats:
+        if len(s) < min_line:
+            prev, run = None, 0            # a short/blank line breaks the run
+            continue
+        key = _DEGEN_DIGITS.sub("#", s)    # collapse digits so a ticking-counter loop still matches
+        if key == prev:
+            run += 1
+            if run >= min_repeats:
                 return True
+        else:
+            prev, run = key, 1
     return False
 
 
@@ -338,6 +364,7 @@ def strip_reasoning_preamble(text):
                 text = "\n".join(lines[i:]).lstrip("\n")
                 break
     text = _META_STRIP.sub("", text)
+    text = _CONCLUSION_STRIP.sub("", text)   # strip a 'thus the final answer:' clause up to a real anchor
     if text == original:
         return original  # nothing stripped -> leave the answer whole (old conservative behavior)
     return re.sub(r"\n{3,}", "\n\n", re.sub(r"[ \t]+\n", "\n", text)).strip()

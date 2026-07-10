@@ -217,6 +217,27 @@ def main():
     check("looks_degenerate does NOT flag a normal multi-line answer",
           not looks_degenerate("## Review\n- Button.tsx: fixed the clsx import.\n- validation.ts: added a "
                                "strict YYYY-MM-DD check.\n- No other issues found."))
+    # false-positive fix: six IDENTICAL lines SCATTERED (not back-to-back) through real content is normal
+    check("looks_degenerate does NOT flag scattered (non-consecutive) identical lines",
+          not looks_degenerate("\n".join(
+              ["The same separator sentence here." if i % 2 == 0 else f"unique content line {i}"
+               for i in range(12)])))
+    # false-negative fix: a loop whose lines differ only by a ticking number IS caught (digit-normalized)
+    check("looks_degenerate catches a loop that only differs by a ticking counter",
+          looks_degenerate("\n".join(f"Renaming the symbol at line {i}? Already handled." for i in range(20))))
+
+    # rambling-CoT: the "However... thus the final answer:" conclusion shape _ANSWER_META misses
+    _concl = ("The compose file mounts docker/auth/init.sql.\n\nThus the final answer: the init script is "
+              "in the auth service.**Answer**\n- docker/auth/init.sql")
+    check("has_reasoning_leak catches a 'thus the final answer' conclusion leak",
+          has_reasoning_leak(_concl))
+    _cs = strip_reasoning_preamble(_concl)
+    check("strip removes the conclusion meta, keeps the first sentence + the real header",
+          "Thus the final answer" not in _cs and "**Answer**" in _cs
+          and "The compose file mounts docker/auth/init.sql." in _cs)
+    check("conclusion-leak discriminator stays narrow ('the final release' / 'a response' not flagged)",
+          not has_reasoning_leak("We shipped the final release of the parser.")
+          and not has_reasoning_leak("The handler returns a response to the caller."))
 
     passed, total = sum(_results), len(_results)
     print(f"\nVERDICT: {passed}/{total} {'[OK]' if passed == total else '[FAIL]'}")
