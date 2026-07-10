@@ -87,19 +87,38 @@ oac --mode acceptEdits
 - `does the auth service actually have Go source, or is it just docs and config?`
   → it must **look** (read the `.go` files) before answering, never confabulate "empty".
 
+### Deviation matrix — ride OFF the happy path (where the seam bugs live)
+
+The full-phase audit ([AUDIT-FINDINGS.md](AUDIT-FINDINGS.md)) confirmed 19 real bugs while every unit
+harness was green — all in a **seam** the happy-path ride doesn't exercise. A seam bug is a **violated
+assumption**; find them by deliberately breaking each assumption the code makes. Ride at least one query
+through each row:
+
+| Assumption the code makes | Deviation to ride | Watch for |
+|---|---|---|
+| the workspace **is** the edit target | launch in dir A, `--add-dir` B, edit B by absolute path | no false "not backed"; fence still blocks outside A+B |
+| **one task** per session | favicon task (leaves unbacked steps) → then `what project is this?` | turn 2 answers the project, not a stale favicon status |
+| a **fresh** session | `--resume <id>` an old session, then a new unrelated task | the prior plan doesn't hijack; no dangling-tool_call error |
+| flags are **stable** per session | toggle `/mode` (or a `CODE_*` flag) mid-session | later turns honor the new mode; no stale pin |
+| the repo is **small** | a big repo / low `CODE_COMPACT_AT_TOKENS` to force mid-turn compaction | a failed turn rolls back cleanly (no poisoned next turn) |
+| files are **LF** | edit a CRLF file | the diff is one line, not a whole-file re-ending |
+| `apply_patch` targets are **safe** | (CODE_APPLY_PATCH on) a patch that Deletes `.env` or writes `../out` | refused; a Delete/Move prompts in acceptEdits |
+
+Every new deviation that surfaces a bug becomes a new `check_*.py` — the ratchet, not a one-off.
+
 ### What "good" looks like in the digest
 No `[REPETITION-LOOP]`, no `[REASONING-LEAK]`, no unexplained `[THRASH]`; gates fire when they should
 (`[FALSE-DONE?]` = the completion gate *working*); honest outcomes.
 
-### Known findings to watch (recurring, not yet fully fixed)
-- **Rambling-CoT leak** — a long "However… but maybe… thus the final answer…" dump before the real
-  answer. STILL fires despite the `ANSWER DIRECTLY` prompt rule (prompt lever isn't enough) — the next
-  lever is a `looks_like_deliberation` detector + a rubric penalty so the flywheel selects against it.
-- **Absence-claim grounding can still miss** — a run once answered "the auth service has no Go source"
-  when `src/auth` holds 14 `.go` files. The completion-gate hijack (now fixed) was blocking the grounding
-  gate from even running that turn; separately, searching a `--add-dir` reference dir by absolute path
-  may not reach the files. Verify absence claims land, and build the grounding **read-ledger** so "X is
-  empty" is contradicted by what the session actually listed/read.
+### Known findings to watch (recurring)
+- **Rambling-CoT leak** — the "thus the final answer:" conclusion shape is now caught (`_CONCLUSION_META`):
+  scored by `has_reasoning_leak` and stripped from SFT targets, so the flywheel selects against it. A
+  free-form ramble *without* that conclusion marker ("However… but maybe…") is still not flagged by design
+  (too false-positive-prone) — the flywheel + the `ANSWER DIRECTLY` prompt rule are the levers there.
+- **Absence claims are now checked** — a prose-only "X has no source / is empty" spawns the Tier-2
+  verifier even with no cited path (the "auth has no Go source" miss). Still confirm on a ride that the
+  verifier actually *looks* and corrects a false absence; a deeper grounding **read-ledger** (contradict
+  "empty" from what the session listed) remains a possible follow-up.
 - **Proportionality drift** in a long *resumed* session — a simple question can draw a review-sized answer.
 
 ## Environment prerequisites
