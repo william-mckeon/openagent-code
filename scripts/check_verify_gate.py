@@ -137,9 +137,12 @@ def main():
     traj = _Traj()
     ctx = _ctx()
     ctx.plan_items = [{"content": "make favicons", "status": "completed", "file": "ghost.png"}]  # never mutated
+    ctx.spawn_count = 8   # a prior task's fan-out budget left on the reused REPL ctx
     r = _agent(traj).run("what project is this?", ctx)
     check("a stale completed plan step from a prior task does NOT hijack a new turn (per-task reset)",
           r.terminated != "unverified_completion" and ctx.plan_items == [])
+    check("the subagent fan-out counter is reset per task (no cross-turn spawn_agent block)",
+          ctx.spawn_count == 0)
     config.VERIFY_COMPLETION, config.VERIFY_GROUNDING = _vc, _vg
 
     # 6. path-normalization: a step whose file was edited via an ABSOLUTE path is recognized as backed
@@ -156,6 +159,19 @@ def main():
     c.plan_items = [{"content": "edit x", "status": "completed", "file": abspath}]  # step names the ABS path
     check("a step completed via an absolute path reads as backed (no false 'not backed')",
           _unverified_items(c) == [])
+
+    # 7. case-fold: the ledger match is case-insensitive on Windows (matching the case-insensitive FS +
+    #    os.path.exists) and case-SENSITIVE on POSIX (correct on the Linux training substrate). A plan
+    #    step naming a file with different casing than the edit call still matches its real change.
+    c = _ctx()
+    c.mutations = {}
+    os.makedirs(os.path.join(c.cwd, "src"), exist_ok=True)
+    open(os.path.join(c.cwd, "src", "App.py"), "w").close()
+    _record_mutation(c, "src/App.py", "edit")                       # ledger key keeps original casing
+    c.plan_items = [{"content": "x", "status": "completed", "file": "src/app.py"}]  # step: different case
+    expect_backed = os.path.normcase("src/App.py") == os.path.normcase("src/app.py")
+    check("completion-gate ledger match is case-insensitive on Windows / case-sensitive on POSIX",
+          (_unverified_items(c) == []) == expect_backed)
 
     verify_edits.results = _orig
     config.VERIFY_TOUCHED = False

@@ -242,7 +242,10 @@ def write_file(args, ctx):
     path = _abs(ctx, args["path"])
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     content = args["content"]
-    with open(path, "w", encoding="utf-8") as f:
+    # newline="" writes the content VERBATIM. The default (newline=None) translates every '\n' to the
+    # OS separator, which on Windows silently rewrites a whole file to CRLF — a massive spurious diff for
+    # a one-line change. The model emits '\n', so verbatim = LF, matching the repo.
+    with open(path, "w", encoding="utf-8", newline="") as f:
         f.write(content)
     _record_mutation(ctx, args["path"], "write")
     return ToolResult(True, f"Wrote {len(content)} bytes to {path}")
@@ -279,6 +282,10 @@ def edit_file(args, ctx):
     try:
         with open(path, encoding="utf-8") as f:
             text = f.read()
+            # Read with universal newlines (text has '\n', so the model's '\n'-based old_string matches),
+            # but remember the file's ORIGINAL ending so the write preserves it instead of the default
+            # Windows LF->CRLF rewrite. Mixed / none -> LF.
+            newline = f.newlines if isinstance(f.newlines, str) else "\n"
     except UnicodeDecodeError:
         return ToolResult(False, f"{args['path']} looks like a BINARY file — edit_file edits text, not binary.")
     count = text.count(old)
@@ -289,7 +296,7 @@ def edit_file(args, ctx):
         if config.EDIT_FUZZY:
             res = editmatch.resolve(text, old, config.EDIT_FUZZY_THRESHOLD)
             if res.status == editmatch.MATCH:
-                with open(path, "w", encoding="utf-8") as f:
+                with open(path, "w", encoding="utf-8", newline=newline) as f:
                     f.write(text[:res.start] + new + text[res.end:])
                 _record_mutation(ctx, args["path"], "edit")
                 return ToolResult(True, f"Edited {path} (fuzzy match: {res.strategy})",
@@ -303,7 +310,7 @@ def edit_file(args, ctx):
     if count > 1 and not replace_all:
         return ToolResult(False, f"old_string is not unique ({count} matches). Add "
                                  f"surrounding context to make it unique, or set replace_all=true.")
-    with open(path, "w", encoding="utf-8") as f:
+    with open(path, "w", encoding="utf-8", newline=newline) as f:
         f.write(text.replace(old, new))
     _record_mutation(ctx, args["path"], "edit")
     return ToolResult(True, f"Edited {path} ({count} replacement(s))")

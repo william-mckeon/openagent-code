@@ -34,6 +34,11 @@ def _unverified_items(ctx):
     means completion is verified. Steps without a named file can't be checked, so they're trusted."""
     items = getattr(ctx, "plan_items", None) or []
     muts = getattr(ctx, "mutations", None) or {}
+    # Case-insensitive ledger view for the lookup: Windows paths are case-insensitive (and the
+    # os.path.exists check below agrees), so a plan step that names a file with different casing than the
+    # edit call still matches its real change. os.path.normcase is identity on POSIX — correctly
+    # case-SENSITIVE on the Linux training substrate.
+    muts_ci = {os.path.normcase(k): v for k, v in muts.items()}
     problems = []
     for it in items:
         if it.get("status") != "completed" or not it.get("file"):
@@ -43,7 +48,7 @@ def _unverified_items(ctx):
         # reference dir. (Hand-relativizing here missed edits made via an ABSOLUTE path: every real change
         # read as "not backed" and the gate fired spuriously, seen live editing centpilot via abs paths.)
         rel = _rel(ctx, _abs(ctx, it["file"]))
-        action = muts.get(rel)
+        action = muts_ci.get(os.path.normcase(rel))
         if action is None:
             problems.append(f"'{it['file']}' - marked done but nothing changed it this session")
             continue
@@ -95,6 +100,10 @@ class Agent:
         ctx.plan = None
         ctx.plan_items = []
         ctx.mutations = {}
+        # The subagent fan-out breadth cap is a per-TASK budget too: without this reset a long REPL
+        # session's earlier spawns accumulate on the reused ctx and permanently block spawn_agent on
+        # later, unrelated turns (the same cross-turn-leak class as the plan/mutations reset above).
+        ctx.spawn_count = 0
         # Situational context (specs/0012): inject the agent's real environment (cwd / OS / shell / date
         # / granted dirs, + git branch when enabled) once per turn as a refreshed pin, so it conditions
         # on live state instead of confabulating it. Pinned (survives compaction) AND logged as a turn

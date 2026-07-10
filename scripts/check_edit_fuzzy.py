@@ -17,7 +17,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 from src import config, editmatch  # noqa: E402
-from src.tools import edit_file, Context  # noqa: E402
+from src.tools import edit_file, write_file, Context  # noqa: E402
 
 _results = []
 
@@ -100,6 +100,29 @@ def main():
     check("flag ON: an EXACT match still applies via the normal path (no fuzzy strategy tagged)",
           r.ok and "replacement(s)" in r.content
           and (r.meta or {}).get("edit_strategy") is None and "return 7" in _read(p))
+
+    # -- line-ending preservation (the Windows default-newline LF->CRLF rewrite bug) ----------
+    #    Fixtures are written with newline="" so the OS can't corrupt the setup; bytes are read raw.
+    write_file({"path": "wf.py", "content": "x = 1\ny = 2\n"}, ctx)
+    with open(os.path.join(d, "wf.py"), "rb") as f:
+        check("write_file writes '\\n' verbatim (LF, no CRLF rewrite)", b"\r\n" not in f.read())
+
+    lf = os.path.join(d, "lf.py")
+    with open(lf, "w", encoding="utf-8", newline="") as f:
+        f.write("a = 1\nb = 2\n")
+    edit_file({"path": "lf.py", "old_string": "a = 1", "new_string": "a = 11"}, ctx)
+    with open(lf, "rb") as f:
+        raw = f.read()
+    check("edit_file preserves LF endings (no whole-file CRLF rewrite)", b"\r\n" not in raw and b"a = 11" in raw)
+
+    crlf = os.path.join(d, "crlf.py")
+    with open(crlf, "w", encoding="utf-8", newline="") as f:
+        f.write("a = 1\r\nb = 2\r\n")
+    edit_file({"path": "crlf.py", "old_string": "a = 1", "new_string": "a = 11"}, ctx)
+    with open(crlf, "rb") as f:
+        raw = f.read()
+    check("edit_file preserves CRLF endings (detect-and-restore, not forced to LF)",
+          raw.count(b"\r\n") == 2 and b"a = 11\r\n" in raw)
 
     # hermetic default-off (independent of this repo's own .env)
     _saved = os.environ.pop("CODE_EDIT_FUZZY", None)
