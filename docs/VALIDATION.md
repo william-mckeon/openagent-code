@@ -51,11 +51,37 @@ Reset between runs with `git checkout .` inside centpilot. Then digest the log:
 - `the favicon README lists icons the pages reference but are missing — wire the references into _document.tsx and align the names in site.webmanifest`
   → watch for `*** Begin Patch …` → `applied N operation(s) atomically`, or a clean `could not parse …`
   teaching error. A **binary Move/rename must NOT crash** (fixed).
+  → **Fence (fixed):** every op is now re-gated through the permission engine, so a patch can NOT write
+  outside the workspace or touch `.env`/`.git/**` (it was bypassing all of that). A **Delete/Move** op
+  gates like `delete_file`, so in `acceptEdits` it PROMPTS (interactive) or blocks (headless) — use
+  `--mode bypass` for a fully-unattended favicon-Move ride, or approve the delete when asked.
+
+**auto-verify (Phase 14)** — needs a **Python target**: the default check is `python -m py_compile`, and
+centpilot has no `.py`, so on centpilot auto-verify is a no-op unless `CODE_VERIFY_CMDS_CONFIG` maps its
+languages to an *installed* checker. Cleanest test — a scratch python dir with a seeded syntax error:
+```powershell
+mkdir C:\Users\willi\OneDrive\Desktop\pyscratch -Force; cd C:\Users\willi\OneDrive\Desktop\pyscratch; git init | Out-Null
+"def add(a, b)`n    return a + b" | Set-Content calc.py     # note: missing ':' -> a syntax error
+oac --mode acceptEdits
+```
+- `add a subtract(a, b) function to calc.py`
+  → the model edits `calc.py`, `py_compile` FAILS on the `def add(a, b)` error, you see
+  `[verify] N touched file(s) failed the check`, and the reflection loop fixes the colon so it compiles.
+  A run that never gets the file to compile ends `verify_failed_edits` (dropped from the corpus). A clean
+  edit that compiles logs a silent pass-reward (visible in the trajectory, not the console).
 
 **Regression — proportionality + review (session fixes)**
 - `what project is this?` → ~2 tool calls + a **short** answer, not a full audit/essay.
 - `review the whole project` → fans out via `review_repo`; no repeated `review_repo` runs; nothing
   called "empty" that it actually read.
+
+**Cross-turn hijack (completion gate is now per-task)** — the sequence matters, run it in order:
+1. `the favicon README lists icons the pages reference but are missing — wire the references into _document.tsx and align the names in site.webmanifest`  (leaves unbacked steps: the PNGs don't exist)
+2. then `what project is this?`
+  → turn 2 must answer **about the project** — NOT re-litigate the favicon plan, NOT a "changes I made"
+  table, NOT "I exhausted my step budget". A prior task's completed-but-unbacked steps are reset each
+  turn, so the completion gate can't carry into an unrelated question. Also confirm a real edit made via
+  an **absolute path** (or a `--add-dir` reference dir) isn't falsely challenged as "not backed".
 
 **Grounding honesty (absence-claim fix)**
 - `does the auth service actually have Go source, or is it just docs and config?`
@@ -67,7 +93,13 @@ No `[REPETITION-LOOP]`, no `[REASONING-LEAK]`, no unexplained `[THRASH]`; gates 
 
 ### Known findings to watch (recurring, not yet fully fixed)
 - **Rambling-CoT leak** — a long "However… but maybe… thus the final answer…" dump before the real
-  answer. Uncaught by the leak detector; the `ANSWER DIRECTLY` prompt rule + the flywheel are the levers.
+  answer. STILL fires despite the `ANSWER DIRECTLY` prompt rule (prompt lever isn't enough) — the next
+  lever is a `looks_like_deliberation` detector + a rubric penalty so the flywheel selects against it.
+- **Absence-claim grounding can still miss** — a run once answered "the auth service has no Go source"
+  when `src/auth` holds 14 `.go` files. The completion-gate hijack (now fixed) was blocking the grounding
+  gate from even running that turn; separately, searching a `--add-dir` reference dir by absolute path
+  may not reach the files. Verify absence claims land, and build the grounding **read-ledger** so "X is
+  empty" is contradicted by what the session actually listed/read.
 - **Proportionality drift** in a long *resumed* session — a simple question can draw a review-sized answer.
 
 ## Environment prerequisites

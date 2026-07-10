@@ -101,6 +101,28 @@ def main():
     p = Permissions("plan", {}, [])
     check("plan mode blocks delete_file", not allowed(p, ctx, "delete_file", path=inside))
 
+    # apply_patch (specs/0013) — a file-MUTATING tool. The critical bug: it was classified read-only,
+    # so it skipped the fence, deny rules, and plan mode. The OUTER gate must now treat it as a mutation;
+    # patch.py enforces the fence + per-path deny/ask on each op (see check_apply_patch.py).
+    _pp = "*** Begin Patch\n*** Delete File: .env\n*** End Patch"
+    p = Permissions("plan", {}, [])
+    check("plan mode blocks apply_patch (mutating, no longer 'read-only')",
+          not allowed(p, ctx, "apply_patch", patch=_pp))
+    p = Permissions("default", {}, [])
+    check("default headless blocks apply_patch (needs approval, no human)",
+          not allowed(p, ctx, "apply_patch", patch=_pp))
+    p = Permissions("acceptEdits", {}, [])
+    check("acceptEdits passes apply_patch at the outer gate (patch.py fences each op)",
+          allowed(p, ctx, "apply_patch", patch=_pp))
+    p = Permissions("bypass", {}, [])
+    check("bypass passes apply_patch at the outer gate", allowed(p, ctx, "apply_patch", patch=_pp))
+
+    # tree — a filesystem-READING tool that was not fence-classified, so it could enumerate directories
+    # anywhere on disk. It must now be fenced like read/grep/glob.
+    p = Permissions("bypass", {}, [])
+    check("fence blocks tree outside the workspace", not allowed(p, ctx, "tree", path=outside_abs))
+    check("tree inside the workspace allowed", allowed(p, ctx, "tree", path="."))
+
     passed, total = sum(_results), len(_results)
     print(f"\nVERDICT: {passed}/{total} {'[OK]' if passed == total else '[FAIL]'}")
     return 0 if passed == total else 1

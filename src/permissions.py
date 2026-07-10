@@ -30,9 +30,12 @@ import re
 from . import config
 
 # Tools that change files or run commands. Everything else is read-only for gating.
-MUTATING = {"write_file", "edit_file", "delete_file", "run_command"}
+# apply_patch mutates too, but ONE envelope carries MANY paths, so decide()'s single-path fence can't
+# cover it here — patch.py re-gates each op through decide() with its single-file equivalent. Listing it
+# here still makes the OUTER gate treat it as a mutation (blocked in plan mode / headless default).
+MUTATING = {"write_file", "edit_file", "delete_file", "run_command", "apply_patch"}
 # Tools whose target is a filesystem path (fence-checked, glob-matched in rules).
-PATH_TOOLS = {"read_file", "write_file", "edit_file", "delete_file", "grep", "glob"}
+PATH_TOOLS = {"read_file", "write_file", "edit_file", "delete_file", "grep", "glob", "tree"}
 
 
 class Decision:
@@ -119,7 +122,9 @@ class Permissions:
         # 7. mode baseline.
         if self.mode == "bypass":
             return D(True, "allow", "bypass mode")
-        if self.mode == "acceptEdits" and tool in ("write_file", "edit_file"):
+        if self.mode == "acceptEdits" and tool in ("write_file", "edit_file", "apply_patch"):
+            # apply_patch passes the OUTER gate here; patch.py still fences each op and blocks a
+            # Delete/Move op in acceptEdits (delete_file isn't auto-approved), same as delete_file itself.
             return D(True, "allow", "acceptEdits mode")
         # default mode (and acceptEdits for run_command): prompt or block.
         if getattr(ctx, "interactive", False):
@@ -134,7 +139,7 @@ class Permissions:
             raw = args.get("path", "")
             ap = _resolve(ctx.cwd, raw)
             return _Target("path", raw, _rel(ap, ctx.cwd), ap)
-        if tool in ("grep", "glob"):
+        if tool in ("grep", "glob", "tree"):
             raw = args.get("path", ".")
             ap = _resolve(ctx.cwd, raw)
             return _Target("path", raw, _rel(ap, ctx.cwd), ap)

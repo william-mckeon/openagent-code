@@ -267,6 +267,17 @@ except ValueError:
 # gates cover it with no other change.
 APPLY_PATCH = _as_bool(os.environ.get("CODE_APPLY_PATCH", "false"))
 
+# Auto-verify (Phase 14 / specs/0014). After the completion gate accepts a "done", run a configured check
+# (default `python -m py_compile`) on just the TOUCHED files; on failure re-prompt to fix (bounded) then
+# record an honest 'verify_failed_edits'. The command is OPERATOR-configured (never model-controlled) and
+# runs as an ARGV list with no shell (no injection). CODE_VERIFY_CMDS_CONFIG is a JSON map of ext -> argv
+# list, resolved against INSTALL_ROOT. All default OFF except the reward label. See specs/0014.
+VERIFY_TOUCHED = _as_bool(os.environ.get("CODE_VERIFY_TOUCHED", "false"))
+VERIFY_TOUCHED_RETRIES = int(os.environ.get("CODE_VERIFY_TOUCHED_RETRIES", "2"))
+VERIFY_CMDS_CONFIG = _resolve_install_path(os.environ.get("CODE_VERIFY_CMDS_CONFIG", ""))
+VERIFY_TOUCHED_LABEL = _as_bool(os.environ.get("CODE_VERIFY_TOUCHED_LABEL", "true"))
+VERIFY_TIMEOUT = int(os.environ.get("CODE_VERIFY_TIMEOUT", "60"))
+
 
 def resolved_permission_mode() -> str:
     """The effective mode: explicit CODE_PERMISSION_MODE, else derived from

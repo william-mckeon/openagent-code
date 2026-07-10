@@ -19,6 +19,7 @@ sys.path.insert(0, ROOT)
 from src import config, patch  # noqa: E402
 from src.tools import Context  # noqa: E402
 from src.toolset import active_tools  # noqa: E402
+from src.permissions import Permissions  # noqa: E402
 
 _results = []
 
@@ -128,6 +129,38 @@ def main():
         after = f.read()
     check("Update of a BINARY file refuses cleanly (no crash, file unchanged)",
           (not r.ok) and "binary" in r.content.lower() and after == raw)
+
+    # -- 7. PERMISSION FENCE: apply_patch must inherit the fence + deny rules + plan mode, PER op ------
+    #    (the critical audit finding: apply_patch was auto-allowed as 'read-only' and bypassed all of it).
+    #    A Context carrying a real Permissions engine now re-gates every op inside patch.py.
+    d6 = tempfile.mkdtemp(prefix="applypatch_")
+    _w(d6, ".env", "SECRET=1\n")
+    _w(d6, "keep.py", "orig\n")
+    esc = os.path.realpath(os.path.join(d6, "..", "escape.txt"))
+
+    ctx_bypass = Context(d6, Permissions("bypass", {}, []))
+    r = patch.apply_patch({"patch": _env(
+        "*** Begin Patch", "*** Add File: ../escape.txt", "+pwned", "*** End Patch")}, ctx_bypass)
+    check("FENCE: apply_patch Add resolving outside the workspace -> refused, nothing written",
+          (not r.ok) and (not os.path.exists(esc)))
+
+    ctx_deny = Context(d6, Permissions("bypass", {"deny": ["delete_file(.env)"]}, []))
+    r = patch.apply_patch({"patch": _env(
+        "*** Begin Patch", "*** Delete File: .env", "*** End Patch")}, ctx_deny)
+    check("DENY: apply_patch Delete .env -> refused even under bypass, .env untouched",
+          (not r.ok) and os.path.isfile(os.path.join(d6, ".env")))
+
+    ctx_plan = Context(d6, Permissions("plan", {}, []))
+    r = patch.apply_patch({"patch": _env(
+        "*** Begin Patch", "*** Update File: keep.py",
+        "<<<<<<< SEARCH", "orig", "=======", "new", ">>>>>>> REPLACE", "*** End Patch")}, ctx_plan)
+    check("PLAN: apply_patch (all-mutating) -> refused in read-only plan mode, file unchanged",
+          (not r.ok) and _r(os.path.join(d6, "keep.py")) == "orig\n")
+
+    r = patch.apply_patch({"patch": _env(
+        "*** Begin Patch", "*** Add File: ok.py", "+x = 1", "*** End Patch")}, ctx_bypass)
+    check("in-fence Add under bypass STILL applies (the gate doesn't over-block legitimate patches)",
+          r.ok and os.path.isfile(os.path.join(d6, "ok.py")))
 
     passed, total = sum(_results), len(_results)
     print(f"\nVERDICT: {passed}/{total} {'[OK]' if passed == total else '[FAIL]'}")

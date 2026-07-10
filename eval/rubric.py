@@ -186,7 +186,8 @@ def score(records, rubric=None):
     # failures the per-turn checks can't see. Fold into the checks AND cap the score, so the flywheel
     # selects hard against a lying, an honest-but-wrong, OR a degenerate run.
     end = next((r for r in records if r.get("type") == "session_end"), {})
-    verified_done = end.get("outcome") not in ("unverified_completion", "ungrounded_completion", "degenerate")
+    verified_done = end.get("outcome") not in ("unverified_completion", "ungrounded_completion",
+                                                "degenerate", "verify_failed_edits")
     agg["verified_done"] = verified_done
     base_score = sum(p["score"] for p in per) / n
     return {

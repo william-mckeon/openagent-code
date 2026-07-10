@@ -120,7 +120,8 @@ def run_agentic_task(task_path):
         # Honor the completion (Phase 6) and grounding (Phase 10) gates: a run that claimed done
         # without doing it, or whose claims aren't grounded in the sources, keeps its honest terminated
         # label so the rubric can score it (Phase 8), not silently 'completed'.
-        if result.terminated in ("unverified_completion", "ungrounded_completion"):
+        if result.terminated in ("unverified_completion", "ungrounded_completion",
+                                 "degenerate", "verify_failed_edits"):
             ag_outcome = result.terminated
         else:
             ag_outcome = "completed" if traj.tool_calls else "no_action"

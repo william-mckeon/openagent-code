@@ -171,6 +171,20 @@ def _apply_hunk(path, content, old, new):
     raise PatchError(f"Update File '{path}': a SEARCH block wasn't found in the file")
 
 
+def _gate(ctx, tool, raw):
+    """Route ONE patch op through the SAME permission engine as its single-file equivalent, so
+    apply_patch inherits the workspace fence + deny/ask rules + plan-mode block PER operation — it
+    can't be fenced as a single path at dispatch because one envelope carries many. Denied -> PatchError
+    (an atomic refusal, raised during validation, before any file is touched). A ctx with no engine
+    (a direct unit-test Context(cwd, None)) has nothing to gate against, so it passes through."""
+    perms = getattr(ctx, "permissions", None)
+    if perms is None:
+        return
+    d = perms.decide(tool, {"path": raw}, ctx)
+    if not d.allowed:
+        raise PatchError(f"'{raw}' blocked by permissions - {d.reason}")
+
+
 def _read_text(rel, path):
     """Read a file as text for patching. On a BINARY / undecodable file raise PatchError (a clean
     teaching refusal), NOT a UnicodeDecodeError - so apply_patch never crashes on a PNG the way a naive
@@ -196,18 +210,22 @@ def apply_patch(args, ctx):
     try:
         for op in ops:
             if op["op"] == "add":
+                _gate(ctx, "write_file", op["path"])   # fence + deny/ask + plan-mode, per op
                 path = _abs(ctx, op["path"])
                 if os.path.exists(path):
                     raise PatchError(f"Add File '{op['path']}': already exists")
                 plan.append(("write", path, op["content"], None))
                 touched.append((op["path"], "write"))
             elif op["op"] == "delete":
+                _gate(ctx, "delete_file", op["path"])
                 path = _abs(ctx, op["path"])
                 if not os.path.isfile(path):
                     raise PatchError(f"Delete File '{op['path']}': not found")
                 plan.append(("delete", path, None, None))
                 touched.append((op["path"], "delete"))
             elif op["op"] == "move":
+                _gate(ctx, "delete_file", op["old"])   # a Move removes old + writes new: gate both
+                _gate(ctx, "write_file", op["new"])
                 old_p, new_p = _abs(ctx, op["old"]), _abs(ctx, op["new"])
                 if not os.path.isfile(old_p):
                     raise PatchError(f"Move File '{op['old']}': source not found")
@@ -219,6 +237,7 @@ def apply_patch(args, ctx):
                 touched.append((op["old"], "delete"))
                 touched.append((op["new"], "write"))
             else:  # update
+                _gate(ctx, "edit_file", op["path"])
                 path = _abs(ctx, op["path"])
                 if not os.path.isfile(path):
                     raise PatchError(f"Update File '{op['path']}': not found")

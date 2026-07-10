@@ -20,7 +20,8 @@ import os
 from . import config
 from . import grounding
 from . import envcontext
-from .tools import ToolResult
+from . import verify_edits
+from .tools import ToolResult, _abs, _rel
 from .prompts import SYNTHESIS_PROMPT, looks_degenerate
 from .logsetup import get_logger
 
@@ -37,14 +38,16 @@ def _unverified_items(ctx):
     for it in items:
         if it.get("status") != "completed" or not it.get("file"):
             continue
-        rel = it["file"].replace("\\", "/").strip()
-        rel = rel[2:] if rel.startswith("./") else rel
-        rel = rel.strip("/")
+        # Normalize the step's file through the SAME _abs->_rel the mutation ledger keys on, so a step
+        # matches its change no matter how the path was written - relative, absolute, or inside a granted
+        # reference dir. (Hand-relativizing here missed edits made via an ABSOLUTE path: every real change
+        # read as "not backed" and the gate fired spuriously, seen live editing centpilot via abs paths.)
+        rel = _rel(ctx, _abs(ctx, it["file"]))
         action = muts.get(rel)
         if action is None:
             problems.append(f"'{it['file']}' - marked done but nothing changed it this session")
             continue
-        exists = os.path.exists(os.path.join(ctx.cwd, rel))
+        exists = os.path.exists(_abs(ctx, it["file"]))
         if action == "delete" and exists:
             problems.append(f"'{it['file']}' - marked deleted but the file still exists")
         elif action in ("write", "edit") and not exists:
@@ -84,6 +87,14 @@ class Agent:
         mark = self.cm.mark()
         self.cm.add({"role": "user", "content": task})
         self.cm.set_task(task)   # pin the request so compaction can't summarize away what was asked
+        # Per-task reset (fixes the cross-turn completion-gate hijack): the plan and this run's mutation
+        # ledger are per-TASK artifacts. A new user turn starts CLEAN so a PREVIOUS task's completed-but-
+        # unbacked steps can't keep firing the completion gate and hijack an unrelated question - seen live
+        # where "what project is this?" got answered with a stale favicon status + "I exhausted my budget",
+        # and the same stale plan then blocked the grounding gate from ever running on the real answer.
+        ctx.plan = None
+        ctx.plan_items = []
+        ctx.mutations = {}
         # Situational context (specs/0012): inject the agent's real environment (cwd / OS / shell / date
         # / granted dirs, + git branch when enabled) once per turn as a refreshed pin, so it conditions
         # on live state instead of confabulating it. Pinned (survives compaction) AND logged as a turn
@@ -97,6 +108,7 @@ class Agent:
         consecutive_fail = {}  # tool name -> count of prior consecutive failures
         tool_calls = 0
         verify_retries = 0     # completion-gate re-prompts used this run (Phase 6)
+        edit_verify_retries = 0  # auto-verify-gate re-prompts used this run (Phase 14)
         ground_retries = 0     # grounding-gate re-prompts used this run (Phase 10)
 
         try:
@@ -147,6 +159,32 @@ class Agent:
                         continue
                     if unmet:
                         return RunResult(decision.final, "unverified_completion", tool_calls)
+
+                    # Auto-verify gate (Phase 14 / specs/0014): completion proved the changes are REAL —
+                    # now run a configured check (default py_compile) on just the TOUCHED files. A failure
+                    # re-prompts to fix (bounded), else records an honest 'verify_failed_edits'. Each check
+                    # result is logged as an objective reward (sub-phase C). Composes with the other gates
+                    # (own counter); OFF by default, so today's branch is byte-identical.
+                    if config.VERIFY_TOUCHED:
+                        vres = verify_edits.results(ctx)
+                        failing = verify_edits.problems_from(vres)
+                        if failing and edit_verify_retries < config.VERIFY_TOUCHED_RETRIES:
+                            edit_verify_retries += 1
+                            if ctx.verbose:
+                                print(f"  [verify] {len(failing)} touched file(s) failed the check")
+                            log.info("verify challenge (retry %d): %s", edit_verify_retries,
+                                     "; ".join(failing))
+                            self.cm.add({"role": "user", "content": verify_edits.challenge(failing)})
+                            continue
+                        # Resolved (passed, or retries exhausted): record the FINAL result as the reward
+                        # label — NOT the intermediate attempts, so a failed-then-fixed run logs only the
+                        # passing result and stays trainable (is_trainable drops any run whose verification
+                        # records show a failure).
+                        if config.VERIFY_TOUCHED_LABEL:
+                            for r in vres:
+                                self.traj.log_verification(r["cmd"], r["ok"], r["output"])
+                        if failing:
+                            return RunResult(decision.final, "verify_failed_edits", tool_calls)
 
                     # Grounding gate (Phase 10 / specs/0010): completion is verified — the plan's
                     # changes are real. Now check the closing answer's CLAIMS are grounded in the
