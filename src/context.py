@@ -123,20 +123,27 @@ class ContextManager:
                   "the full text is preserved in the trajectory]")
 
     def mark(self):
-        """Snapshot the live working-set length so a failed turn can be rolled back to a
-        clean state. See rollback(). Only the model's live view is marked — capture is
-        untouched."""
-        return len(self.working)
+        """Snapshot the live working set so a failed turn can roll back to its EXACT pre-turn state.
+
+        Returns a COPY of the list, not its length. _compact() can REASSIGN self.working mid-turn
+        (summarizing older turns into a shorter list), which invalidates a bare length index: a later
+        rollback would then either no-op (the old length now exceeds the shorter list) or `del` at the
+        wrong post-compaction boundary — slicing an assistant tool_call away from its tool result and
+        leaving a DANGLING call that Bedrock's Converse API rejects on the NEXT turn (session poisoned).
+        A snapshot is compaction-invariant. Only the model's live view is marked — capture is untouched."""
+        return list(self.working)
 
     def rollback(self, mark):
-        """Drop working-set messages appended since `mark`. Used when a model call dies
-        mid-turn (e.g. a Bedrock 503 after some tool results were already appended): it
-        keeps the LIVE context from ending in orphaned tool-results, which the next user
-        turn would otherwise turn into the consecutive user/tool blocks Bedrock's Converse
-        API rejects — poisoning the whole session. The trajectory keeps the full raw
-        record (capture vs. context): only what the model SEES is trimmed."""
-        if 0 <= mark < len(self.working):
-            del self.working[mark:]
+        """Restore the live working set to the snapshot mark() took — discarding everything appended
+        during a turn that died mid-flight (a Bedrock 503 after some tool results were appended, a raised
+        tool), so the live context never ends on an orphaned tool-result or a dangling assistant tool_call
+        (the consecutive user/tool blocks Bedrock's Converse API rejects). If compaction ran during the
+        failed turn it is rolled back with it — the next turn re-compacts as needed. The trajectory keeps
+        the full raw record (capture vs. context): only what the model SEES is trimmed."""
+        if isinstance(mark, list):
+            self.working = list(mark)
+        elif isinstance(mark, int) and 0 <= mark < len(self.working):
+            del self.working[mark:]   # back-compat: a legacy integer mark
 
     def set_pinned(self, text):
         """Pin a message just after the system prompt — always sent, never compacted.
@@ -216,7 +223,9 @@ class ContextManager:
         cut = len(self.working) - self.keep_recent
         if cut <= 0:
             return 0
-        while cut > 0 and self.working[cut].get("role") == "tool":
+        # keep_recent == 0 makes cut == len(working); `< len` guards the index so this doesn't
+        # IndexError while snapping the boundary back off a tool message.
+        while 0 < cut < len(self.working) and self.working[cut].get("role") == "tool":
             cut -= 1
         return cut
 

@@ -136,6 +136,36 @@ def main():
     check("a pinned review digest is bounded to the cap",
           cmR.pinned_review is not None and _clen(cmR.pinned_review) <= cap + margin)
 
+    # 11. rollback survives an in-turn compaction (the poisoning fix): mark() snapshots the working set,
+    #     so even when _compact REASSIGNS it mid-turn, rollback restores the EXACT pre-turn state instead
+    #     of no-opping / slicing at the wrong boundary and leaving a dangling assistant tool_call.
+    cmB = ContextManager("s", _Model(), _Traj(), compact_at_tokens=100000, keep_recent=1)
+    cmB.add({"role": "user", "content": "real work so far " + "." * 60})
+    snap = cmB.mark()                                    # pre-turn snapshot
+    cmB.add({"role": "assistant", "content": "",         # a turn appends a tool_call (no result yet)...
+             "tool_calls": [{"id": "c1", "type": "function",
+                             "function": {"name": "read_file", "arguments": "{}"}}]})
+    cmB.compact_at = 1                                    # ...then a compaction reassigns working mid-turn
+    cmB.context()
+    check("an in-turn compaction actually reassigned the working set",
+          not any("real work so far" in (m.get("content") or "") for m in cmB.working) or len(cmB.working) != len(snap))
+    cmB.rollback(snap)
+    check("rollback after an in-turn compaction restores the exact pre-turn working set",
+          cmB.working == snap)
+    check("rollback leaves NO dangling assistant tool_call at the tail",
+          not (cmB.working and cmB.working[-1].get("tool_calls")))
+
+    # 12. _safe_cut no longer IndexErrors when keep_recent == 0 (a config edge)
+    cm0 = ContextManager("s", _Model(), _Traj(), compact_at_tokens=1, keep_recent=0)
+    cm0.add({"role": "user", "content": "x " + "." * 80})
+    cm0.add({"role": "user", "content": "y " + "." * 80})
+    try:
+        cm0.context()          # would IndexError in _safe_cut (self.working[len]) before the fix
+        ok0 = True
+    except IndexError:
+        ok0 = False
+    check("compaction with keep_recent=0 does not IndexError (_safe_cut guarded)", ok0)
+
     passed, total = sum(_results), len(_results)
     print(f"\nVERDICT: {passed}/{total} {'[OK]' if passed == total else '[FAIL]'}")
     return 0 if passed == total else 1
