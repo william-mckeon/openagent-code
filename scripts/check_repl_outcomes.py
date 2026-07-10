@@ -39,11 +39,11 @@ def _user(t):
     return {"type": "turn", "message": {"role": "user", "content": t}}
 
 
-def _mc(step, content, calls=()):
+def _mc(step, content, calls=(), reasoning=None):
     tcs = [{"id": str(i), "name": n, "arguments": "{}"} for i, n in enumerate(calls)]
     return {"type": "model_call", "step": step,
             "request": {"messages": [{"role": "user", "content": "ctx"}], "tools": []},
-            "response": {"content": content, "reasoning": None, "tool_calls": tcs}}
+            "response": {"content": content, "reasoning": reasoning, "tool_calls": tcs}}
 
 
 def _tc(ok=True):
@@ -121,6 +121,22 @@ def main():
     keep, reason = convert.is_trainable(legacy_fail)
     check("legacy one-shot with a failing verify is still dropped whole (unchanged)",
           (not keep) and reason == "verify_failed")
+
+    # 6. reasoning channel: a TOOL-CALL target folds its reasoning into content (matching the runtime
+    #    planner) instead of dropping it, and the fold is NOT preamble-stripped; a FINAL answer stays
+    #    clean and preamble-stripped. Dropping reasoning had trained reasoning-free (looping) tool calls.
+    rr = [_ss(), _user("t"),
+          _mc(0, "", calls=["read_file"], reasoning="First read the file, then edit the import."),
+          _tc(True),
+          _mc(1, "Done - the import is fixed."),
+          _end("completed", tc=1)]
+    rows = convert.to_rows(rr, "as_sent")
+    tool_target, final_target = rows[0]["completion"], rows[1]["completion"]
+    check("a tool-call SFT target FOLDS the reasoning into content (not dropped, not stripped)",
+          "First read the file, then edit the import." in tool_target.get("content", "")
+          and bool(tool_target.get("tool_calls")))
+    check("a final-answer SFT target has no tool_calls and keeps its user-facing content",
+          (not final_target.get("tool_calls")) and "Done - the import is fixed." in final_target.get("content", ""))
 
     passed, total = sum(_results), len(_results)
     print(f"\nVERDICT: {passed}/{total} {'[OK]' if passed == total else '[FAIL]'}")

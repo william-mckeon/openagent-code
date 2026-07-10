@@ -153,15 +153,26 @@ def tools_for_session(records):
 
 
 def _assistant_from_response(resp):
-    """Convert a logged model response into an OpenAI-format assistant message."""
-    msg = {"role": "assistant", "content": resp.get("content") or ""}
+    """Convert a logged model response into an OpenAI-format assistant message (the SFT target).
+
+    On a TOOL-CALL turn, FOLD the reasoning channel into content exactly as the runtime planner does
+    (src/planner.py): gpt-oss keeps its PLAN in a separate reasoning channel with empty content on a
+    tool-call turn, so reading only resp['content'] gave a target of {content:'', tool_calls:[...]} —
+    training the student to emit reasoning-FREE tool calls, the looping the specs/0005 Stage-2 fix was
+    meant to prevent. The final answer (no tool calls) stays clean (its reasoning is NOT folded — the
+    preamble strip in _step_row handles a leak there), matching the planner."""
+    content = resp.get("content") or ""
     tcs = resp.get("tool_calls") or []
     if tcs:
-        msg["tool_calls"] = [{
+        reasoning = (resp.get("reasoning") or "").strip()
+        if reasoning:
+            body = content.strip()
+            content = f"{reasoning}\n\n{body}" if body else reasoning
+        return {"role": "assistant", "content": content, "tool_calls": [{
             "id": tc["id"], "type": "function",
             "function": {"name": tc["name"], "arguments": tc["arguments"]},
-        } for tc in tcs]
-    return msg
+        } for tc in tcs]}
+    return {"role": "assistant", "content": content}
 
 
 def _step_row(step, view, tools, base_meta):
@@ -176,9 +187,12 @@ def _step_row(step, view, tools, base_meta):
         prefix = list(mc["request"]["messages"])
         used = "as_sent" if view == "as_sent" else "as_sent_fallback"
     completion = _assistant_from_response(mc["response"])
-    # Data hygiene: strip any leaked reasoning preamble from the TARGET so the corpus never
-    # teaches the model to dump chain-of-thought before its answer (seen live with gpt-oss).
-    completion["content"] = strip_reasoning_preamble(completion.get("content") or "")
+    # Data hygiene: strip a leaked reasoning preamble from a FINAL-answer target so the corpus never
+    # teaches the model to dump chain-of-thought before its user-facing answer (seen live with gpt-oss).
+    # ONLY on the final answer (no tool_calls) — a tool-call target's content is the DELIBERATELY folded
+    # plan (above), which must NOT be stripped. This mirrors the runtime planner (strip final, keep plan).
+    if not completion.get("tool_calls"):
+        completion["content"] = strip_reasoning_preamble(completion.get("content") or "")
     return {
         "messages": prefix,                                  # the input the agent saw
         "completion": completion,                            # the action it took (preamble-stripped)
