@@ -35,6 +35,7 @@ from src.runtime import build_agent  # noqa: E402
 from src.subagent import make_context  # noqa: E402
 from src.trajectory import Trajectory  # noqa: E402
 from src import config  # noqa: E402
+from src import outcomes  # noqa: E402  (the ONE shared terminated->outcome mapping)
 
 EVAL_TRAJ_DIR = os.path.join(ROOT, "trajectories", "eval")
 
@@ -67,16 +68,14 @@ def run_task(task_path, traj_dir=EVAL_TRAJ_DIR):
         passed = p.returncode == 0
         traj.log_verification(spec["verify"], passed, (p.stdout or "") + (p.stderr or ""))
 
-        # Same honest classification the CLI uses, so eval distinguishes a real
-        # failure from the agent doing nothing.
-        if result.terminated == "nudge_exhausted":
-            outcome = "protocol_stalled"
-        elif traj.tool_calls == 0:
-            outcome = "no_action"
-        elif passed:
-            outcome = "success"
-        else:
-            outcome = "verify_failed"
+        # Same honest classification the CLI uses (src/outcomes), so a gate outcome (ungrounded /
+        # unverified / degenerate / verify_failed_edits) — or no_action / protocol_stalled / max_steps —
+        # is PRESERVED and convert drops it; only a clean 'completed' is relabeled by the verify command.
+        # Before this, an ungrounded teacher run whose verify happened to pass re-entered the corpus as
+        # 'success'. train/capture.py generates the corpus through this path, so the leak was live.
+        outcome = outcomes.classify(result.terminated, traj.tool_calls)
+        if outcome == "completed":
+            outcome = "success" if passed else "verify_failed"
         traj.end(outcome, result.final, terminated=result.terminated)
 
         return {"task": name, "passed": passed, "outcome": outcome,
@@ -117,14 +116,11 @@ def run_agentic_task(task_path):
         ctx = make_context(sandbox, Permissions.from_config(mode_override="bypass"),
                            traj.session_id, depth=0, verbose=False, traj_dir=EVAL_TRAJ_DIR)
         result = build_agent(traj).run(spec["prompt"], ctx)
-        # Honor the completion (Phase 6) and grounding (Phase 10) gates: a run that claimed done
-        # without doing it, or whose claims aren't grounded in the sources, keeps its honest terminated
-        # label so the rubric can score it (Phase 8), not silently 'completed'.
-        if result.terminated in ("unverified_completion", "ungrounded_completion",
-                                 "degenerate", "verify_failed_edits"):
-            ag_outcome = result.terminated
-        else:
-            ag_outcome = "completed" if traj.tool_calls else "no_action"
+        # Honor the completion (Phase 6) and grounding (Phase 10) gates via the shared mapping: a run
+        # that claimed done without doing it, or whose claims aren't grounded, keeps its honest label so
+        # the rubric can score it (Phase 8), not silently 'completed'. No verify command here, so a clean
+        # run stays 'completed'.
+        ag_outcome = outcomes.classify(result.terminated, traj.tool_calls)
         traj.end(ag_outcome, result.final, terminated=result.terminated)
         sc = rubric.score(rubric.load_records(traj.path), spec.get("rubric"))
         return {"task": name, "tier": spec.get("tier", "core"), **sc}

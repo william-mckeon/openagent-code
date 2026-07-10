@@ -15,7 +15,7 @@ import os
 import sys
 import subprocess
 
-from . import config, logsetup
+from . import config, logsetup, outcomes
 from .permissions import Permissions
 from .runtime import build_agent
 from .subagent import make_context
@@ -105,25 +105,11 @@ def _one_shot(task, perms):
         _print_log_path()
         return 1
 
-    if terminated == "nudge_exhausted":
-        outcome = "protocol_stalled"
-    # Honest gate outcomes win over the tool_calls==0 fallback: grounding (unlike the completion
-    # gate, which needs update_plan) can fire with ZERO tool calls (Tier 1, or Tier 2's verifier is
-    # a separate child), so a 0-tool-call ungrounded run must NOT be relabeled no_action.
-    elif terminated == "unverified_completion":
-        outcome = "unverified_completion"
-    elif terminated == "ungrounded_completion":
-        outcome = "ungrounded_completion"
-    elif terminated == "degenerate":
-        outcome = "degenerate"
-    elif terminated == "verify_failed_edits":
-        outcome = "verify_failed_edits"
-    elif traj.tool_calls == 0:
-        outcome = "no_action"
-    elif terminated == "max_steps":
-        outcome = "max_steps"
-    else:
-        outcome = "completed"
+    # Shared honest mapping (src/outcomes) — identical across one-shot, the REPL per-turn record, and
+    # eval. Honest gate outcomes win over the tool_calls==0 fallback: grounding (unlike the completion
+    # gate, which needs update_plan) can fire with ZERO tool calls, so a 0-tool-call ungrounded run must
+    # NOT be relabeled no_action. Only a plain 'completed' is eligible for the verify relabel below.
+    outcome = outcomes.classify(terminated, traj.tool_calls)
 
     vc = config.VERIFY_COMMAND
     if vc:
@@ -218,6 +204,11 @@ def _run_session(traj, agent, ctx):
                 print(f"\n[error] that turn failed: {type(e).__name__}: {str(e)[:200]}\n"
                       "(the session is still alive — try again, rephrase, or /exit)")
                 continue
+            # Stamp THIS turn's honest outcome (0.7.0) so convert can drop a degenerate/ungrounded/
+            # unverified turn WITHOUT discarding the good turns in the same session. result.tool_calls is
+            # this turn's own count; classify() is the same mapping the one-shot path uses.
+            traj.log_turn_outcome(turns, outcomes.classify(result.terminated, result.tool_calls),
+                                  result.terminated, result.tool_calls)
             if result.final:
                 print("\n" + result.final)
                 log.info("turn %d result: %s", turns, result.final[:500])

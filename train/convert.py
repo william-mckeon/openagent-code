@@ -81,11 +81,47 @@ def _first(records, rec_type):
     return None
 
 
+def trainable_turns(records):
+    """{turn -> bool}: which REPL turns are trainable — an honest keeper outcome AND that turn's OWN
+    verifications all passed. Empty dict when the trajectory has no `turn_outcome` records (one-shot /
+    legacy), which keeps the old whole-session behavior. The verify check is scoped PER TURN, so a single
+    late failing turn no longer drops the good turns beside it (0.7.0 corpus integrity)."""
+    turns, verif_ok, seg = {}, True, 1
+    for r in records:
+        t = r.get("type")
+        if t == "verification":
+            verif_ok = verif_ok and bool(r.get("ok"))
+        elif t == "turn_outcome":
+            idx = r.get("turn", seg)
+            turns[idx] = (r.get("outcome") in KEEP_OUTCOMES) and verif_ok
+            verif_ok, seg = True, idx + 1
+    return turns
+
+
 def is_trainable(records):
-    """(keep: bool, reason: str). Reason is the drop cause when keep is False."""
+    """(keep: bool, reason: str). Reason is the drop cause when keep is False.
+
+    A multi-turn REPL session (0.7.0) is judged PER TURN via trainable_turns(): keep the session if any
+    turn is trainable (to_rows emits only those turns). A one-shot / legacy session has no turn_outcome
+    records, so it is judged as one unit by session_end exactly as before."""
     end = _first(records, "session_end")
     if end is None:
         return False, "incomplete"  # crashed before close
+
+    turns = trainable_turns(records)
+    if turns:  # multi-turn REPL — per-turn honesty
+        # Refusal / curation are still session-level (they judge the closing answer).
+        if rubric.is_refusal(records):
+            return False, "refusal"
+        if config.CURATE and config.CURATE_MODE == "exclude":
+            grounded, _ung = curate.curation_verdict(records)
+            if not grounded:
+                return False, "ungrounded_answer"
+        if any(turns.values()):
+            return True, "kept"
+        return False, "no_trainable_turn"
+
+    # One-shot / legacy: the whole session is one unit, gated by session_end (unchanged behavior).
     outcome = end.get("outcome")
     if outcome not in KEEP_OUTCOMES:
         return False, outcome or "unknown"
@@ -182,20 +218,32 @@ def to_rows(records, view):
         grounded, ungrounded = curate.curation_verdict(records)
         base_meta["curation"] = {"grounded": grounded, "ungrounded": ungrounded}
 
-    rows, raw_prefix, pending = [], [], None
+    # Per-turn filtering (0.7.0): tag each step with the REPL turn it belongs to (turns are delimited by
+    # `turn_outcome` records), then emit only steps from a trainable turn. A one-shot / legacy session has
+    # no turn_outcome records -> turn_ok is empty and every step is kept (is_trainable already gated it).
+    turn_ok = trainable_turns(records)
+    rows, raw_prefix, pending, cur_turn = [], [], None, 1
     for r in records:
         t = r.get("type")
         if t == "model_call":
             if pending is not None:
-                rows.append(_step_row(pending, view, tools, base_meta))
+                rows.append((_step_row(pending, view, tools, base_meta), cur_turn))
             pending = {"mc": r, "prefix_raw": list(raw_prefix), "tcs": []}
         elif t == "turn":
             raw_prefix.append(r["message"])
         elif t == "tool_call" and pending is not None:
             pending["tcs"].append(r)
+        elif t == "turn_outcome":
+            if pending is not None:
+                rows.append((_step_row(pending, view, tools, base_meta), cur_turn))
+                pending = None
+            cur_turn = r.get("turn", cur_turn) + 1
     if pending is not None:
-        rows.append(_step_row(pending, view, tools, base_meta))
-    return rows
+        rows.append((_step_row(pending, view, tools, base_meta), cur_turn))
+
+    if not turn_ok:                       # one-shot / legacy: whole session already gated
+        return [row for row, _ in rows]
+    return [row for row, turn in rows if turn_ok.get(turn, False)]
 
 
 def main():

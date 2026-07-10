@@ -29,6 +29,10 @@ def _ts():
 
 
 class Trajectory:
+    # 0.7.0: per-turn honesty (corpus integrity). A REPL session is ONE trajectory with many turns,
+    #        so a `turn_outcome` record now marks each turn's honest outcome (via src/outcomes.classify).
+    #        train/convert.py drops exactly the degenerate/ungrounded/unverified turns and keeps the good
+    #        ones, instead of keeping-or-dropping the whole file by its single session_end label.
     # 0.5.0: interactivity (Phase 4). A `session_resume` record marks where a stopped
     #        session was reopened and continued (see Trajectory.resume). The session
     #        keeps its original id; multi-turn/resumed sessions are one growing file.
@@ -43,7 +47,7 @@ class Trajectory:
     # 0.6.0: `permission` record per gated tool call (Phase 4 #6) — the decision
     #        (allow/ask/deny + which rule/mode decided it), captured before the call.
     # Older data stays usable — the converter falls back to as-sent / reattachment.
-    SCHEMA_VERSION = "0.6.0"
+    SCHEMA_VERSION = "0.7.0"
 
     @classmethod
     def resume(cls, path):
@@ -190,6 +194,22 @@ class Trajectory:
             "retry_index": retry_index,      # >0 means the model fumbled this tool before
             "result": result.content[:4000],
             "meta": result.meta,
+        })
+
+    def log_turn_outcome(self, turn, outcome, terminated, tool_calls):
+        """Record one REPL turn's honest outcome (0.7.0). A multi-turn session is ONE trajectory, so
+        without this the converter saw only the single session_end label and had to keep or drop the
+        WHOLE file — silently training on a degenerate/ungrounded/unverified turn, or discarding a good
+        turn beside a bad one. With a per-turn outcome, train/convert.py drops exactly the bad turns and
+        keeps the good ones. The one-shot path is a single turn == the session, so it uses session_end."""
+        self._write({
+            "type": "turn_outcome",
+            "session_id": self.session_id,
+            "ts": _ts(),
+            "turn": turn,
+            "outcome": outcome,          # src/outcomes.classify — 'completed'/'success' train; the rest don't
+            "terminated": terminated,    # the raw agent.RunResult.terminated
+            "tool_calls": tool_calls,    # this turn's own tool-call count (RunResult.tool_calls)
         })
 
     def log_verification(self, command, ok, output):
