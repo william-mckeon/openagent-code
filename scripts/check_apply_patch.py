@@ -162,6 +162,21 @@ def main():
     check("in-fence Add under bypass STILL applies (the gate doesn't over-block legitimate patches)",
           r.ok and os.path.isfile(os.path.join(d6, "ok.py")))
 
+    # -- 8. APPLY-PHASE ATOMICITY: an op that fails DURING apply rolls back the ops already applied ----
+    #    Op 1 updates a.py (applies); Op 2 adds b.py whose content is a lone surrogate that can't be
+    #    UTF-8 encoded, so the write raises mid-apply. a.py must be restored and b.py must not survive.
+    d7 = tempfile.mkdtemp(prefix="applypatch_")
+    _w(d7, "a.py", "AAA-original\n")
+    bad = _env("*** Begin Patch",
+               "*** Update File: a.py",
+               "<<<<<<< SEARCH", "AAA-original", "=======", "AAA-new", ">>>>>>> REPLACE",
+               "*** Add File: b.py", "+\udc80bad", "*** End Patch")
+    r = patch.apply_patch({"patch": bad}, Context(d7, None))
+    check("apply-phase failure -> ROLLED BACK: refused, earlier Update restored, new Add file gone",
+          (not r.ok) and "rolled back" in r.content.lower()
+          and _r(os.path.join(d7, "a.py")) == "AAA-original\n"
+          and not os.path.exists(os.path.join(d7, "b.py")))
+
     passed, total = sum(_results), len(_results)
     print(f"\nVERDICT: {passed}/{total} {'[OK]' if passed == total else '[FAIL]'}")
     return 0 if passed == total else 1

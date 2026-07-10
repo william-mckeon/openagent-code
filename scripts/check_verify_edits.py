@@ -37,6 +37,22 @@ def main():
     check("verifier_cmds default is the safe py_compile ARGV list (not a shell string)",
           verify_edits.verifier_cmds().get(".py") == ["python", "-m", "py_compile", "{file}"])
 
+    # a valid-JSON NON-dict config ([...] / "x" / 42) has no .items() -> must fail OPEN to the defaults,
+    # never raise (the AttributeError that slipped past the OSError/ValueError catch).
+    _bad = os.path.join(tempfile.mkdtemp(prefix="vcfg_"), "cmds.json")
+    with open(_bad, "w", encoding="utf-8") as f:
+        json.dump(["not", "a", "dict"], f)
+    _saved = config.VERIFY_CMDS_CONFIG
+    config.VERIFY_CMDS_CONFIG = _bad
+    try:
+        cmds = verify_edits.verifier_cmds()
+        raised = False
+    except Exception:
+        cmds, raised = None, True
+    config.VERIFY_CMDS_CONFIG = _saved
+    check("a valid-JSON non-dict CODE_VERIFY_CMDS_CONFIG fails open to defaults (never raises)",
+          (not raised) and cmds == {".py": ["python", "-m", "py_compile", "{file}"]})
+
     # -- select: touched write/edit .py only, {file} substituted ---------------
     sel = verify_edits.select({"a.py": "write", "b.py": "edit", "c.md": "write",
                                "d.py": "delete", "e.txt": "write"})

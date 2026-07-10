@@ -171,6 +171,12 @@ def _apply_hunk(path, content, old, new):
     raise PatchError(f"Update File '{path}': a SEARCH block wasn't found in the file")
 
 
+def _restore(path, data):
+    """Rewrite a file's exact original bytes — the undo for an Update/Delete during a rolled-back apply."""
+    with open(path, "wb") as f:
+        f.write(data)
+
+
 def _gate(ctx, tool, raw):
     """Route ONE patch op through the SAME permission engine as its single-file equivalent, so
     apply_patch inherits the workspace fence + deny/ask rules + plan-mode block PER operation — it
@@ -249,20 +255,46 @@ def apply_patch(args, ctx):
     except PatchError as e:
         return ToolResult(False, f"apply_patch: {e}. No files were changed (atomic).")
 
-    # Every op validated in memory — now do the writes/deletes/renames.
+    # Every op validated in memory — now apply, TRANSACTIONALLY. Each op records how to UNDO itself
+    # (restore original bytes / delete the new file / rename back), so a failure part-way through rolls
+    # every already-applied op back and the tool keeps its "on ANY error, no file is changed" contract
+    # instead of leaving a half-written multi-file patch. Validation above catches the common errors;
+    # this covers a disk/permission race and broader-than-OSError faults (a NUL path -> ValueError, a
+    # lone surrogate in Add content -> UnicodeError), so apply_patch still NEVER raises.
+    undo = []
     try:
         for action, path, content, old_p in plan:
             if action == "delete":
+                with open(path, "rb") as f:
+                    saved = f.read()
                 os.remove(path)
+                undo.append(lambda p=path, b=saved: _restore(p, b))
             elif action == "rename":   # Move: byte-preserving, so it works on binary files too
                 os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
                 os.rename(old_p, path)
+                undo.append(lambda a=old_p, b=path: os.rename(b, a))
             else:  # write (Add / Update)
+                # Register the undo BEFORE the write: open(path,"w") truncates/creates the file before
+                # f.write can fail, so a failed Add must still be cleaned up (remove the empty file) and a
+                # failed Update must still restore the original.
+                if os.path.exists(path):                    # Update: save + restore the original bytes
+                    with open(path, "rb") as f:
+                        saved = f.read()
+                    undo.append(lambda p=path, b=saved: _restore(p, b))
+                else:                                        # Add: undo removes the (maybe half-written) file
+                    undo.append(lambda p=path: os.path.exists(p) and os.remove(p))
                 os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-                with open(path, "w", encoding="utf-8") as f:
+                # newline="" writes '\n' verbatim (LF) — no Windows LF->CRLF rewrite of the whole file.
+                with open(path, "w", encoding="utf-8", newline="") as f:
                     f.write(content)
-    except OSError as e:  # rare (permissions / disk); never crash the turn (the never-raises contract)
-        return ToolResult(False, f"apply_patch: failed while applying ({e}). The patch may be partially applied.")
+    except (OSError, ValueError, UnicodeError) as e:
+        for fn in reversed(undo):
+            try:
+                fn()
+            except OSError:
+                pass   # best-effort restore; nothing else can be done and we must not raise
+        return ToolResult(False, f"apply_patch: failed while applying ({e}); rolled back the partial "
+                                 "changes — no files were left modified.")
     for rel, act in touched:
         _record_mutation(ctx, rel, act)
 

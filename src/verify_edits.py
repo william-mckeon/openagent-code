@@ -40,7 +40,9 @@ def verifier_cmds():
         try:
             with open(path, encoding="utf-8") as f:
                 data = json.load(f)
-            for ext, argv in (data or {}).items():
+            if not isinstance(data, dict):               # a valid-JSON non-dict ([...] / "x" / 42) has no
+                raise ValueError("expected a JSON object (ext -> argv list)")   # .items(); fail open, don't raise
+            for ext, argv in data.items():
                 if isinstance(argv, list) and argv:      # argv only - never accept a shell string
                     cmds[str(ext)] = [str(a) for a in argv]
         except (OSError, ValueError):
