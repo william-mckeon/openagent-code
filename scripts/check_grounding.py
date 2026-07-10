@@ -116,6 +116,30 @@ def main():
           grounding.semantic_problems("x", {"a.md"}, lambda t, effort=None: "") == []
           and grounding.semantic_problems("x", {"a.md"}, lambda t, effort=None: "(subagent error: boom)") == [])
 
+    # -- ABSENCE claim spawns Tier 2 even with NO cited path (the live "auth has no Go source" miss) --
+    check("absence_claim fires on 'has no Go source' / 'are empty' / 'is not implemented'",
+          grounding.absence_claim("The auth service has no Go source, just docs and config.")
+          and grounding.absence_claim("cmd/, internal/ are empty; there are no .go files.")
+          and grounding.absence_claim("The endpoint is not implemented.")
+          and grounding.absence_claim("The service cannot be built."))
+    check("absence_claim does NOT fire on a normal factual answer",
+          not grounding.absence_claim("This is a Next.js app; the homepage renders the marketing site.")
+          and not grounding.absence_claim("Everything looks consistent and well-organized."))
+    abs_calls = []
+    out = grounding.problems(
+        "The auth service has no Go source - it is just docs and config.",   # NO backticked path
+        _ctx(tmp, spawn=lambda t, effort=None: abs_calls.append(t) or
+             "UNGROUNDED: 'no Go source' -> src/auth holds 14 .go files"))
+    check("semantic ON: an absence claim with NO cited path STILL spawns the verifier and surfaces it",
+          len(abs_calls) == 1 and len(out) == 1 and ".go" in out[0])
+    check("the verifier task handles the no-explicit-path case (find the target from the prose)",
+          "no explicit file path" in abs_calls[0])
+    noabs_calls = []
+    grounding.problems("Everything looks consistent and well-organized.",   # no path, no absence claim
+                       _ctx(tmp, spawn=lambda t, effort=None: noabs_calls.append(t) or "GROUNDED"))
+    check("semantic ON: a normal no-path answer does NOT spawn (no proportionality regression)",
+          len(noabs_calls) == 0)
+
     # -- _parse_verdict tolerates markdown BUT preserves the claim body -------
     check("_parse_verdict handles a plain UNGROUNDED line",
           grounding._parse_verdict("UNGROUNDED: a -> b") == ["a -> b"])

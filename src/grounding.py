@@ -44,6 +44,29 @@ _ANYEXT = re.compile(r"\.[A-Za-z0-9]{1,8}$")                       # any file-is
 _DOMAIN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]*\.[A-Za-z]{2,}$")  # github.com, example.io, ...
 _DATE = re.compile(r"^\d{1,4}([/-]\d{1,4}){2}$")                   # 2024/01/15
 
+# Language that ASSERTS a file / directory / body of code is MISSING, EMPTY, or ABSENT - the
+# honest-but-wrong "the auth service has no Go source / the directory is empty / it can't be built"
+# class. When the answer makes such a claim we spawn the Tier-2 verifier EVEN IF it cited no explicit
+# path (an absence claim names its target only in prose, so it would cite nothing and silently skip the
+# check - the live miss where "the auth service has no Go source" passed while src/auth held 14 .go
+# files). A false trigger just costs one spawn that returns GROUNDED, so the detector errs toward
+# catching the claim (over-triggering is cheap; a missed false-absence is the whole failure mode).
+_ABSENCE = re.compile(
+    r"\b(?:no|not|without|lacks?|lacking|missing|absent|empty|nonexistent|un(?:implemented|written|available))\b"
+    r".{0,40}?"   # a bounded, dot-TOLERANT gap (a '.go' filename must not stop the reach the way [^.] did)
+    r"(?:\b(?:sources?|code|implementation|implemented|logic|files?|director(?:y|ies)|folder|module|package|"
+    r"tests?|endpoints?|built)\b|\.(?:go|py|ts|tsx|js|jsx|rs|java|rb|sql|sh|c|cpp|h)\b)"
+    r"|\b(?:sources?|code|implementation|files?|director(?:y|ies)|folder|module|service)\b"
+    r".{0,25}?\b(?:is|are|was|were)\s+(?:empty|missing|absent)\b"
+    r"|\bcannot\s+be\s+(?:built|run|compiled|found)\b|\bdoes\s+not\s+exist\b"
+    r"|\b(?:only|just|solely)\s+(?:docs?|documentation|config)",
+    re.I)
+
+
+def absence_claim(final_text):
+    """True if the closing answer asserts something is missing / empty / absent (see _ABSENCE)."""
+    return bool(_ABSENCE.search(final_text or ""))
+
 
 def _norm(p):
     """Normalize a path token to the workspace-relative, forward-slash form a CITATION and a piece of
@@ -137,7 +160,7 @@ def semantic_problems(final_text, paths, spawn, effort=None):
     when set, so a plain 1-arg spawn stub (and the inherit-the-global default) keeps working. Fail-OPEN:
     a missing or errored verdict is logged and treated as "no problems", so an infra hiccup never traps
     the agent in a re-prompt loop (the completion gate already guaranteed the real work was done)."""
-    if not spawn or not paths:
+    if not spawn:
         return []
     task = _verifier_task(final_text, paths)
     try:
@@ -152,7 +175,12 @@ def semantic_problems(final_text, paths, spawn, effort=None):
 
 
 def _verifier_task(final_text, paths):
-    listed = "\n".join(f"  - {p}" for p in sorted(paths))
+    if paths:
+        listed = "Files the answer references:\n" + "\n".join(f"  - {p}" for p in sorted(paths))
+    else:
+        listed = ("The answer cites no explicit file path - work out which file(s) or director(ies) it "
+                  "makes claims about from its text and inspect those yourself (especially anything it "
+                  "calls missing, empty, or absent).")
     return (
         "You are a GROUNDING VERIFIER, not a coder. Another agent just finished a task and wrote the "
         "ANSWER below. Your ONLY job is to check whether its factual claims are supported by the ACTUAL "
@@ -167,7 +195,7 @@ def _verifier_task(final_text, paths):
         "'is not implemented'. LIST or open that path YOURSELF; if it actually holds the relevant files, "
         "that absence claim is UNGROUNDED (a real directory the answer wrongly called empty is the "
         "honest-but-wrong class this check exists to catch).\n\n"
-        f"Files the answer references:\n{listed}\n\n"
+        f"{listed}\n\n"
         "=== ANSWER TO VERIFY ===\n" + (final_text or "").strip() + "\n=== END ANSWER ===\n\n"
         "Output one line per problem, exactly:\n"
         "  UNGROUNDED: <the claim, briefly> -> <what the file actually says>\n"
@@ -222,15 +250,20 @@ def problems(final_text, ctx):
         return []
     if config.VERIFY_GROUNDING_SEMANTIC and getattr(ctx, "spawn", None) is not None:
         paths = cited_paths(final_text, strict=False)   # BROAD: the verifier judges, so include dirs
-        return semantic_problems(final_text, paths, ctx.spawn, config.GROUNDING_EFFORT) if paths else []
+        # Spawn the verifier when the answer cites a path OR makes an ABSENCE claim (which typically
+        # names its target only in prose, so it cites no path and would otherwise skip the check).
+        if paths or absence_claim(final_text):
+            return semantic_problems(final_text, paths, ctx.spawn, config.GROUNDING_EFFORT)
+        return []
     paths = cited_paths(final_text, strict=True)         # NARROW: a hard existence check must not misfire
     if not paths:
         return []
     muts = getattr(ctx, "mutations", None) or {}
+    muts_ci = {os.path.normcase(k) for k in muts}   # case-insensitive on Windows, exact on POSIX
 
     def _exists(p):
         # A bare basename ('config.py') is often a subdir file (src/config.py) we can't cheaply locate,
         # so NEVER hard-flag it — only a SPECIFIC path (with a slash) missing from disk AND the mutation
         # ledger is a clear phantom (mirrors the offline curator's grounded_by basename leniency).
-        return "/" not in p or (p in muts) or os.path.exists(os.path.join(ctx.cwd, p))
+        return "/" not in p or (os.path.normcase(p) in muts_ci) or os.path.exists(os.path.join(ctx.cwd, p))
     return deterministic_problems(paths, _exists)
