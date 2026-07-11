@@ -763,12 +763,18 @@ PATCH_TOOLS = [
 ]
 
 
+# Misnomers the model reaches for -> the real tool. Normalized at DISPATCH so a wrong name still works
+# without advertising an extra tool in the schema (gpt-oss tool-calling degrades with too many tools);
+# seen live: the model repeatedly called `print_tree` and burned a step on "Unknown tool" each time.
+_TOOL_ALIASES = {"print_tree": "tree"}
+
+
 class Registry:
     def __init__(self, tools):
         self.tools = {t["name"]: t for t in tools}
 
     def run(self, name, args, ctx):
-        t = self.tools.get(name)
+        t = self.tools.get(name) or self.tools.get(_TOOL_ALIASES.get(name, ""))
         if not t:
             return ToolResult(False, f"Unknown tool: {name}")
         try:

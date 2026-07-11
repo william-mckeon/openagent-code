@@ -62,6 +62,15 @@ def main():
     check("read_file on a truly-absent file still reports not found",
           not read_file({"path": "nope.txt"}, ctx).ok)
 
+    # the 'print_tree' misnomer routes to tree at dispatch, without being advertised in the schema
+    from src.tools import Registry, TOOLS
+    reg = Registry(TOOLS)
+    rp = reg.run("print_tree", {"path": "src/auth/cmd", "depth": "2"}, ctx)
+    check("the 'print_tree' misnomer routes to tree (alias at dispatch)",
+          rp.ok and "main.go" in rp.content)
+    check("print_tree is NOT advertised as a tool (alias only, no schema bloat)",
+          "print_tree" not in {t["name"] for t in TOOLS})
+
     passed, total = sum(_results), len(_results)
     print(f"\nVERDICT: {passed}/{total} {'[OK]' if passed == total else '[FAIL]'}")
     return 0 if passed == total else 1

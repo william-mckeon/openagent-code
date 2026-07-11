@@ -182,7 +182,7 @@ def _run_session(traj, agent, ctx):
                 break
             if not user:
                 continue
-            if user in ("/exit", "/quit"):
+            if user in ("/exit", "/quit", "\\exit", "\\quit", ":q"):   # tolerate the common backslash typo
                 break
             if user == "/plan":
                 print(ctx.plan or "(no plan yet)")
