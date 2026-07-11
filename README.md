@@ -80,6 +80,7 @@ openagent-code/
 │   ├── editmatch.py          # safe fuzzy fallback for edit_file (specs/0013)
 │   ├── patch.py              # atomic multi-file apply_patch (specs/0013)
 │   ├── verify_edits.py       # auto-verify: run a check on touched files + reflection loop (specs/0014)
+│   ├── execpolicy.py         # parse run_command into segments, classify read-only/mutating/dangerous (specs/0016)
 │   ├── skills.py             # skills (specs/0008): SKILL.md workflows; run_skill fans out captured concern subagents
 │   ├── memory.py             # cross-session project memory — load + remember (Phase 4)
 │   ├── context.py            # ContextManager — live context + compaction (Phase 4)

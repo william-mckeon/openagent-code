@@ -29,6 +29,12 @@ import re
 import sys
 
 from . import config
+from . import execpolicy
+
+
+def _shell_name():
+    """The shell run_command actually uses (tools.run_command): PowerShell on Windows, else bash."""
+    return "powershell" if os.name == "nt" else "bash"
 
 
 def _flush_stdin():
@@ -99,6 +105,11 @@ class Permissions:
 
     def decide(self, tool, args, ctx):
         t = self._target(tool, args, ctx)
+        # run_command gated on the PARSED command (execpolicy, Phase 16): deny/ask/allow rules match ANY
+        # segment (the `rm` inside `cd x && rm y`) and a wholly read-only command is allowed like a read
+        # tool. OFF (default) -> decide() never consults execpolicy and the prefix path below is unchanged.
+        if tool == "run_command" and config.EXECPOLICY:
+            return self._decide_command(t, ctx)
         mutating = tool in MUTATING
 
         def D(allowed, action, reason, rule=None):
@@ -197,6 +208,51 @@ class Permissions:
         except EOFError:
             return False
         return ans == "y"
+
+    def _decide_command(self, t, ctx):
+        """Gate run_command on execpolicy's parsed segments: deny/ask/allow rules match ANY segment (so
+        run_command(rm:*) catches `cd x && rm y`), and a wholly READ-ONLY command (ls, git status) is
+        allowed like a read tool — even in plan / default mode. A `dangerous` command is NOT relaxed; it
+        stays on the mutating path (its elevation to a fail-closed review is the guardian's job, 0019)."""
+        a = execpolicy.assess(t.raw, _shell_name())
+        candidates = [t.raw] + [s for s, _ in a.segments]   # the whole line too, so a plain prefix still fires
+
+        def D(allowed, action, reason, rule=None):
+            return Decision(allowed, "run_command", t.raw, action, reason, rule, self.mode)
+
+        for seg in candidates:                                   # deny — matches ANY segment
+            r = self._match_command_rules(self.deny, seg)
+            if r:
+                return D(False, "deny", f"deny rule {r!r}", r)
+        if a.worst == execpolicy.READ_ONLY:                      # a read-only command is safe anywhere
+            return D(True, "allow", "read-only command (execpolicy)")
+        if self.mode == "plan":
+            return D(False, "deny", "plan mode is read-only")
+        for seg in candidates:                                   # ask — matches ANY segment
+            r = self._match_command_rules(self.ask, seg)
+            if r:
+                if getattr(ctx, "interactive", False):
+                    ok = self._prompt("run_command", t)
+                    return D(ok, "ask", f"ask rule {r!r} -> {'allowed' if ok else 'denied'} by user", r)
+                return D(False, "ask", f"ask rule {r!r}, but no human is present to confirm", r)
+        for seg in candidates:                                   # allow — matches ANY segment
+            r = self._match_command_rules(self.allow, seg)
+            if r:
+                return D(True, "allow", f"allow rule {r!r}", r)
+        if self.mode == "bypass":
+            return D(True, "allow", "bypass mode")
+        if getattr(ctx, "interactive", False):
+            ok = self._prompt("run_command", t)
+            return D(ok, "ask", f"{self.mode} mode -> {'allowed' if ok else 'denied'} by user")
+        return D(False, "deny", f"{self.mode} mode needs approval, but no human is present")
+
+    def _match_command_rules(self, rules, cmd):
+        """Match run_command deny/ask/allow rules against a SINGLE command string (one parsed segment)."""
+        for rule in rules:
+            rtool, pat = _parse_rule(rule)
+            if rtool in ("run_command", "*") and _match_command(pat, cmd):
+                return rule
+        return None
 
     def decide_move(self, old_path, new_path, ctx):
         """Gate an apply_patch Move (rename). A rename is RECOVERABLE (content preserved), so its mode

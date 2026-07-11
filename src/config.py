@@ -278,6 +278,12 @@ VERIFY_CMDS_CONFIG = _resolve_install_path(os.environ.get("CODE_VERIFY_CMDS_CONF
 VERIFY_TOUCHED_LABEL = _as_bool(os.environ.get("CODE_VERIFY_TOUCHED_LABEL", "true"))
 VERIFY_TIMEOUT = int(os.environ.get("CODE_VERIFY_TIMEOUT", "60"))
 
+# execpolicy (Phase 16 / specs/0016). Gate run_command on its PARSED segments (read-only / mutating /
+# dangerous) instead of a raw prefix: a deny/ask/allow rule then matches ANY segment (the `rm` inside
+# `cd x && rm y`), and a wholly read-only command (ls, git status) is allowed like a read tool. Off by
+# default -> permissions.decide() never consults execpolicy and the prefix matcher path is unchanged.
+EXECPOLICY = _as_bool(os.environ.get("CODE_EXECPOLICY", "false"))
+
 
 def resolved_permission_mode() -> str:
     """The effective mode: explicit CODE_PERMISSION_MODE, else derived from

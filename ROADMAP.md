@@ -405,17 +405,18 @@ existing dep-free harnesses:
 A cross-agent convergence study of proven agent patterns surfaced the capability gaps most worth closing
 next. Each is a spec-driven phase with a `CODE_*` flag (default off) and a dep-free `scripts/check_*.py`,
 built in independently shippable sub-phases. Build order is by *what unblocks what*, not raw priority:
-- **0012 situational-context** — a per-turn cwd / OS / shell / date / granted-dirs / git-status block
-  injected as a refreshed pin, so every trajectory is grounded in real state. Quick win, **next up**.
-- **0013 edit-layer** — a SAFE fuzzy fallback under exact-match `edit_file` (refuse-on-ambiguity), then
-  an atomic grammar-validated `apply_patch` for multi-file Add/Update/Delete/Move.
-- **0014 auto-verify** — run lint/test/compile on TOUCHED files, feed errors back as a bounded reflection
-  turn (a third gate, after completion + grounding), record pass/fail as an objective reward label. The
-  highest-value flywheel upgrade; moved ahead of sandbox (its deps are soft).
+- **0012 situational-context** ✅ BUILT — a per-turn cwd / OS / shell / date / granted-dirs / git-status
+  block injected as a refreshed pin, so every trajectory is grounded in real state.
+- **0013 edit-layer** ✅ BUILT — a SAFE fuzzy fallback under exact-match `edit_file` (refuse-on-ambiguity),
+  then an atomic, fenced, grammar-validated `apply_patch` for multi-file Add/Update/Delete/Move.
+- **0014 auto-verify** ✅ BUILT — run lint/test/compile on TOUCHED files, feed errors back as a bounded
+  reflection turn (a third gate, after completion + grounding), record pass/fail as an objective reward.
 - **0015 hooks** — opt-in, fail-open lifecycle scripts (PreToolUse / PostToolUse / PermissionRequest) —
-  the deferred Phase-4 hooks item, promoted to a full phase; closes "deny is only tool-scoped."
-- **0016 execpolicy** — parse `run_command` (bash + PowerShell 5.1) into segments, classify read-only vs
-  mutating / dangerous, gate on the parse instead of a raw prefix; additive precision, feeds 0017/0019.
+  the deferred Phase-4 hooks item, promoted to a full phase; closes "deny is only tool-scoped." (Deferred:
+  execpolicy was pulled ahead since the ride stressed run_command.)
+- **0016 execpolicy** ✅ BUILT (2026-07) — parse `run_command` (bash + PowerShell 5.1) into segments,
+  classify read-only / mutating / dangerous, gate on the parse instead of a raw prefix (a deny matches
+  ANY segment; a read-only command is allowed like a read tool). Additive precision, feeds 0017/0019.
 - **0017 sandbox — FS confinement** — a Windows restricted-token launcher fencing `run_command` writes to
   the workspace, keyed off permission mode; no-op passthrough default so nothing regresses.
 - **0018 sandbox — WFP net egress** — carved out of 0017 (admin / AppContainer-gated); optional, own timeline.
@@ -455,4 +456,4 @@ All donor patterns are **rewritten clean as our own Python**; no external agent 
 
 ## Status line
 
-Phase 0 ✅ · Phase 1 ✅ (eval now 13 tasks, 13/13 — harder tier added, ceiling not yet found) · Phase 2 ✅ · Phase 3 ✅ · **Phase 4 — compaction ✅ + subagents ✅ + planning ✅ + interactivity ✅ + tool-breadth ✅ + cold-start handling ✅ + permissions Core ✅ + cross-session memory ✅. Remaining: permission hooks (#6 pass 2) + the always-open robustness/eval-ceiling tail** · **Phase 5 — distillation flywheel (gpt-oss-120b/Bedrock teacher → distilled student): Stage 1 (documented) ✅; Stages 2-7 staged (specs/0005)** · **Adoption Track (Phase 12–19) — spec'd (convergence roadmap); `0012` situational-context next**.
+Phase 0 ✅ · Phase 1 ✅ (eval now 13 tasks, 13/13 — harder tier added, ceiling not yet found) · Phase 2 ✅ · Phase 3 ✅ · **Phase 4 — compaction ✅ + subagents ✅ + planning ✅ + interactivity ✅ + tool-breadth ✅ + cold-start handling ✅ + permissions Core ✅ + cross-session memory ✅. Remaining: permission hooks (#6 pass 2) + the always-open robustness/eval-ceiling tail** · **Phase 5 — distillation flywheel (gpt-oss-120b/Bedrock teacher → distilled student): Stage 1 (documented) ✅; Stages 2-7 staged (specs/0005)** · **Adoption Track (Phase 12–19): `0012` situational-context ✅ · `0013` edit-layer ✅ · `0014` auto-verify ✅ · `0016` execpolicy ✅ (pulled ahead) · `0015` hooks + `0017`-`0019` sandbox/guardian remain. Foundation hardened by a full adversarial audit (19/19 fixed) + two live rides — see docs/AUDIT-FINDINGS.md**.
