@@ -191,6 +191,17 @@ def _gate(ctx, tool, raw):
         raise PatchError(f"'{raw}' blocked by permissions - {d.reason}")
 
 
+def _gate_move(ctx, old, new):
+    """Gate a Move op via the permission engine's rename-aware path (deny/fence on both endpoints, but
+    edit-level mode so a routine rename doesn't prompt in acceptEdits). No engine -> pass through."""
+    perms = getattr(ctx, "permissions", None)
+    if perms is None:
+        return
+    d = perms.decide_move(old, new, ctx)
+    if not d.allowed:
+        raise PatchError(f"move '{old}' -> '{new}' blocked by permissions - {d.reason}")
+
+
 def _read_text(rel, path):
     """Read a file as text for patching. On a BINARY / undecodable file raise PatchError (a clean
     teaching refusal), NOT a UnicodeDecodeError - so apply_patch never crashes on a PNG the way a naive
@@ -230,8 +241,7 @@ def apply_patch(args, ctx):
                 plan.append(("delete", path, None, None))
                 touched.append((op["path"], "delete"))
             elif op["op"] == "move":
-                _gate(ctx, "delete_file", op["old"])   # a Move removes old + writes new: gate both
-                _gate(ctx, "write_file", op["new"])
+                _gate_move(ctx, op["old"], op["new"])   # rename: deny/fence on both, but edit-level mode
                 old_p, new_p = _abs(ctx, op["old"]), _abs(ctx, op["new"])
                 if not os.path.isfile(old_p):
                     raise PatchError(f"Move File '{op['old']}': source not found")

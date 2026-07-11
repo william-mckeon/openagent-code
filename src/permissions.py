@@ -26,8 +26,25 @@ human is present, so an unattended run can only ever be more restrictive, not le
 """
 import os
 import re
+import sys
 
 from . import config
+
+
+def _flush_stdin():
+    """Drain any typed-ahead input so a permission prompt raised mid-turn doesn't swallow the user's NEXT
+    query as its y/N answer (seen live: 'allow delete_file...? [y/N] what project is this?y' — the query
+    got eaten and the non-'y' string denied the op)."""
+    try:
+        if os.name == "nt":
+            import msvcrt
+            while msvcrt.kbhit():
+                msvcrt.getwch()
+        else:
+            import termios
+            termios.tcflush(sys.stdin, termios.TCIFLUSH)
+    except Exception:  # noqa: BLE001 - best-effort; a flush failure must never break the prompt
+        pass
 
 # Tools that change files or run commands. Everything else is read-only for gating.
 # apply_patch mutates too, but ONE envelope carries MANY paths, so decide()'s single-path fence can't
@@ -174,11 +191,38 @@ class Permissions:
 
     def _prompt(self, tool, target):
         shown = target.rel if target.kind == "path" else (target.raw or tool)
+        _flush_stdin()   # so a query typed while the turn was working isn't consumed as the y/N answer
         try:
             ans = input(f"  [permission] allow {tool} on {shown!r}? [y/N] ").strip().lower()
         except EOFError:
             return False
         return ans == "y"
+
+    def decide_move(self, old_path, new_path, ctx):
+        """Gate an apply_patch Move (rename). A rename is RECOVERABLE (content preserved), so its mode
+        baseline follows edit_file — auto-allowed in acceptEdits — rather than delete_file's prompt, which
+        was disrupting a routine multi-file rename. But the DENY rules and the fence still apply to BOTH
+        endpoints, so a move can't bypass delete_file(.env) / edit_file(.git/**) or escape the workspace."""
+        def D(allowed, action, reason, rule=None, target=""):
+            return Decision(allowed, "apply_patch", target, action, reason, rule, self.mode)
+        # deny + fence on both endpoints: check the delete/edit rules on the OLD path (it's removed) and
+        # the write/edit rules on the NEW path (it's created), so .env / .git denies fire either way.
+        for tool, p in (("delete_file", old_path), ("edit_file", old_path),
+                        ("write_file", new_path), ("edit_file", new_path)):
+            t = self._target(tool, {"path": p}, ctx)
+            r = self._match(self.deny, tool, t)
+            if r:
+                return D(False, "deny", f"deny rule {r!r}", r, t.rel)
+            if not self._within_roots(t.abs, ctx.cwd):
+                return D(False, "deny", "a moved path is outside your allowed directories", target=t.rel)
+        if self.mode == "plan":
+            return D(False, "deny", "plan mode is read-only", target=old_path)
+        if self.mode in ("bypass", "acceptEdits"):
+            return D(True, "allow", f"{self.mode} mode (a rename is edit-level)", target=old_path)
+        if getattr(ctx, "interactive", False):
+            ok = self._prompt("apply_patch move", self._target("write_file", {"path": new_path}, ctx))
+            return D(ok, "ask", f"default mode -> {'allowed' if ok else 'denied'} by user", target=old_path)
+        return D(False, "deny", "default mode needs approval, but no human is present", target=old_path)
 
 
 # -- module-level matchers (pure functions, easy to unit-test) ----------------

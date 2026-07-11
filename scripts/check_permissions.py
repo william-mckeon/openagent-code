@@ -123,6 +123,19 @@ def main():
     check("fence blocks tree outside the workspace", not allowed(p, ctx, "tree", path=outside_abs))
     check("tree inside the workspace allowed", allowed(p, ctx, "tree", path="."))
 
+    # apply_patch Move (rename) — edit-level for the MODE (no delete prompt), but deny + fence on BOTH
+    # endpoints so a rename can't bypass a delete_file(.env) deny or escape the workspace.
+    check("acceptEdits allows a Move (rename is edit-level, no delete prompt)",
+          Permissions("acceptEdits", {}, []).decide_move("a.txt", "b.txt", ctx).allowed)
+    check("a Move of .env is denied (can't rename-bypass delete_file(.env))",
+          not Permissions("acceptEdits", {"deny": ["delete_file(.env)"]}, []).decide_move(".env", "pub/.env", ctx).allowed)
+    check("a Move into .git is denied (edit_file(.git/**) applies to the destination)",
+          not Permissions("bypass", {"deny": ["edit_file(.git/**)"]}, []).decide_move("x.txt", ".git/hooks/x", ctx).allowed)
+    check("fence blocks a Move whose destination escapes the workspace",
+          not Permissions("bypass", {}, []).decide_move("a.txt", outside_abs, ctx).allowed)
+    check("plan mode blocks a Move (read-only)",
+          not Permissions("plan", {}, []).decide_move("a.txt", "b.txt", ctx).allowed)
+
     passed, total = sum(_results), len(_results)
     print(f"\nVERDICT: {passed}/{total} {'[OK]' if passed == total else '[FAIL]'}")
     return 0 if passed == total else 1

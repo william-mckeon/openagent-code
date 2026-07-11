@@ -177,6 +177,22 @@ def main():
           and _r(os.path.join(d7, "a.py")) == "AAA-original\n"
           and not os.path.exists(os.path.join(d7, "b.py")))
 
+    # -- 9. Move is EDIT-LEVEL: a rename applies in acceptEdits (no delete prompt/block), but a deny on
+    #    the moved path still blocks it (the ride showed a routine favicon rename prompting per-file).
+    d8 = tempfile.mkdtemp(prefix="applypatch_")
+    _w(d8, "old.txt", "keep\n")
+    ctx_ae = Context(d8, Permissions("acceptEdits", {}, []))
+    r = patch.apply_patch({"patch": _env(
+        "*** Begin Patch", "*** Move File: old.txt -> new.txt", "*** End Patch")}, ctx_ae)
+    check("Move applies in acceptEdits headless (rename is edit-level, no delete prompt)",
+          r.ok and os.path.exists(os.path.join(d8, "new.txt")) and not os.path.exists(os.path.join(d8, "old.txt")))
+    _w(d8, ".env", "SECRET\n")
+    ctx_dn = Context(d8, Permissions("acceptEdits", {"deny": ["delete_file(.env)"]}, []))
+    r = patch.apply_patch({"patch": _env(
+        "*** Begin Patch", "*** Move File: .env -> public.env", "*** End Patch")}, ctx_dn)
+    check("Move of .env is still blocked by the delete_file(.env) deny (no rename-bypass)",
+          (not r.ok) and os.path.isfile(os.path.join(d8, ".env")) and not os.path.exists(os.path.join(d8, "public.env")))
+
     passed, total = sum(_results), len(_results)
     print(f"\nVERDICT: {passed}/{total} {'[OK]' if passed == total else '[FAIL]'}")
     return 0 if passed == total else 1
