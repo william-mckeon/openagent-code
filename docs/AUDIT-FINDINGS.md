@@ -33,6 +33,22 @@ rule going forward (see the deviation matrix in [VALIDATION.md](VALIDATION.md)).
 | 18 | ⚪ low | `apply_patch` apply loop caught only `OSError` (NUL/surrogate escaped) | catch `OSError/ValueError/UnicodeError` | `9948fb6` |
 | 19 | ⚪ low | `looks_degenerate` missed a ticking-counter loop | digit-normalize each line | `6201d1c` |
 
+## Live-ride follow-ups (2026-07)
+
+A hardened-tree ride (apply_patch enabled) confirmed the audit fixes hold — the cross-turn hijack, the
+fence, atomicity, and the `.env` deny all fired — and surfaced six more, all fixed + pinned:
+
+| Sev | Finding | Fix | Commit |
+|-----|---------|-----|--------|
+| 🟠 high | **`tree` measured `depth` from the workspace, not the requested `path`** → `tree('src/auth/cmd', depth=3)` returned "cmd/ (0 files)"; a reviewer read that as "empty / main.go missing" (the real mechanism behind the false-absence claims) | depth is now path-relative | `9673f21` |
+| 🟡 med | The semantic verifier can still mis-read a tree | a **deterministic** grounding backstop: an "X is empty/missing" claim is flagged when os.path says X exists + is non-empty | `9673f21` |
+| 🟡 med | `read_file` binary failure conflated with "file absent" (favicon PNGs) | message now says the file EXISTS / is NOT missing | `9673f21` |
+| 🟡 med | An apply_patch **Move** prompted per-file in acceptEdits (a routine rename) | `decide_move` — rename is edit-level for the mode, deny/fence still on both endpoints | `f62a156` |
+| 🟡 med | A mid-turn permission prompt swallowed the user's next query as its y/N | flush typed-ahead stdin before the prompt | `f62a156` |
+| ⚪ low | `print_tree` misnomer burned a step on "Unknown tool"; `\exit` typo treated as a task | dispatch alias `print_tree`→`tree`; accept `\exit` | `d37bc68` |
+
+Still model-quality (flywheel, not code): the pervasive rambling-CoT and the proportionality drift.
+
 ## What the fixes cost / added
 15 dep-free harnesses, **246 checks total** (~+40 this pass), all green. New seam-level coverage:
 `decide('apply_patch')`/`decide('tree')`, the fence enforced inside `patch.py`, per-turn `convert`
