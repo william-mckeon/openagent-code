@@ -103,8 +103,10 @@ def read_file(args, ctx):
     except OSError as e:
         return ToolResult(False, f"Could not read {args['path']}: {e}")
     if b"\x00" in head:
-        return ToolResult(False, f"{args['path']} looks like a BINARY file "
-                                 f"({os.path.getsize(path)} bytes) — it isn't readable as text.")
+        # Be explicit that the file EXISTS: a bare "can't read" was conflated with "file is absent",
+        # feeding a false "the directory is empty / that asset is missing" claim in a live review.
+        return ToolResult(False, f"{args['path']} is a BINARY file ({os.path.getsize(path)} bytes) that "
+                                 f"EXISTS but isn't readable as text — it is present in the repo, NOT missing.")
     with open(path, encoding="utf-8", errors="replace") as f:
         lines = f.readlines()
     chunk = lines[offset:offset + limit]
@@ -203,8 +205,14 @@ def tree(args, ctx):
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = sorted(d for d in dirnames
                              if not config.skip_walk_dir(d, dirpath) and not d.startswith("."))
-        rel = _rel(ctx, dirpath)
-        depth = 0 if rel == "." else rel.count("/") + 1
+        rel = _rel(ctx, dirpath)                       # workspace-relative — for the display label
+        # Depth is measured from the REQUESTED path, not the workspace. tree('src/auth/cmd', depth=3)
+        # must show 3 levels BELOW src/auth/cmd; measuring from cwd (where cmd is already depth 3) cleared
+        # its subtree and returned just "cmd/ (0 files)" — which a reviewer read as "the directory is
+        # empty / main.go is missing" (a false absence claim in a live review, though main.go was read
+        # earlier the same session).
+        rel_root = os.path.relpath(dirpath, root)
+        depth = 0 if rel_root in (".", "") else rel_root.replace(os.sep, "/").count("/") + 1
         if depth > max_depth:
             dirnames[:] = []   # don't descend past the depth limit
             continue

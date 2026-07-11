@@ -159,6 +159,27 @@ def main():
     check("an answer with no cited paths -> clean",
           grounding.problems("All good, nothing to cite here.", _ctx(tmp)) == [])
 
+    # -- DETERMINISTIC absence contradiction (the src/auth/cmd main.go false-empty review) -------------
+    adir = tempfile.mkdtemp(prefix="grd_abs_")
+    os.makedirs(os.path.join(adir, "src", "auth", "cmd", "server"))
+    open(os.path.join(adir, "src", "auth", "cmd", "server", "main.go"), "w", encoding="utf-8").write("package main\n")
+    fc = grounding.absence_contradictions(
+        "The entry point `src/auth/cmd/server/main.go` is missing — the cmd directory is empty.", adir)
+    check("absence_contradictions flags a 'missing' file that EXISTS on disk",
+          any("main.go" in m and "EXISTS" in m for m in fc))
+    dc = grounding.absence_contradictions("The `src/auth/cmd` directory is empty.", adir)
+    check("absence_contradictions flags an 'empty' directory that CONTAINS files",
+          any("src/auth/cmd" in m for m in dc))
+    check("absence_contradictions does NOT flag a genuinely-absent path",
+          grounding.absence_contradictions("There is no `src/auth/ghost.go` in the repo.", adir) == [])
+    check("absence_contradictions is sentence-scoped (a path outside the absence claim is safe)",
+          grounding.absence_contradictions(
+              "I edited `src/auth/cmd/server/main.go`. Separately, the docs folder is empty.", adir) == [])
+    ac = grounding.problems("The `src/auth/cmd/server/main.go` file is missing.",
+                            _ctx(adir, spawn=lambda t, effort=None: "GROUNDED"))
+    check("problems() surfaces the deterministic contradiction even when the verifier says GROUNDED",
+          any("main.go" in m for m in ac))
+
     passed, total = sum(_results), len(_results)
     print(f"\nVERDICT: {passed}/{total} {'[OK]' if passed == total else '[FAIL]'}")
     return 0 if passed == total else 1

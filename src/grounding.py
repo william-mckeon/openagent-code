@@ -68,6 +68,35 @@ def absence_claim(final_text):
     return bool(_ABSENCE.search(final_text or ""))
 
 
+def absence_contradictions(final_text, cwd):
+    """DETERMINISTIC, model-free: flag a claim that a cited path is empty / missing / absent when that
+    path actually EXISTS on disk (a present file, or a NON-EMPTY directory). os.path is authoritative for
+    the LIVE workspace, so this catches a false absence even when the semantic verifier mis-reads a tree
+    (the live 'src/auth/cmd is empty / main.go missing' review, where main.go was read the same session).
+    Scoped PER SENTENCE so the path must be claimed absent IN CONTEXT, not merely mentioned elsewhere."""
+    if not cwd or not absence_claim(final_text):
+        return []
+    out, seen = [], set()
+    for sent in re.split(r"(?<=[.!?])\s+|\n+", final_text or ""):
+        if not _ABSENCE.search(sent):
+            continue
+        for p in cited_paths(sent, strict=False):   # BROAD: a bare directory citation must count too
+            full = os.path.join(cwd, p)
+            try:
+                if os.path.isfile(full):
+                    msg = f"'{p}' is described as missing/empty, but the file EXISTS on disk"
+                elif os.path.isdir(full) and os.listdir(full):
+                    msg = f"'{p}' is described as empty, but the directory CONTAINS files on disk"
+                else:
+                    continue
+            except OSError:
+                continue
+            if msg not in seen:
+                seen.add(msg)
+                out.append(msg)
+    return out
+
+
 def _norm(p):
     """Normalize a path token to the workspace-relative, forward-slash form a CITATION and a piece of
     EVIDENCE are BOTH compared in — so `.\\docker\\README.md`, `./docker/README.md`, and
@@ -248,16 +277,20 @@ def problems(final_text, ctx):
     check — which flags only a SPECIFIC missing path, never a bare basename it can't cheaply locate."""
     if getattr(ctx, "depth", 0) != 0:
         return []
+    # Deterministic absence contradiction (model-free, authoritative for the live workspace) runs FIRST
+    # and ALONGSIDE the semantic verifier — the verifier can mis-read a tree and wrongly agree a path is
+    # empty, so os.path.exists is the backstop (the src/auth/cmd main.go case).
+    det = absence_contradictions(final_text, getattr(ctx, "cwd", "") or "")
     if config.VERIFY_GROUNDING_SEMANTIC and getattr(ctx, "spawn", None) is not None:
         paths = cited_paths(final_text, strict=False)   # BROAD: the verifier judges, so include dirs
         # Spawn the verifier when the answer cites a path OR makes an ABSENCE claim (which typically
         # names its target only in prose, so it cites no path and would otherwise skip the check).
         if paths or absence_claim(final_text):
-            return semantic_problems(final_text, paths, ctx.spawn, config.GROUNDING_EFFORT)
-        return []
+            return det + semantic_problems(final_text, paths, ctx.spawn, config.GROUNDING_EFFORT)
+        return det
     paths = cited_paths(final_text, strict=True)         # NARROW: a hard existence check must not misfire
     if not paths:
-        return []
+        return det
     muts = getattr(ctx, "mutations", None) or {}
     muts_ci = {os.path.normcase(k) for k in muts}   # case-insensitive on Windows, exact on POSIX
 
@@ -266,4 +299,4 @@ def problems(final_text, ctx):
         # so NEVER hard-flag it — only a SPECIFIC path (with a slash) missing from disk AND the mutation
         # ledger is a clear phantom (mirrors the offline curator's grounded_by basename leniency).
         return "/" not in p or (os.path.normcase(p) in muts_ci) or os.path.exists(os.path.join(ctx.cwd, p))
-    return deterministic_problems(paths, _exists)
+    return det + deterministic_problems(paths, _exists)
