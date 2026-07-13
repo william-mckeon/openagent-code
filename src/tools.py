@@ -83,42 +83,6 @@ def _rel(ctx, path):
 
 # ---------------------------------------------------------------- read-only
 
-# Secret-file redaction: .env moved from a hard DENY to a REDACTED read. read_file returns a masked view
-# and grep skips these files, so a token never reaches a tool result -> never the trajectory / corpus.
-_ENV_LINE = re.compile(r"^\s*(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*\s*=")
-_SECRET_TOKEN = re.compile(r"[A-Za-z0-9+/=_\-]{16,}")
-
-
-def _is_secret_file(path):
-    name = os.path.basename((path or "").replace("\\", "/"))
-    return any(fnmatch.fnmatch(name, g) for g in config.SECRET_FILE_GLOBS)
-
-
-def _redact_secret(rel, path):
-    """A REDACTED view of a secret file: a KEY=VALUE file (.env) shows its KEYS with masked values;
-    anything else is redacted wholesale. So the agent sees WHAT config exists without any value entering
-    the tool result / trajectory / corpus."""
-    name = os.path.basename(rel.replace("\\", "/")).lower()
-    if name == ".env" or name.startswith(".env") or name.endswith(".env"):
-        try:
-            with open(path, encoding="utf-8", errors="replace") as f:
-                text = f.read()
-        except OSError as e:
-            return f"Could not read {rel}: {e}"
-        out = []
-        for line in text.splitlines():
-            if _ENV_LINE.match(line):
-                out.append(line.split("=", 1)[0] + "=<redacted>")
-            elif line.lstrip().startswith("#") or not line.strip():
-                out.append(_SECRET_TOKEN.sub("<redacted>", line))   # scrub a token even inside a comment
-            else:
-                out.append("<redacted>")
-        return "\n".join(out)
-    size = os.path.getsize(path) if os.path.isfile(path) else 0
-    return (f"<redacted secret file: {os.path.basename(rel)} ({size} bytes) - contents hidden to keep "
-            f"secrets out of the trajectory/corpus; read .env.example or the docs for the config keys>")
-
-
 def read_file(args, ctx):
     path = _abs(ctx, args["path"])
     offset = int(args.get("offset", 0))
@@ -130,10 +94,6 @@ def read_file(args, ctx):
                                  f"tree or glob, then read a file inside it.")
     if not os.path.isfile(path):
         return ToolResult(False, f"File not found: {path}")
-    # Secret files: never surface raw contents (a token would enter the trajectory -> the training
-    # corpus). Return a REDACTED view instead of hard-denying, so the agent still sees the structure.
-    if _is_secret_file(args["path"]):
-        return ToolResult(True, _redact_secret(args["path"], path), {"redacted": True})
     # Binary guard: a NUL byte in the first chunk means this isn't text (PDF, image, compiled
     # artifact). Reading it as text returns mojibake the model would then 'review' — refuse
     # with a clear reason so it doesn't waste turns re-reading the same unreadable file.
@@ -191,8 +151,6 @@ def grep(args, ctx):
         dirnames[:] = [d for d in dirnames if not config.skip_walk_dir(d, dirpath)]
         for fn in filenames:
             fp = os.path.join(dirpath, fn)
-            if _is_secret_file(fn):
-                continue   # never search a secret file - a matching line would leak the value
             if glob_filter and not _glob_match(_rel(ctx, fp), fn, glob_filter):
                 continue
             try:

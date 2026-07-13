@@ -284,15 +284,6 @@ VERIFY_TIMEOUT = int(os.environ.get("CODE_VERIFY_TIMEOUT", "60"))
 # default -> permissions.decide() never consults execpolicy and the prefix matcher path is unchanged.
 EXECPOLICY = _as_bool(os.environ.get("CODE_EXECPOLICY", "false"))
 
-# Secret files whose CONTENTS must never reach a tool result (and thus the trajectory / training corpus).
-# read_file returns them REDACTED (keys visible, values masked) and grep skips them, so a token stays
-# protected even though .env is no longer hard-DENIED (it moved from deny to a redacted read). Matched by
-# BASENAME glob; CODE_SECRET_FILES overrides the comma-separated list.
-SECRET_FILE_GLOBS = [g.strip() for g in os.environ.get(
-    "CODE_SECRET_FILES",
-    ".env,.env.*,*.env,*.pem,*.key,id_rsa,id_dsa,id_ecdsa,id_ed25519,*.p12,*.pfx,*.jks,credentials,.netrc,.npmrc"
-).split(",") if g.strip()]
-
 
 def resolved_permission_mode() -> str:
     """The effective mode: explicit CODE_PERMISSION_MODE, else derived from

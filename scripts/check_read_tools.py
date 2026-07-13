@@ -62,25 +62,6 @@ def main():
     check("read_file on a truly-absent file still reports not found",
           not read_file({"path": "nope.txt"}, ctx).ok)
 
-    # -- secret redaction: .env is READABLE but MASKED — the token never reaches a tool result ----------
-    from src.tools import grep as _grep
-    sd = tempfile.mkdtemp(prefix="secret_")
-    _TOK = "ABSKsupersecrettoken0123456789"
-    with open(os.path.join(sd, ".env"), "w", encoding="utf-8") as f:
-        f.write(f"# my config\nBEDROCK_API_KEY={_TOK}\nCODE_MODEL=gpt-oss\n")
-    sctx = Context(sd, None)
-    r = read_file({"path": ".env"}, sctx)
-    check("read_file(.env): keys VISIBLE, the secret value never appears (redacted read, not a hard wall)",
-          r.ok and "BEDROCK_API_KEY" in r.content and "CODE_MODEL" in r.content
-          and _TOK not in r.content and "<redacted>" in r.content)
-    with open(os.path.join(sd, "server.pem"), "w", encoding="utf-8") as f:
-        f.write("-----BEGIN PRIVATE KEY-----\nMIIEvprivatekeymaterialzzzzzzzzzzzzzz\n-----END PRIVATE KEY-----\n")
-    r = read_file({"path": "server.pem"}, sctx)
-    check("read_file(*.pem) redacted wholesale (no key material in the result)",
-          r.ok and "privatekeymaterial" not in r.content and "redacted" in r.content.lower())
-    r = _grep({"pattern": "ABSK", "path": "."}, sctx)
-    check("grep SKIPS secret files (the token never appears in a match)", _TOK not in r.content)
-
     # the 'print_tree' misnomer routes to tree at dispatch, without being advertised in the schema
     from src.tools import Registry, TOOLS
     reg = Registry(TOOLS)
