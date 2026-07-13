@@ -15,6 +15,7 @@ import tempfile
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
+from src import config  # noqa: E402
 from src.permissions import Permissions  # noqa: E402
 
 
@@ -38,6 +39,9 @@ def allowed(perms, ctx, tool, **args):
 
 
 def main():
+    # Hermetic: these exercise the PREFIX run_command path, so force execpolicy OFF regardless of the
+    # ambient .env (the execpolicy-ON gating has its own harness, check_execpolicy.py).
+    config.EXECPOLICY = False
     ws = tempfile.mkdtemp(prefix="perm-check-")
     ctx = Ctx(ws)
     inside = "foo.py"

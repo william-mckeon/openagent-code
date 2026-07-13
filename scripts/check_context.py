@@ -166,6 +166,23 @@ def main():
         ok0 = False
     check("compaction with keep_recent=0 does not IndexError (_safe_cut guarded)", ok0)
 
+    # 13. review_repo does NOT fan out twice in one turn — a 2nd call returns the cached digest (a live
+    #     review re-ran review_repo mid-review, wasting a full fan-out).
+    import tempfile
+    from src.orchestrator import review_repo
+    from src.tools import Context as _ToolCtx
+    _d = tempfile.mkdtemp(prefix="revrepo_")
+    os.makedirs(os.path.join(_d, "src"))
+    os.makedirs(os.path.join(_d, "docs"))
+    _calls = {"n": 0}
+    _rc = _ToolCtx(_d, None)
+    _rc.spawn = lambda task: (_calls.__setitem__("n", _calls["n"] + 1) or "area summary")
+    _r1 = review_repo({"path": "."}, _rc)
+    _after1 = _calls["n"]
+    _r2 = review_repo({"path": "."}, _rc)
+    check("review_repo re-run in the same turn returns the CACHED digest (no second fan-out)",
+          _r1.ok and _r2.ok and _after1 > 0 and _calls["n"] == _after1 and "already ran" in _r2.content.lower())
+
     passed, total = sum(_results), len(_results)
     print(f"\nVERDICT: {passed}/{total} {'[OK]' if passed == total else '[FAIL]'}")
     return 0 if passed == total else 1

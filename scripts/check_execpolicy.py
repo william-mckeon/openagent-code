@@ -60,6 +60,22 @@ def main():
     check("dangerous: PowerShell Remove-Item -Recurse", _cls("Remove-Item -Recurse -Force x", "powershell") == execpolicy.DANGEROUS)
     check("env-prefix + sudo are stripped before the verb", _cls("FOO=1 sudo cat /etc/hosts") == execpolicy.READ_ONLY)
 
+    # -- redirects: a read-only verb + '>' is a WRITE (the git ls-files > x.txt auto-run hole) ---------
+    check("a redirect makes a read-only verb MUTATING (git ls-files > x.txt)",
+          _cls("git ls-files > tracked.txt") == execpolicy.MUTATING and _cls("echo hi >> log") == execpolicy.MUTATING)
+    check("a redirect to an absolute / parent-escaping / device path is DANGEROUS",
+          all(_cls(c) == execpolicy.DANGEROUS for c in ("echo x > /etc/passwd", "cat a > ../out", "echo x > /dev/sda")))
+    check("a '>' INSIDE quotes is literal, not a redirect (echo 'a > b')", _cls("echo 'a > b'") == execpolicy.READ_ONLY)
+    check("an fd duplication (2>&1) is not a file write", _cls("git status 2>&1") == execpolicy.READ_ONLY)
+
+    # -- version checks + ForEach-Object no longer over-prompt ----------------------------------------
+    check("a bare version check is read-only (node -v / python --version / go version)",
+          all(_cls(c) == execpolicy.READ_ONLY for c in ("node -v", "python --version", "go version")))
+    check("ForEach-Object projecting a property is read-only (% Count) but a script block is not",
+          _cls("% Count") == execpolicy.READ_ONLY and _cls("% { Remove-Item $_ }") == execpolicy.MUTATING)
+    check("a whole read-only PowerShell pipe is read-only (git ls-files | Measure-Object | % Count)",
+          execpolicy.assess("git ls-files | Measure-Object | % Count", "powershell").worst == execpolicy.READ_ONLY)
+
     # -- assess: worst class, flagged, ps_invalid ----------------------------------------------------
     a = execpolicy.assess("cd src && rm -rf build")
     check("assess: 'cd && rm -rf' -> worst dangerous, the rm segment flagged",
@@ -83,6 +99,8 @@ def main():
           Permissions("plan", {}, []).decide("run_command", {"command": "ls -la"}, ctx).allowed)
     check("a MUTATING command is still blocked in default headless",
           not ro.decide("run_command", {"command": "npm install"}, ctx).allowed)
+    check("a REDIRECT is NOT relaxed by the gate (git ls-files > out.txt is a write, so it's gated)",
+          not ro.decide("run_command", {"command": "git ls-files > out.txt"}, ctx).allowed)
     check("a MUTATING command is still blocked in plan mode",
           not Permissions("plan", {}, []).decide("run_command", {"command": "npm install"}, ctx).allowed)
 

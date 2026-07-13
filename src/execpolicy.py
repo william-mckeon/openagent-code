@@ -157,6 +157,53 @@ def _first_token(seg):
     return m.group(0) if m else ""
 
 
+_REDIRECT = re.compile(r"(?:^|\s)(?:\d*>>?|&>|>&)")   # > >> 2> 2>> &> >& (an output redirect = a WRITE)
+_VERSION_FLAGS = {"-v", "-version", "--version", "version"}
+
+
+def _mask_quotes(s):
+    """Replace quoted spans (and the quotes) with spaces, preserving length — so an operator INSIDE
+    quotes (`echo 'a > b'`) isn't mistaken for a real one."""
+    out, sq, dq = [], False, False
+    for c in s:
+        if sq:
+            out.append(" "); sq = c != "'"
+        elif dq:
+            out.append(" "); dq = c != '"'
+        elif c == "'":
+            sq = True; out.append(" ")
+        elif c == '"':
+            dq = True; out.append(" ")
+        else:
+            out.append(c)
+    return "".join(out)
+
+
+def _redirect_target(seg):
+    """If `seg` has a top-level output redirect to a FILE, return its target token ('' if none visible);
+    else None. Quote-aware, and ignores fd duplications (`2>&1`, `>&2`) which don't write a file."""
+    m = _REDIRECT.search(_mask_quotes(seg))
+    if not m:
+        return None
+    target = _first_token(seg[m.end():].strip())
+    if target.startswith("&") or target.isdigit():   # fd dup (2>&1 / >&2), not a file write
+        return None
+    return target
+
+
+def _redirect_is_dangerous(target):
+    """A redirect whose target is absolute / parent-escaping / a device or system path is dangerous; a
+    plain workspace-relative file is merely mutating."""
+    t = (target or "").strip().strip("'\"").replace("\\", "/")
+    if not t:
+        return False
+    if t.startswith(("/dev/", "/etc/", "/proc/", "/sys/")):
+        return True
+    if t.startswith("/") or re.match(r"^[A-Za-z]:", t):    # absolute (posix or windows drive)
+        return True
+    return ".." in t.split("/")                            # parent escape
+
+
 def classify(segment, shell="bash"):
     """Classify ONE segment: read_only / mutating / dangerous. Unknown -> mutating (conservative)."""
     seg = _PREFIX.sub("", segment or "").strip()
@@ -165,10 +212,24 @@ def classify(segment, shell="bash"):
     for rx in _DANGEROUS_PATTERNS:
         if rx.search(seg):
             return DANGEROUS
+    # An output redirect makes ANY command a WRITE, even a read-only verb (`git ls-files > x.txt` was
+    # auto-run as "read-only" and silently created a file). To a workspace file -> mutating; to an
+    # absolute / parent-escaping / device path -> dangerous.
+    rt = _redirect_target(seg)
+    if rt is not None:
+        return DANGEROUS if _redirect_is_dangerous(rt) else MUTATING
+    # A bare version check (`node -v`, `python --version`) can't mutate (no target).
+    parts = seg.split()
+    if len(parts) == 2 and parts[1].lower() in _VERSION_FLAGS:
+        return READ_ONLY
     tok = _first_token(seg).lower().strip("'\"")
     tok = re.split(r"[\\/]", tok)[-1]           # basename of the command path
     if tok.endswith(".exe"):
         tok = tok[:-4]
+    if tok in ("%", "foreach-object", "foreach"):
+        # ForEach-Object projecting a property (`% Count`) is read-only; a script block (`% { ... }`)
+        # can run anything -> stay conservative.
+        return MUTATING if "{" in seg else READ_ONLY
     if tok in _SUBCMD_READONLY:
         sub = _first_token(seg[len(_first_token(seg)):].strip()).lower()
         return READ_ONLY if sub in _SUBCMD_READONLY[tok] else MUTATING

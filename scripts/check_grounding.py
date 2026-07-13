@@ -154,8 +154,8 @@ def main():
 
     # -- challenge() + empty cases -------------------------------------------
     ch = grounding.challenge(["'x.md' - cited in the answer but not found in the workspace"])
-    check("challenge() names the problem, stays targeted + non-hijacking",
-          "x.md" in ch and "whole repo" in ch and "ORIGINAL request" in ch)
+    check("challenge() names the problem, stays targeted + points at the CURRENT request (not 'original')",
+          "x.md" in ch and "whole repo" in ch and "current" in ch.lower() and "original request" not in ch.lower())
     check("an answer with no cited paths -> clean",
           grounding.problems("All good, nothing to cite here.", _ctx(tmp)) == [])
 

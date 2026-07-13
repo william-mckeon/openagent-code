@@ -104,6 +104,7 @@ class Agent:
         # session's earlier spawns accumulate on the reused ctx and permanently block spawn_agent on
         # later, unrelated turns (the same cross-turn-leak class as the plan/mutations reset above).
         ctx.spawn_count = 0
+        ctx._reviewed_digest = None   # a new task may run review_repo fresh (the per-turn re-run guard)
         # Situational context (specs/0012): inject the agent's real environment (cwd / OS / shell / date
         # / granted dirs, + git branch when enabled) once per turn as a refreshed pin, so it conditions
         # on live state instead of confabulating it. Pinned (survives compaction) AND logged as a turn

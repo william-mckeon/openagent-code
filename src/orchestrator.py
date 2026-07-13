@@ -128,6 +128,14 @@ def review_repo(args, ctx):
     if ctx.depth >= 1:
         return ToolResult(False, "review_repo is for the top-level review only; you are already a "
                                  "scoped sub-review — read your assigned files directly.")
+    # Hard guard against a SECOND fan-out in the same turn: the digest below already tells the lead not
+    # to re-run, but a live review called review_repo again anyway (wasting a full fan-out). Hand back
+    # the digest already produced this turn and tell it to synthesize. Reset per task in agent.run().
+    prev = getattr(ctx, "_reviewed_digest", None)
+    if prev is not None:
+        return ToolResult(True, "review_repo already ran this turn — do NOT fan out again. Write your "
+                                "FINAL review by synthesizing the per-area findings below.\n\n" + prev,
+                          {"cached": True})
 
     rel = (args.get("path") or ".").strip() or "."
     focus = (args.get("focus") or "").strip() or None
@@ -210,4 +218,6 @@ def review_repo(args, ctx):
                  f"and re-reading or re-delegating only wastes budget and overflows your context. "
                  f"This is a REVIEW — report findings only; do not edit, create, or run anything. "
                  f"Your next reply must be the finished review, as a clean report, with no tool calls.")
-    return ToolResult(True, "\n".join(parts), {"areas": len(summaries)})
+    digest = "\n".join(parts)
+    ctx._reviewed_digest = digest   # cache it so a re-run this turn short-circuits (see the top guard)
+    return ToolResult(True, digest, {"areas": len(summaries)})

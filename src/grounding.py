@@ -249,14 +249,16 @@ def _parse_verdict(out):
 
 def challenge(problems):
     """The re-prompt, sent when grounding finds a problem and a retry remains. Deliberately NARROW and
-    NON-HIJACKING: a TARGETED re-check of the flagged claim plus a reminder to still answer the user's
-    ORIGINAL request — an earlier version drove the agent to re-audit the whole repo and lose the
-    question it was asked."""
+    NON-HIJACKING: a TARGETED re-check of the flagged claim plus a reminder to still answer the CURRENT
+    request. Points at 'the request you're answering now' (the pinned current task), NOT 'your original
+    request' — in a multi-turn REPL the latter made the model re-answer an EARLIER turn (a favicon task
+    got answered with a prior turn's auth question) after compaction blurred which turn was live."""
     return ("One or more claims in your answer aren't backed by the files:\n"
             + "\n".join(f"- {p}" for p in problems)
             + "\nDo a TARGETED read of just what confirms or corrects each flagged claim - do NOT "
-              "re-investigate the whole repo. Then answer the USER'S ORIGINAL request directly with the "
-              "claim fixed, keeping the rest of your answer as-is.")
+              "re-investigate the whole repo. Then answer the request you are CURRENTLY working on (the "
+              "pinned 'current request' above) directly with the claim fixed, keeping the rest of your "
+              "answer as-is.")
 
 
 def problems(final_text, ctx):
