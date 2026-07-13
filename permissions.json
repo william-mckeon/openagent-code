@@ -1,22 +1,20 @@
 {
-  "_comment": "Sample permission rules for CODE_PERMISSIONS_CONFIG. Copy to permissions.json and point CODE_PERMISSIONS_CONFIG at it. Matcher is tool_name(pattern). For run_command the pattern is a command prefix ('pytest:*' matches 'pytest -q', bare is exact, '*' is any). For file tools (read_file/write_file/edit_file/grep/glob) the pattern is a workspace-relative path glob ('src/**'). Precedence: deny > fence > read-only > plan-mode > ask > allow > mode-default. deny ALWAYS wins, even under bypass mode.",
+  "_comment": "Sample permission rules for CODE_PERMISSIONS_CONFIG. Copy to permissions.json and point CODE_PERMISSIONS_CONFIG at it. Matcher is tool_name(pattern). For run_command the pattern is a command prefix ('pytest:*' matches 'pytest -q', bare is exact, '*' is any). For file tools (read_file/write_file/edit_file/grep/glob) the pattern is a workspace-relative path glob ('src/**'). Precedence: deny > fence > read-only > plan-mode > ask > allow > mode-default. deny ALWAYS wins, even under bypass; ask PROMPTS an interactive human and BLOCKS when none is present. Secret files (.env, *.pem, keys - see CODE_SECRET_FILES) are read REDACTED and skipped by grep, so a token never reaches a tool result / the trajectory even though the file is no longer hard-denied.",
 
-  "deny": [
+  "deny": [],
+
+  "ask": [
     "run_command(rm:*)",
     "run_command(sudo:*)",
     "run_command(curl:*)",
     "run_command(wget:*)",
-    "read_file(.env)",
-    "edit_file(.git/**)",
-    "delete_file(.env)",
-    "delete_file(.git/**)"
-  ],
-
-  "ask": [
     "run_command(git push:*)",
     "run_command(git commit:*)",
+    "edit_file(.git/**)",
+    "delete_file(.git/**)",
     "edit_file(.env)",
-    "write_file(.env)"
+    "write_file(.env)",
+    "delete_file(.env)"
   ],
 
   "allow": [

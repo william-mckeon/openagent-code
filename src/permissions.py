@@ -27,9 +27,21 @@ human is present, so an unattended run can only ever be more restrictive, not le
 import os
 import re
 import sys
+import fnmatch
 
 from . import config
 from . import execpolicy
+
+
+def _references_secret(cmd):
+    """True if a command mentions a secret file (`cat .env`, `Get-Content id_rsa`). Used to STOP the
+    execpolicy read-only relaxation from AUTO-running a read of a secret file (which would print the
+    token to the tool result -> the trajectory/corpus, bypassing read_file's redaction)."""
+    for tok in re.split(r"[\s'\"=|;&()<>]+", cmd or ""):
+        base = os.path.basename(tok.replace("\\", "/"))
+        if base and any(fnmatch.fnmatch(base, g) for g in config.SECRET_FILE_GLOBS):
+            return True
+    return False
 
 
 def _shell_name():
@@ -224,7 +236,9 @@ class Permissions:
             r = self._match_command_rules(self.deny, seg)
             if r:
                 return D(False, "deny", f"deny rule {r!r}", r)
-        if a.worst == execpolicy.READ_ONLY:                      # a read-only command is safe anywhere
+        # a read-only command is safe anywhere — EXCEPT one that reads a secret file (`cat .env`), which
+        # would print the token to the result; make it fall through to the mode gate instead of auto-run.
+        if a.worst == execpolicy.READ_ONLY and not _references_secret(t.raw):
             return D(True, "allow", "read-only command (execpolicy)")
         if self.mode == "plan":
             return D(False, "deny", "plan mode is read-only")

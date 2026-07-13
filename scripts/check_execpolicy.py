@@ -101,6 +101,9 @@ def main():
           not ro.decide("run_command", {"command": "npm install"}, ctx).allowed)
     check("a REDIRECT is NOT relaxed by the gate (git ls-files > out.txt is a write, so it's gated)",
           not ro.decide("run_command", {"command": "git ls-files > out.txt"}, ctx).allowed)
+    check("a read-only command that READS a secret file (cat .env) is NOT relaxed (would leak the token)",
+          not ro.decide("run_command", {"command": "cat .env"}, ctx).allowed
+          and not ro.decide("run_command", {"command": "Get-Content id_rsa"}, ctx).allowed)
     check("a MUTATING command is still blocked in plan mode",
           not Permissions("plan", {}, []).decide("run_command", {"command": "npm install"}, ctx).allowed)
 
