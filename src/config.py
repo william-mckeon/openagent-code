@@ -284,6 +284,12 @@ VERIFY_TIMEOUT = int(os.environ.get("CODE_VERIFY_TIMEOUT", "60"))
 # default -> permissions.decide() never consults execpolicy and the prefix matcher path is unchanged.
 EXECPOLICY = _as_bool(os.environ.get("CODE_EXECPOLICY", "false"))
 
+# sandbox — FS confinement (Phase 17 / specs/0017). Extend the workspace fence to run_command's WRITES:
+# a command whose output redirect or write-command destination resolves OUTSIDE cwd + CODE_ADD_DIRS is
+# REFUSED, so it can't write past the fence even under an allow rule / bypass. Off by default ->
+# run_command never consults the sandbox and is byte-identical to today.
+SANDBOX = _as_bool(os.environ.get("CODE_SANDBOX", "false"))
+
 
 def resolved_permission_mode() -> str:
     """The effective mode: explicit CODE_PERMISSION_MODE, else derived from

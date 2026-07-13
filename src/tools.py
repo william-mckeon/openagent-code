@@ -326,6 +326,17 @@ def edit_file(args, ctx):
 
 def run_command(args, ctx):
     cmd = args["command"]
+    # FS confinement (Phase 17 / specs/0017): extend the workspace fence to run_command's WRITES. A
+    # redirect / write-command destination that resolves outside cwd + granted dirs is refused, so a
+    # command can't write past the fence even under an allow rule / bypass. OFF -> byte-identical.
+    if config.SANDBOX:
+        from . import sandbox
+        roots = [ctx.cwd] + list(getattr(getattr(ctx, "permissions", None), "extra_roots", []) or [])
+        esc = sandbox.escapes(cmd, ctx.cwd, roots, "powershell" if os.name == "nt" else "bash")
+        if esc:
+            return ToolResult(False, "sandbox: this command writes outside your workspace "
+                              f"({', '.join(esc)}) - refused. Write only inside the workspace "
+                              "(or a folder granted with --add-dir).")
     shell_cmd = (["powershell", "-NoProfile", "-Command", cmd] if os.name == "nt"
                  else ["bash", "-lc", cmd])
     try:
