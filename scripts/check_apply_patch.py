@@ -48,6 +48,7 @@ def _env(*lines):
 
 def main():
     config.GUARDIAN = False   # hermetic: decide_move here tests the mode logic, not the guardian (own harness)
+    config.HOOKS = False       # and not hooks (their own harness)
     # -- 1. a valid multi-op patch: Add / Update / Delete / Move all land ------
     d = tempfile.mkdtemp(prefix="applypatch_")
     _w(d, "upd.py", "def f():\n    return 1\n")

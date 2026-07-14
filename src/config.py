@@ -298,6 +298,15 @@ GUARDIAN = _as_bool(os.environ.get("CODE_GUARDIAN", "false"))
 _gd_effort = os.environ.get("CODE_GUARDIAN_EFFORT", "").strip().lower()
 GUARDIAN_EFFORT = _gd_effort if _gd_effort in _EFFORTS else ""
 
+# hooks (Phase 15 / specs/0015). Opt-in, FAIL-OPEN lifecycle scripts around every tool call: a PreToolUse
+# hook can DENY any tool (a policy about the EFFECT, not the tool name - closes "deny is tool-scoped"); a
+# PermissionRequest hook can approve/deny an ask-tier call (deterministic sibling of the guardian); a
+# PostToolUse hook observes the result. A missing / crashing / slow / non-JSON hook is IGNORED (fail-open)
+# - hooks add restrictions + observability, they NEVER weaken the deny rules + fence + sandbox. Off by
+# default -> decide() / the tool loop never consult hooks and are byte-identical to today.
+HOOKS = _as_bool(os.environ.get("CODE_HOOKS", "false"))
+HOOKS_CONFIG = _resolve_install_path(os.environ.get("CODE_HOOKS_CONFIG", ""))
+
 
 def resolved_permission_mode() -> str:
     """The effective mode: explicit CODE_PERMISSION_MODE, else derived from
@@ -315,6 +324,21 @@ def load_permission_rules() -> dict:
         return empty
     try:
         with open(PERMISSIONS_CONFIG, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return empty
+    return {k: list(data.get(k) or []) for k in empty}
+
+
+def load_hooks_config() -> dict:
+    """Read PreToolUse / PostToolUse / PermissionRequest hook entries from CODE_HOOKS_CONFIG. Missing /
+    unset / bad file -> no hooks. Never raises. Each entry: {"command": "<shell command>", "tools":
+    ["write_file", ...] (optional filter), "timeout": <seconds> (optional)}."""
+    empty = {"PreToolUse": [], "PostToolUse": [], "PermissionRequest": []}
+    if not HOOKS_CONFIG or not os.path.isfile(HOOKS_CONFIG):
+        return empty
+    try:
+        with open(HOOKS_CONFIG, encoding="utf-8") as f:
             data = json.load(f)
     except (OSError, ValueError):
         return empty

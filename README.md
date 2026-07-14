@@ -83,6 +83,7 @@ openagent-code/
 │   ├── execpolicy.py         # parse run_command into segments, classify read-only/mutating/dangerous (specs/0016)
 │   ├── sandbox.py            # FS confinement: fence run_command's writes to the workspace (specs/0017)
 │   ├── guardian.py           # fail-closed LLM approval reviewer for the ask tier (specs/0019)
+│   ├── hooks.py              # opt-in, fail-open PreToolUse/PostToolUse/PermissionRequest hooks (specs/0015)
 │   ├── skills.py             # skills (specs/0008): SKILL.md workflows; run_skill fans out captured concern subagents
 │   ├── memory.py             # cross-session project memory — load + remember (Phase 4)
 │   ├── context.py            # ContextManager — live context + compaction (Phase 4)

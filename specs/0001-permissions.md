@@ -18,8 +18,9 @@ the same way: pick a **mode** (how much to auto-approve), layer **rules** (allow
 the project directory (plus any dirs you explicitly grant). Deny always wins, so a
 headless auto-run can still hard-block dangerous commands.
 
-Hooks (programmable `PreToolUse`/`PostToolUse` gates) are the **second pass** — this
-spec is the Core engine, and is designed so hooks slot in later without rework.
+Hooks (programmable `PreToolUse`/`PostToolUse`/`PermissionRequest` gates) were the **second pass** —
+this spec is the Core engine, designed with a single `decide()` seam so hooks slot in without rework.
+That pass is now built: see **specs/0015-hooks.md**.
 
 ## Concepts
 
@@ -82,8 +83,8 @@ allowed roots is blocked.
 
 ## Non-goals (this pass)
 
-- **Hooks** (`PreToolUse`/`PostToolUse` shell gates) — the second pass. The engine
-  exposes a single `decide(tool, target, ctx)` seam so a hook layer wraps it later.
+- **Hooks** (`PreToolUse`/`PostToolUse` shell gates) — the second pass, now built (specs/0015). The
+  engine exposes a single `decide(tool, target, ctx)` seam, and the hook layer wraps it there.
 - **Layered settings hierarchy** (Claude Code's user/project/local `settings.json`
   precedence) — one `CODE_PERMISSIONS_CONFIG` file for now.
 - **Mid-session mode switching UI** (a `/permissions` panel) — mode is set at start via

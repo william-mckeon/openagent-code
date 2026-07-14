@@ -45,6 +45,7 @@ def main():
     # headless ask-tier cases through the guardian (no-spawn -> deny), masking the real prompt/block path.
     config.EXECPOLICY = False
     config.GUARDIAN = False
+    config.HOOKS = False
     ws = tempfile.mkdtemp(prefix="perm-check-")
     ctx = Ctx(ws)
     inside = "foo.py"

@@ -105,6 +105,13 @@ class Permissions:
 
     def decide(self, tool, args, ctx):
         t = self._target(tool, args, ctx)
+        # PreToolUse hooks (Phase 15): an explicit hook DENY hard-blocks ANY tool BEFORE the engine runs,
+        # so a policy can be about the EFFECT (a path / content pattern), not the tool NAME — this is what
+        # closes "deny is only tool-scoped." Fail-open + flag-off -> None, a no-op (byte-identical).
+        h = self._hooks_pretool(tool, t, args, ctx)
+        if h is not None:
+            return Decision(False, tool, (t.rel if t.kind == "path" else t.raw), "deny",
+                            f"PreToolUse hook: {h.message or 'blocked'}", None, self.mode)
         # run_command gated on the PARSED command (execpolicy, Phase 16): deny/ask/allow rules match ANY
         # segment (the `rm` inside `cd x && rm y`) and a wholly read-only command is allowed like a read
         # tool. OFF (default) -> decide() never consults execpolicy and the prefix path below is unchanged.
@@ -137,9 +144,9 @@ class Permissions:
         # 5. ask — guardian reviews (fail-closed), else prompt a human, else block.
         r = self._match(self.ask, tool, t)
         if r:
-            g = self._guardian(tool, t, f"ask rule {r!r}", ctx)
-            if g is not None:
-                return D(g.approved, "ask", f"ask rule {r!r} -> guardian {'approved' if g.approved else 'denied'}: {g.reason}", r)
+            a = self._ask_approver(tool, t, f"ask rule {r!r}", ctx)
+            if a is not None:
+                return D(a[0], "ask", f"ask rule {r!r} -> {a[1]}", r)
             if getattr(ctx, "interactive", False):
                 ok = self._prompt(tool, t)
                 return D(ok, "ask", f"ask rule {r!r} -> {'allowed' if ok else 'denied'} by user", r)
@@ -157,10 +164,10 @@ class Permissions:
             # apply_patch passes the OUTER gate here; patch.py still fences each op and blocks a
             # Delete/Move op in acceptEdits (delete_file isn't auto-approved), same as delete_file itself.
             return D(True, "allow", "acceptEdits mode")
-        # default mode (and acceptEdits for run_command): guardian reviews, else prompt or block.
-        g = self._guardian(tool, t, f"{self.mode} mode", ctx)
-        if g is not None:
-            return D(g.approved, "ask", f"{self.mode} mode -> guardian {'approved' if g.approved else 'denied'}: {g.reason}")
+        # default mode (and acceptEdits for run_command): auto-approver (hook/guardian), else prompt/block.
+        a = self._ask_approver(tool, t, f"{self.mode} mode", ctx)
+        if a is not None:
+            return D(a[0], "ask", f"{self.mode} mode -> {a[1]}")
         if getattr(ctx, "interactive", False):
             ok = self._prompt(tool, t)
             return D(ok, "ask", f"{self.mode} mode -> {'allowed' if ok else 'denied'} by user")
@@ -238,6 +245,37 @@ class Permissions:
             cache[key] = guardian.review(tool, shown, reason, ctx)
         return cache[key]
 
+    def _ask_approver(self, tool, t, reason, ctx):
+        """Auto-decide an ASK-tier call when a human isn't present: a PermissionRequest hook first
+        (deterministic, fail-open), then the guardian (LLM, fail-closed). Returns (approved, why) or None
+        to fall through to the human prompt / headless block. Both are top-level + headless-only."""
+        hv = self._hooks_permreq(tool, t, ctx)
+        if hv is not None:
+            return (hv.approved, f"PermissionRequest hook {'approved' if hv.approved else 'denied'}: {hv.reason}")
+        gv = self._guardian(tool, t, reason, ctx)
+        if gv is not None:
+            return (gv.approved, f"guardian {'approved' if gv.approved else 'denied'}: {gv.reason}")
+        return None
+
+    def _hooks_pretool(self, tool, t, args, ctx):
+        """A PreToolUse hook's DENY (or None). Fires whenever CODE_HOOKS is on — at EVERY depth, since a
+        hook is an external subprocess (no re-entrancy) and policy should apply to subagents too. OFF ->
+        None, byte-identical. Never raises (the runner is fail-open)."""
+        if not config.HOOKS:
+            return None
+        from . import hooks   # lazy: only when the flag is on; keeps permissions low-level
+        shown = t.rel if getattr(t, "kind", None) == "path" else (t.raw or tool)
+        return hooks.pretool(tool, shown, args, ctx)
+
+    def _hooks_permreq(self, tool, t, ctx):
+        """A PermissionRequest hook's verdict for an ask-tier call, or None. Headless-only + top-level,
+        like the guardian (a present human decides). OFF -> None. Never raises (fail-open)."""
+        if not (config.HOOKS and getattr(ctx, "depth", 0) == 0 and not getattr(ctx, "interactive", False)):
+            return None
+        from . import hooks
+        shown = t.rel if getattr(t, "kind", None) == "path" else (t.raw or tool)
+        return hooks.permission_request(tool, shown, ctx)
+
     def _decide_command(self, t, ctx):
         """Gate run_command on execpolicy's parsed segments: deny/ask/allow rules match ANY segment (so
         run_command(rm:*) catches `cd x && rm y`), and a wholly READ-ONLY command (ls, git status) is
@@ -260,9 +298,9 @@ class Permissions:
         for seg in candidates:                                   # ask — matches ANY segment
             r = self._match_command_rules(self.ask, seg)
             if r:
-                g = self._guardian("run_command", t, f"ask rule {r!r}", ctx)
-                if g is not None:
-                    return D(g.approved, "ask", f"ask rule {r!r} -> guardian {'approved' if g.approved else 'denied'}: {g.reason}", r)
+                a = self._ask_approver("run_command", t, f"ask rule {r!r}", ctx)
+                if a is not None:
+                    return D(a[0], "ask", f"ask rule {r!r} -> {a[1]}", r)
                 if getattr(ctx, "interactive", False):
                     ok = self._prompt("run_command", t)
                     return D(ok, "ask", f"ask rule {r!r} -> {'allowed' if ok else 'denied'} by user", r)
@@ -273,9 +311,9 @@ class Permissions:
                 return D(True, "allow", f"allow rule {r!r}", r)
         if self.mode == "bypass":
             return D(True, "allow", "bypass mode")
-        g = self._guardian("run_command", t, f"{self.mode} mode", ctx)
-        if g is not None:
-            return D(g.approved, "ask", f"{self.mode} mode -> guardian {'approved' if g.approved else 'denied'}: {g.reason}")
+        a = self._ask_approver("run_command", t, f"{self.mode} mode", ctx)
+        if a is not None:
+            return D(a[0], "ask", f"{self.mode} mode -> {a[1]}")
         if getattr(ctx, "interactive", False):
             ok = self._prompt("run_command", t)
             return D(ok, "ask", f"{self.mode} mode -> {'allowed' if ok else 'denied'} by user")
@@ -311,9 +349,9 @@ class Permissions:
         if self.mode in ("bypass", "acceptEdits"):
             return D(True, "allow", f"{self.mode} mode (a rename is edit-level)", target=old_path)
         _wt = self._target("write_file", {"path": new_path}, ctx)
-        g = self._guardian("apply_patch move", _wt, "a Move in default mode", ctx)
-        if g is not None:
-            return D(g.approved, "ask", f"default mode -> guardian {'approved' if g.approved else 'denied'}: {g.reason}", target=old_path)
+        a = self._ask_approver("apply_patch move", _wt, "a Move in default mode", ctx)
+        if a is not None:
+            return D(a[0], "ask", f"default mode -> {a[1]}", target=old_path)
         if getattr(ctx, "interactive", False):
             ok = self._prompt("apply_patch move", _wt)
             return D(ok, "ask", f"default mode -> {'allowed' if ok else 'denied'} by user", target=old_path)

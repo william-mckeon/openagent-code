@@ -1,0 +1,23 @@
+{
+  "_comment": "Phase 15 hooks (specs/0015). Point CODE_HOOKS_CONFIG at a copy of this file and set CODE_HOOKS=true. Each hook is a shell command; it receives the call context as JSON on stdin and returns {\"decision\": \"allow|deny|ask\", \"message\": \"...\"} as JSON on stdout. FAIL-OPEN: a missing/crashing/slow/non-JSON hook is ignored. PreToolUse can only tighten (deny); it cannot force-allow past the deny rules + fence.",
+
+  "PreToolUse": [
+    {
+      "command": "python .code/hooks/no_touch_infra.py",
+      "tools": ["write_file", "edit_file", "apply_patch", "run_command"],
+      "timeout": 10
+    }
+  ],
+
+  "PermissionRequest": [
+    {
+      "command": "python .code/hooks/auto_approve_reads.py"
+    }
+  ],
+
+  "PostToolUse": [
+    {
+      "command": "python .code/hooks/annotate_trajectory.py"
+    }
+  ]
+}

@@ -128,7 +128,7 @@ Build order TBD when we get here; rough priority is compaction → subagents fir
    MCP transport (stdio only today); npx-based MCP servers need a custom Docker image
    (default image is python+git only); watch eval as the toolset grows (gpt-oss
    tool-calling degrades with too many tools).
-6. **Granular permissions + hooks** — ✅ CORE BUILT (hooks = pass 2). Ported Claude
+6. **Granular permissions + hooks** — ✅ BUILT (hooks landed in specs/0015). Ported Claude
    Code's permission model into a real engine (`src/permissions.py`) gated at DISPATCH
    (`src/agent.py` calls `permissions.decide(...)` before every tool, captured as a
    `permission` record, trajectory 0.6.0 — subagent-safe because the decision binds to
@@ -140,8 +140,8 @@ Build order TBD when we get here; rough priority is compaction → subagents fir
    `specs/0001-permissions.md` and checked by `scripts/check_permissions.py` (19/19, no
    model needed); eval stayed 13/13 (back-compat: unset mode derives from CODE_AUTO_APPROVE).
    Headless-safe by construction: ask/default BLOCK (never allow) with no human present.
-   **Deferred to pass 2**: programmable `PreToolUse`/`PostToolUse` hooks (the engine
-   exposes a single `decide()` seam so they wrap it without rework).
+   **Pass 2 (specs/0015) ✅**: programmable `PreToolUse`/`PermissionRequest`/`PostToolUse` hooks now wrap
+   the `decide()` seam — opt-in, fail-open, and (for headless runs) able to auto-decide the ask tier.
 7. **Cross-session memory** — ✅ BUILT. Ported Claude Code's project-memory idea
    (`src/memory.py` + the `remember` tool): the agent appends durable notes about a
    repo to `<workspace>/.openagent/memory.md`, and `cli`/`session` load that file into
@@ -203,15 +203,16 @@ Build order TBD when we get here; rough priority is compaction → subagents fir
      Bedrock token in `.env` during a review and broke auth.)
 
 **Deferred — Phase 4 is NOT fully closed (don't forget these):**
-- **Hooks** (item 6, pass 2) — programmable `PreToolUse`/`PostToolUse`. The deterministic enforcement
-  layer; the `.env`-overwrite incident is its motivating case. The engine already exposes one `decide()`
-  seam for it. **The main open Phase-4 item.**
+- **Hooks** (item 6, pass 2) — ✅ BUILT in specs/0015 (`PreToolUse`/`PermissionRequest`/`PostToolUse`,
+  fail-open). The deterministic enforcement layer the `.env`-overwrite incident motivated. (Follow-ups:
+  ask-escalation, PostToolUse veto, trajectory hook-records — see specs/0015 non-goals.)
 - **Mid-task interrupt** (item 4) — Ctrl-C steering (needs concurrency).
 - **MCP transports** (item 5) — HTTP/SSE (stdio only today); npx servers need a custom Docker image.
 - **Memory pruning / auto-extraction** (item 7).
 
 ~5 of these = a *foundational* agent; all 8 = broad agent-capability parity. Items 1-8 cores + item 9
-are built; **hooks are the notable gap.**
+are built; the enforcement layer (hooks) now lands too — **the remaining gaps are interrupt + MCP
+transports + memory pruning.**
 
 ### Phase 5 — the distillation flywheel (make the MODEL)  → specs/0005-distillation.md
 The harness is built; this phase produces the *model*. Use the flywheel + a strong teacher
@@ -265,8 +266,7 @@ Windows DLL block + torch/peft version clash. Not RunPod, not Bedrock (both are 
 SageMaker (Script Mode, prebuilt PyTorch container) — no local Docker/GPU, spot-capable, adapter
 pulled back for merge/gate. Adapted from Arcus's launcher; local Docker stays the validation bench.
 **Next: `docker compose build train` → `train-smoke` (CPU proof) → the real `--gpus` run on gpt-oss-20b**,
-then Stage 6 (distill → gate → serve → swap) and Stage 7 (close the loop). Loose ends: grow the corpus,
-and the deferred Phase-4 **hooks** pass.
+then Stage 6 (distill → gate → serve → swap) and Stage 7 (close the loop). Loose end: grow the corpus.
 
 The only genuine code is `train/sft.py` + the one `model.py` reasoning tweak; the whole `src/`
 harness is otherwise the reusable body the student steps into. Caveats (in the spec): distillation
@@ -411,9 +411,13 @@ built in independently shippable sub-phases. Build order is by *what unblocks wh
   then an atomic, fenced, grammar-validated `apply_patch` for multi-file Add/Update/Delete/Move.
 - **0014 auto-verify** ✅ BUILT — run lint/test/compile on TOUCHED files, feed errors back as a bounded
   reflection turn (a third gate, after completion + grounding), record pass/fail as an objective reward.
-- **0015 hooks** — opt-in, fail-open lifecycle scripts (PreToolUse / PostToolUse / PermissionRequest) —
-  the deferred Phase-4 hooks item, promoted to a full phase; closes "deny is only tool-scoped." (Deferred:
-  execpolicy was pulled ahead since the ride stressed run_command.)
+- **0015 hooks** ✅ BUILT (2026-07) — opt-in, FAIL-OPEN lifecycle scripts (PreToolUse / PostToolUse /
+  PermissionRequest). A PreToolUse `deny` hard-blocks ANY tool (policy about the EFFECT, not the tool
+  name — **closes "deny is only tool-scoped"**); a PermissionRequest hook is the deterministic,
+  headless-only sibling of the guardian; PostToolUse observes the result. A broken/slow/non-JSON hook is
+  ignored (fail-open) — hooks only ADD restrictions + observability, never weaken the deny rules + fence +
+  sandbox. `CODE_HOOKS` (+ `CODE_HOOKS_CONFIG`), default off; `check_hooks` (17). v1 non-goals: ask-
+  escalation, PostToolUse veto, trajectory hook-records (deferred in specs/0015).
 - **0016 execpolicy** ✅ BUILT (2026-07) — parse `run_command` (bash + PowerShell 5.1) into segments,
   classify read-only / mutating / dangerous, gate on the parse instead of a raw prefix (a deny matches
   ANY segment; a read-only command is allowed like a read tool). Additive precision, feeds 0017/0019.
@@ -461,4 +465,4 @@ All donor patterns are **rewritten clean as our own Python**; no external agent 
 
 ## Status line
 
-Phase 0 ✅ · Phase 1 ✅ (eval now 13 tasks, 13/13 — harder tier added, ceiling not yet found) · Phase 2 ✅ · Phase 3 ✅ · **Phase 4 — compaction ✅ + subagents ✅ + planning ✅ + interactivity ✅ + tool-breadth ✅ + cold-start handling ✅ + permissions Core ✅ + cross-session memory ✅. Remaining: permission hooks (#6 pass 2) + the always-open robustness/eval-ceiling tail** · **Phase 5 — distillation flywheel (gpt-oss-120b/Bedrock teacher → distilled student): Stage 1 (documented) ✅; Stages 2-7 staged (specs/0005)** · **Adoption Track (Phase 12–19): `0012` situational-context ✅ · `0013` edit-layer ✅ · `0014` auto-verify ✅ · `0016` execpolicy ✅ · `0017` sandbox-FS ✅ · `0019` guardian ✅ · remaining: `0015` hooks + `0018` sandbox-net (admin/WFP, own timeline). Foundation hardened by a full adversarial audit (19/19 fixed) + live rides — see docs/AUDIT-FINDINGS.md**.
+Phase 0 ✅ · Phase 1 ✅ (eval now 13 tasks, 13/13 — harder tier added, ceiling not yet found) · Phase 2 ✅ · Phase 3 ✅ · **Phase 4 — compaction ✅ + subagents ✅ + planning ✅ + interactivity ✅ + tool-breadth ✅ + cold-start handling ✅ + permissions Core ✅ + cross-session memory ✅ + permission hooks ✅ (specs/0015). Remaining: the always-open robustness/eval-ceiling tail** · **Phase 5 — distillation flywheel (gpt-oss-120b/Bedrock teacher → distilled student): Stage 1 (documented) ✅; Stages 2-7 staged (specs/0005)** · **Adoption Track (Phase 12–19): `0012` situational-context ✅ · `0013` edit-layer ✅ · `0014` auto-verify ✅ · `0015` hooks ✅ · `0016` execpolicy ✅ · `0017` sandbox-FS ✅ · `0019` guardian ✅ · remaining: `0018` sandbox-net (admin/WFP, own timeline). Foundation hardened by a full adversarial audit (19/19 fixed) + live rides — see docs/AUDIT-FINDINGS.md**.

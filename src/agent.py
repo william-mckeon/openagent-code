@@ -232,6 +232,13 @@ class Agent:
                     self.traj.log_tool_call(step, name, args, result, retry_index)
                     consecutive_fail[name] = 0 if result.ok else retry_index + 1
 
+                    # PostToolUse hooks (Phase 15): observe the executed call (side effects / telemetry /
+                    # trajectory annotation). Observe-only + fail-open — never alters `result`, never
+                    # raises. Flag-off -> skipped entirely (byte-identical).
+                    if config.HOOKS:
+                        from . import hooks
+                        hooks.posttool(name, args, result, ctx)
+
                     # A completed review_repo digest carries the per-area findings the lead must
                     # synthesize from PLUS a "synthesize now, don't re-review" trailer. The review's own
                     # token weight trips compaction on the next step, which would lossy-summarize both

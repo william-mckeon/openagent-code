@@ -73,6 +73,7 @@ def main():
 
     # -- permissions integration: the guardian decides the ASK tier, HEADLESS ----------------------------
     _saved = config.GUARDIAN
+    config.HOOKS = False   # hermetic: no PermissionRequest hook shadowing the guardian in the ask chain
     config.GUARDIAN = True
     p = Permissions("default", {"ask": ["edit_file(.env)"]}, [])
     calls = []
