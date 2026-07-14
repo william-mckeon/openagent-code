@@ -279,6 +279,11 @@ _ANSWER_META = re.compile(
     r"\b(?:now\s+)?(?:we|i|let'?s|let\s+me)\s+"
     r"(?:need\s+to|will|should|must|'?ll|are\s+going\s+to|can|now\s+|)\s*"
     r"(?:output|produce|write|give|provide|generate|craft|compose|emit|present)\s+"
+    r"(?:the\s+|a\s+|our\s+)?final\s+(?:answer|response|reply|output)\b"
+    # the IMPERATIVE, subjectless form a live centpilot run leaked ("Now produce final answer.**Cent...")
+    # — no we/I subject, so the branch above misses it; the leading "now" cue keeps it from matching
+    # ordinary content, and the "final answer" deliverable phrase is the same narrow discriminator.
+    r"|\bnow[,:]?\s+(?:output|produce|write|give|provide|generate|craft|compose|emit|present)\s+"
     r"(?:the\s+|a\s+|our\s+)?final\s+(?:answer|response|reply|output)\b",
     re.IGNORECASE)
 # Excise the leaked meta clause from the meta phrase up to a real-answer anchor GLUED onto its tail on
@@ -357,14 +362,18 @@ def strip_reasoning_preamble(text):
     if not text:
         return ""
     original = text
+    # Excise a glued meta clause FIRST ("...Now produce final answer.**Answer**" -> "**Answer**"), so a
+    # real-answer anchor that was welded onto the tail of the meta becomes a line start the leading cut
+    # below can then find. (Order matters: a live run leaked a whole opening preamble ending in a glued
+    # "Now produce final answer.**CentPilot**...", which the old leading-first order couldn't anchor on.)
+    text = _META_STRIP.sub("", text)
+    text = _CONCLUSION_STRIP.sub("", text)   # strip a 'thus the final answer:' clause up to a real anchor
     if looks_like_reasoning_preamble(text):
         lines = text.splitlines()
         for i, line in enumerate(lines):
             if i and _ANSWER_ANCHOR.match(line):
                 text = "\n".join(lines[i:]).lstrip("\n")
                 break
-    text = _META_STRIP.sub("", text)
-    text = _CONCLUSION_STRIP.sub("", text)   # strip a 'thus the final answer:' clause up to a real anchor
     if text == original:
         return original  # nothing stripped -> leave the answer whole (old conservative behavior)
     return re.sub(r"\n{3,}", "\n\n", re.sub(r"[ \t]+\n", "\n", text)).strip()

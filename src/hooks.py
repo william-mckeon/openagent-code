@@ -116,9 +116,24 @@ def _decision(data):
 
 
 def _payload(event, tool, target, args, ctx):
-    return {"event": event, "tool": tool, "target": str(target),
-            "args": args if isinstance(args, dict) else {},
+    a = args if isinstance(args, dict) else {}
+    return {"event": event, "tool": tool, "target": str(target), "args": a,
+            "paths": _paths(tool, a),   # uniform: every file a hook can gate on, ACROSS tools
             "cwd": getattr(ctx, "cwd", None), "depth": getattr(ctx, "depth", 0)}
+
+
+def _paths(tool, args):
+    """Every path a call TOUCHES, uniform across tools — so a hook checks one field instead of learning
+    each tool's arg shape. apply_patch hides its targets INSIDE the patch body (the ride-3 hole), so we
+    parse them out here, once, in core."""
+    if tool == "apply_patch" and args.get("patch"):
+        try:
+            from . import patch   # lazy: avoid any import cycle with permissions
+            return patch.patch_paths(args["patch"])
+        except Exception:  # noqa: BLE001 - payload enrichment must never break the runner
+            return []
+    p = args.get("path")
+    return [p] if p else []
 
 
 def _target_of(args):

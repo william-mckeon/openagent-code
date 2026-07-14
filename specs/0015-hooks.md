@@ -22,6 +22,10 @@ hook is **tighten-only**: it can `deny`, it can never force-`allow` past a deny 
 
 Protocol: a hook receives the call context as JSON on stdin and returns one JSON object on stdout —
 `{"decision": "allow"|"deny"|"ask", "message": "<why>"}`. No / invalid / empty output = no opinion.
+The payload includes a uniform **`paths`** list — every file the call touches, ACROSS tools — so a hook
+gates on one field instead of learning each tool's arg shape. `apply_patch` hides its targets inside the
+patch body, so the runner parses them out (via `patch.patch_paths`, best-effort even on a malformed hunk)
+into `paths` — otherwise `apply_patch` would slip a path-based hook (the ride-4 hole).
 
 ## Acceptance
 - `src/config.py`: `CODE_HOOKS` (default false) + `CODE_HOOKS_CONFIG` (a path) + `load_hooks_config()`

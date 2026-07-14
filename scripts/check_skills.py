@@ -235,6 +235,22 @@ def main():
     check("strip removes the conclusion meta, keeps the first sentence + the real header",
           "Thus the final answer" not in _cs and "**Answer**" in _cs
           and "The compose file mounts docker/auth/init.sql." in _cs)
+    # ride-4 leak: a whole OPENING preamble that ends in an IMPERATIVE, subjectless "Now produce final
+    # answer." with the real answer GLUED onto its tail (no we/I subject, no line break) — the old
+    # leading-first order + subject-required _ANSWER_META missed it entirely.
+    _imp = ('We have enough evidence.\n\nNow answer: "what project is this?" Provide a concise '
+            'description: CentPilot is a budgeting app.\nWe need to ground claims: README lines 1-6.\n\n'
+            'Now produce final answer.**CentPilot** is a zero-based budgeting platform.')
+    check("has_reasoning_leak catches an imperative 'Now produce final answer' leak",
+          has_reasoning_leak(_imp))
+    _is = strip_reasoning_preamble(_imp)
+    check("strip cleans the imperative leak: whole preamble gone, the real answer kept verbatim",
+          _is.startswith("**CentPilot** is a zero-based budgeting platform")
+          and "Now produce final answer" not in _is and "We have enough evidence" not in _is
+          and "We need to ground claims" not in _is)
+    check("imperative discriminator stays narrow ('now provide a response' w/o 'final' not flagged)",
+          not has_reasoning_leak("Now provide a response to the user within the SLA window.")
+          and strip_reasoning_preamble("Now provide a response to the user.") == "Now provide a response to the user.")
     check("conclusion-leak discriminator stays narrow ('the final release' / 'a response' not flagged)",
           not has_reasoning_leak("We shipped the final release of the parser.")
           and not has_reasoning_leak("The handler returns a response to the caller."))

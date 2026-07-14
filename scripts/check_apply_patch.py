@@ -49,6 +49,12 @@ def _env(*lines):
 def main():
     config.GUARDIAN = False   # hermetic: decide_move here tests the mode logic, not the guardian (own harness)
     config.HOOKS = False       # and not hooks (their own harness)
+
+    # patch_paths: the best-effort target extractor a permission hook uses (specs/0015 apply_patch hole).
+    _pp = patch.patch_paths("*** Begin Patch\n*** Update File: docs/x.md\ngarbage\n"
+                            "*** Delete File: a/b.txt\n*** Move File: c.py -> d.py\n*** End Patch")
+    check("patch_paths: every touched path incl. move endpoints, despite a malformed hunk body",
+          _pp == ["docs/x.md", "a/b.txt", "c.py", "d.py"])
     # -- 1. a valid multi-op patch: Add / Update / Delete / Move all land ------
     d = tempfile.mkdtemp(prefix="applypatch_")
     _w(d, "upd.py", "def f():\n    return 1\n")

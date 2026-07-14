@@ -55,7 +55,14 @@ _STUBS = {
     "sleep.py":   "import sys,time; sys.stdin.read(); time.sleep(2); print('{}')",
     "marker.py":  ("import sys,json,os; json.load(sys.stdin); "
                    "open(os.path.join(os.path.dirname(os.path.abspath(__file__)),'POSTHOOK_RAN'),'w').close()"),
+    # path-aware: denies when ANY touched path is under docs/ (reads the runner's uniform `paths` field)
+    "deny_paths.py": ("import sys,json\np=json.load(sys.stdin)\n"
+                      "if any('docs/' in str(x).lower() for x in (p.get('paths') or [])):\n"
+                      "    print(json.dumps({'decision':'deny','message':'a path under docs/'}))"),
 }
+
+_PATCH_DOCS = "*** Begin Patch\n*** Update File: docs/FEATURES.md\ngarbage-hunk\n*** End Patch"
+_PATCH_README = "*** Begin Patch\n*** Update File: README.md\ngarbage-hunk\n*** End Patch"
 
 
 def main():
@@ -102,6 +109,16 @@ def main():
 
     set_hooks({"PreToolUse": [{"command": cmd("allow.py")}]})
     check("pretool: an 'allow' verdict is no-opinion (tighten-only) -> None", hooks.pretool("write_file", "x.py", {}, ctx) is None)
+
+    # apply_patch hides its targets INSIDE the patch body — the runner parses them into `paths` so a
+    # path-aware hook can gate them (the ride-3 hole where apply_patch slipped the docs/ protection).
+    check("payload: apply_patch targets are parsed from the patch body into `paths`",
+          hooks._payload("PreToolUse", "apply_patch", "", {"patch": _PATCH_DOCS}, ctx)["paths"] == ["docs/FEATURES.md"])
+    set_hooks({"PreToolUse": [{"command": cmd("deny_paths.py")}]})
+    check("pretool: a path-aware hook DENIES apply_patch into docs/ (even with a malformed hunk body)",
+          hooks.pretool("apply_patch", "", {"patch": _PATCH_DOCS}, ctx) is not None)
+    check("pretool: the same hook leaves a non-docs apply_patch alone",
+          hooks.pretool("apply_patch", "", {"patch": _PATCH_README}, ctx) is None)
 
     # -- runner: PermissionRequest ----------------------------------------------------------------------
     set_hooks({"PermissionRequest": [{"command": cmd("allow.py")}]})

@@ -1,0 +1,16 @@
+{
+  "_comment": "Ride scaffolding for Phase 15. Uses the OpenCode venv python by absolute path so the hook always resolves, regardless of the child shell's PATH.",
+
+  "PreToolUse": [
+    {
+      "command": "C:/Users/willi/OneDrive/Desktop/OpenCode/.venv/Scripts/python.exe C:/Users/willi/OneDrive/Desktop/OpenCode/examples/hooks/deny_docs.py",
+      "tools": ["write_file", "edit_file", "apply_patch", "run_command"]
+    }
+  ],
+
+  "PostToolUse": [
+    {
+      "command": "C:/Users/willi/OneDrive/Desktop/OpenCode/.venv/Scripts/python.exe C:/Users/willi/OneDrive/Desktop/OpenCode/examples/hooks/log_calls.py"
+    }
+  ]
+}

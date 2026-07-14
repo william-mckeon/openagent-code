@@ -59,6 +59,25 @@ def _op_header(line):
     return None
 
 
+def patch_paths(text):
+    """Best-effort list of every path a patch envelope TOUCHES — add/update/delete path, and BOTH
+    endpoints of a move — read straight from the op HEADERS without requiring the hunk bodies to be
+    valid. So a permission hook can gate on the target ('this patch writes docs/') even when the model's
+    patch grammar is malformed. Never raises; returns [] on junk. Over-inclusive is fine (a protective
+    hook denying a bit more is the safe direction)."""
+    paths = []
+    for line in (text or "").splitlines():
+        hdr = _op_header(line.strip())
+        if hdr is None:
+            continue
+        kind, rest = hdr
+        if kind == "move" and "->" in rest:
+            paths += [p for p in (s.strip() for s in rest.split("->", 1)) if p]
+        elif rest:
+            paths.append(rest)
+    return paths
+
+
 def parse_patch(text):
     """Parse the envelope into typed ops. Raises PatchError (caught by apply_patch) on any malformed
     structure. Ops: {'op':'add','path','content'} | {'op':'update','path','hunks':[(old,new)]} |
