@@ -106,6 +106,7 @@ class Agent:
         ctx.spawn_count = 0
         ctx._reviewed_digest = None   # a new task may run review_repo fresh (the per-turn re-run guard)
         ctx._guardian_cache = {}      # per-turn guardian verdicts (specs/0019): a repeated command isn't re-reviewed
+        ctx.request = task            # pin the user's request so the guardian can weigh "is this what was asked"
         # Situational context (specs/0012): inject the agent's real environment (cwd / OS / shell / date
         # / granted dirs, + git branch when enabled) once per turn as a refreshed pin, so it conditions
         # on live state instead of confabulating it. Pinned (survives compaction) AND logged as a turn

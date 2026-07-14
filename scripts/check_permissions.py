@@ -51,6 +51,13 @@ def main():
     inside = "foo.py"
     outside_abs = os.path.realpath(os.path.join(ws, "..", "outside.txt"))
 
+    # _target for apply_patch summarizes what the patch DOES (specs/0019) — so the log line, the label,
+    # and the guardian's review see "delete CONTRIBUTING.md", not the opaque tool name.
+    _pt = Permissions("default", {}, [])._target(
+        "apply_patch", {"patch": "*** Begin Patch\n*** Delete File: CONTRIBUTING.md\n*** End Patch"}, ctx)
+    check("apply_patch target summarizes the patch (informative, not 'apply_patch')",
+          _pt.raw == "delete CONTRIBUTING.md")
+
     # plan mode — read-only
     p = Permissions("plan", {}, [])
     check("plan blocks write_file", not allowed(p, ctx, "write_file", path=inside, content="x"))

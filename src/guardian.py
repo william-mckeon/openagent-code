@@ -37,7 +37,8 @@ def review(tool, target, reason, ctx):
     if spawn is None:
         log.warning("guardian: no reviewer available - DENY (fail-closed)")
         return Verdict(False, "no reviewer available")
-    task = _review_task(tool, target, reason)
+    request = (getattr(ctx, "request", "") or "").strip()
+    task = _review_task(tool, target, reason, request)
     label = f"guardian: {tool}({_short(target)})"
     try:
         out = (spawn(task, effort=config.GUARDIAN_EFFORT, label=label)
@@ -77,21 +78,27 @@ def _short(target, n=48):
     return s if len(s) <= n else s[: n - 1] + "…"
 
 
-def _review_task(tool, target, reason):
+def _review_task(tool, target, reason, request=""):
+    req = request or "(not provided)"
     return (
-        "You are a fail-CLOSED SECURITY GUARDIAN. You approve or deny ONE tool action another agent wants "
-        "to take. You are NOT the coder and you do NOT perform the action. The call was gated for approval:\n\n"
-        f"  TOOL:          {tool}\n"
-        f"  TARGET:        {target}\n"
-        f"  WHY IT ASKED:  {reason}\n\n"
-        "APPROVE only if it is clearly SAFE and a reasonable step for a coding agent working INSIDE this "
-        "workspace - e.g. a routine git / test / build command, an edit or write to a project file. A "
-        "routine dependency install or build INSIDE this workspace (npm install / npm ci / npm run build, "
-        "pip install, yarn, pnpm, go build / go mod download / go test) is EXPECTED and safe - APPROVE it, "
-        "even though a package manager reaches the network to fetch its packages. DENY anything "
-        "destructive, exfiltrating, or out-of-scope: deleting or moving many files, touching .git "
-        "internals or secret files, ARBITRARY network calls to unknown hosts (curl / wget to a URL, "
-        "piping a remote script into a shell), writing OUTSIDE the workspace, or a command whose effect "
-        "you cannot determine. When UNSURE, DENY - denying is always safe here.\n"
+        "You are a fail-safe SECURITY GUARDIAN. An autonomous coding agent, working on the user's behalf "
+        "with NO human present to confirm, wants to take ONE tool action. You are NOT the coder and you do "
+        "NOT perform the action - you only approve or deny it.\n\n"
+        f"  THE USER'S REQUEST:  {req}\n"
+        f"  TOOL:                {tool}\n"
+        f"  TARGET:              {target}\n"
+        f"  WHY IT WAS GATED:    {reason}\n\n"
+        "APPROVE when the action is a reasonable step toward THE USER'S REQUEST and is not catastrophic. "
+        "This INCLUDES a destructive-but-REQUESTED operation: if the user asked to delete, replace, move, "
+        "or overwrite a SPECIFIC file and this action does exactly that to THAT file, APPROVE it. It also "
+        "includes routine git / test / build commands, a routine dependency install INSIDE the workspace "
+        "(npm/pip/go/yarn/pnpm - safe even though a package manager fetches over the network), and "
+        "ordinary edits or writes to project files.\n"
+        "DENY when the action EXCEEDS or DEVIATES from the request, or is catastrophic regardless of it: "
+        "deleting or moving MANY files or files the user never named, touching .git internals or secret "
+        "files (.env, keys), ARBITRARY network calls to unknown hosts, piping a remote script into a shell, "
+        "exfiltration, writing OUTSIDE the workspace, or an effect you cannot determine. If an action is "
+        "destructive and you canNOT tie it to the user's request, DENY. When UNSURE, DENY - denying is "
+        "always safe.\n"
         "You may read files to inform your decision, but do NOT change anything.\n\n"
         "Output EXACTLY one line: 'APPROVE: <short reason>' OR 'DENY: <short reason>'.")

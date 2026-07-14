@@ -17,6 +17,15 @@ It engages only when `ctx.interactive` is false (eval / Docker / one-shot / head
 the "operate at scale" case. An identical `(tool, target)` is reviewed **once per turn** (a cache on
 `ctx`), so a repeated command isn't re-litigated by a fresh subagent each time.
 
+**Useful-autonomy (ride-5 decision).** The reviewer sees the user's **pinned request** (`ctx.request`),
+so it can APPROVE a *destructive-but-requested* op — "delete the file X" → `delete_file(X)` — instead of
+reflexively denying every deletion when no human is present, while still denying anything that EXCEEDS or
+DEVIATES from the request (mass-deletion, files the user never named, exfiltration, out-of-workspace,
+`.git`/secret touches). Without this, an over-denial both blocks the task *and* trains give-up behavior
+into the corpus (the trajectory is labeled `completed`). And because `apply_patch` hides its targets in
+the patch body, the `_target` for it is summarized (`patch.patch_summary` → "delete CONTRIBUTING.md"), so
+the reviewer, the label, and the log line all see WHAT the patch does rather than an opaque "apply_patch".
+
 ## Acceptance
 - `src/guardian.py`: `review(tool, target, reason, ctx) -> bool` — spawns a captured reviewer via
   `ctx.spawn` (with `CODE_GUARDIAN_EFFORT`), parses its verdict, and returns True only on a clean

@@ -186,6 +186,14 @@ class Permissions:
             return _Target("path", raw, _rel(ap, ctx.cwd), ap)
         if tool == "run_command":
             return _Target("command", args.get("command", ""))
+        if tool == "apply_patch":
+            # apply_patch hides its targets INSIDE the patch body — summarize what it DOES so the log
+            # line, the label, and the guardian's review all see "delete CONTRIBUTING.md", not "apply_patch".
+            try:
+                from . import patch
+                return _Target("other", patch.patch_summary(args.get("patch", "")) or "apply_patch")
+            except Exception:  # noqa: BLE001 - a bad patch still gets a (useless-but-safe) generic target
+                return _Target("other", "apply_patch")
         if tool == "web_fetch":
             return _Target("other", args.get("url", ""))
         if tool == "web_search":

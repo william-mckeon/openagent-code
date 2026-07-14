@@ -55,6 +55,10 @@ def main():
                             "*** Delete File: a/b.txt\n*** Move File: c.py -> d.py\n*** End Patch")
     check("patch_paths: every touched path incl. move endpoints, despite a malformed hunk body",
           _pp == ["docs/x.md", "a/b.txt", "c.py", "d.py"])
+    # patch_summary: op-aware one-liner for the permission label / guardian review (specs/0019).
+    check("patch_summary: op KIND + path, so a reviewer sees delete-vs-update",
+          patch.patch_summary("*** Begin Patch\n*** Delete File: CONTRIBUTING.md\n*** End Patch")
+          == "delete CONTRIBUTING.md")
     # -- 1. a valid multi-op patch: Add / Update / Delete / Move all land ------
     d = tempfile.mkdtemp(prefix="applypatch_")
     _w(d, "upd.py", "def f():\n    return 1\n")

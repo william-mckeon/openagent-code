@@ -78,6 +78,21 @@ def patch_paths(text):
     return paths
 
 
+def patch_summary(text):
+    """Best-effort one-line description of what a patch DOES, for a permission label / guardian review:
+    'delete CONTRIBUTING.md', 'update docs/x.md; add a.py', 'move c.py -> d.py'. Read from the op headers
+    (op KIND included, so a reviewer sees delete-vs-update), robust to a malformed body. '' on junk."""
+    parts = []
+    for line in (text or "").splitlines():
+        hdr = _op_header(line.strip())
+        if hdr is None:
+            continue
+        kind, rest = hdr
+        if rest:
+            parts.append(f"{kind} {rest}")
+    return "; ".join(parts)
+
+
 def parse_patch(text):
     """Parse the envelope into typed ops. Raises PatchError (caught by apply_patch) on any malformed
     structure. Ops: {'op':'add','path','content'} | {'op':'update','path','hunks':[(old,new)]} |

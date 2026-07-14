@@ -66,10 +66,28 @@ def main():
     check("_parse_verdict: reason is the tail after the verdict word",
           guardian._parse_verdict("APPROVE: routine npm install").reason == "routine npm install")
 
-    # -- calibration: a routine in-workspace install is described as APPROVE-able in the reviewer prompt --
+    # -- calibration: routine installs are APPROVE-able + a REQUESTED destructive op is presented -----
     _prompt = guardian._review_task("run_command", "cd src/homepage && npm install", "acceptEdits mode")
     check("prompt: routine installs (npm/pip/go) are called out as safe to APPROVE",
-          "npm install" in _prompt and "APPROVE" in _prompt and "arbitrary network" in _prompt.lower())
+          "npm" in _prompt.lower() and "APPROVE" in _prompt and "arbitrary network" in _prompt.lower())
+    # ride-5: the guardian gets the USER'S REQUEST, so it can approve a destructive-but-REQUESTED op
+    _req_prompt = guardian._review_task("delete_file", "CONTRIBUTING.md", "default mode",
+                                        "delete the file CONTRIBUTING.md")
+    check("prompt: the user's request is threaded in, and requested-destructive is APPROVE-able",
+          "delete the file CONTRIBUTING.md" in _req_prompt and "destructive-but-REQUESTED" in _req_prompt)
+    check("prompt: with no request, the field degrades safely (not provided) and destructive still denies",
+          "(not provided)" in guardian._review_task("delete_file", "x", "default mode")
+          and "canNOT tie it to the user's request, DENY" in _req_prompt)
+    # review() reads ctx.request and passes it to the reviewer
+    _seen = []
+    def _cap(task, effort=None, label=None):
+        _seen.append(task)
+        return "APPROVE: does exactly what the user asked"
+    _cx = _Ctx(_cap, depth=0)
+    _cx.request = "delete the file CONTRIBUTING.md"
+    _rv = guardian.review("delete_file", "CONTRIBUTING.md", "default mode", _cx)
+    check("review threads ctx.request into the reviewer's prompt",
+          _rv.approved is True and any("delete the file CONTRIBUTING.md" in t for t in _seen))
 
     # -- permissions integration: the guardian decides the ASK tier, HEADLESS ----------------------------
     _saved = config.GUARDIAN
