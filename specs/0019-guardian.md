@@ -2,14 +2,20 @@
 
 ## Goal
 Give the `ask` tier a captured, automated reviewer so an **unattended** run can proceed on a *reviewed*
-ask-tier action instead of only blocking. When a tool call hits `ask` (a human would normally be
-prompted), the guardian spawns a CAPTURED reviewer subagent that judges the specific request and returns
-APPROVE / DENY. Unlike the grounding gate — which fails OPEN (an infra hiccup never traps the agent,
-because completion already proved the work was done) — the guardian fails **CLOSED**: no reviewer, an
-error, a timeout, or any verdict that isn't a clean APPROVE → DENY. It governs the `ask` tier ONLY (never
-allow / deny / read-only), so it can only make a run MORE restrictive, never less. Reviews ride the same
+ask-tier action instead of only blocking. When a tool call hits `ask` **and no human is present**, the
+guardian spawns a CAPTURED reviewer subagent that judges the specific request and returns APPROVE / DENY.
+Unlike the grounding gate — which fails OPEN (an infra hiccup never traps the agent, because completion
+already proved the work was done) — the guardian fails **CLOSED**: no reviewer, an error, a timeout, or
+any verdict that isn't a clean APPROVE → DENY. It governs the `ask` tier ONLY (never allow / deny /
+read-only), so it can only make a run MORE restrictive, never less. Reviews ride the same
 captured-subagent path as the grounding verifier, so every approval decision is a first-class trajectory
 that feeds the flywheel.
+
+**Headless-only (ride-3 decision).** The guardian is for *unattended* runs. When a human IS present (an
+interactive REPL), the ask tier prompts the human `[y/N]` exactly as before — the guardian does not fire.
+It engages only when `ctx.interactive` is false (eval / Docker / one-shot / headless), which is precisely
+the "operate at scale" case. An identical `(tool, target)` is reviewed **once per turn** (a cache on
+`ctx`), so a repeated command isn't re-litigated by a fresh subagent each time.
 
 ## Acceptance
 - `src/guardian.py`: `review(tool, target, reason, ctx) -> bool` — spawns a captured reviewer via
@@ -18,15 +24,22 @@ that feeds the flywheel.
   `APPROVE … but DENY` / prose-with-no-verdict → **False**. Pure of side effects, never raises.
 - `src/permissions.py`: every `ask`-tier / prompt site (the ask rule + the default-mode baseline in
   `decide()`, the two in `_decide_command`, the `decide_move` prompt) consults the guardian FIRST when
-  `CODE_GUARDIAN` is on and `ctx.depth == 0`; otherwise it falls through to the interactive human prompt
-  / headless block **unchanged**. It never overrides a deny rule or the fence (ask tier only).
+  `CODE_GUARDIAN` is on, `ctx.depth == 0`, **and `ctx.interactive` is false**; otherwise it falls through
+  to the interactive human prompt / headless block **unchanged**. `_guardian` returns a
+  `Verdict(approved, reason)` (or None to fall through); the reason rides into the `Decision` so the run
+  log explains itself. It never overrides a deny rule or the fence (ask tier only).
+- Calibration: the reviewer prompt treats a routine **in-workspace** dependency install / build
+  (`npm install`, `pip install`, `go build/test`, yarn, pnpm) as EXPECTED-and-safe → APPROVE, while still
+  denying ARBITRARY network calls to unknown hosts, out-of-workspace writes, and `.git`/secret touches.
 - **Recursion-safe**: the reviewer runs at `depth+1`, and the guardian is gated on `depth == 0`, so the
   reviewer's own tool calls never re-enter the guardian.
 - **Flag OFF (default) is byte-identical to today** — the guardian is a pre-branch that returns None when
   off, leaving the human-prompt / block path exactly as it was.
 - `scripts/check_guardian.py` proves: APPROVE→allow, DENY→block, every failure mode → DENY (fail-closed),
-  markdown-tolerant + ambiguous-denies verdict parsing, the depth>0 recursion gate, ask-tier-only (a deny
-  rule still blocks under an APPROVE), and flag-off parity. Dep-free, no model, no network.
+  markdown-tolerant + ambiguous-denies verdict parsing with a reason extracted, the depth>0 recursion
+  gate, **headless-only** (interactive → not consulted), **per-turn caching** (an identical call spawns
+  one review), the install-calibration prompt, ask-tier-only (a deny rule still blocks under an APPROVE),
+  and flag-off parity. Dep-free, no model, no network.
 
 ## Non-goals
 - Reviewing allow / deny / read-only tiers — ask ONLY.

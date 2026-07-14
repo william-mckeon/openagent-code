@@ -139,7 +139,7 @@ class Permissions:
         if r:
             g = self._guardian(tool, t, f"ask rule {r!r}", ctx)
             if g is not None:
-                return D(g, "ask", f"ask rule {r!r} -> guardian {'approved' if g else 'denied'}", r)
+                return D(g.approved, "ask", f"ask rule {r!r} -> guardian {'approved' if g.approved else 'denied'}: {g.reason}", r)
             if getattr(ctx, "interactive", False):
                 ok = self._prompt(tool, t)
                 return D(ok, "ask", f"ask rule {r!r} -> {'allowed' if ok else 'denied'} by user", r)
@@ -160,7 +160,7 @@ class Permissions:
         # default mode (and acceptEdits for run_command): guardian reviews, else prompt or block.
         g = self._guardian(tool, t, f"{self.mode} mode", ctx)
         if g is not None:
-            return D(g, "ask", f"{self.mode} mode -> guardian {'approved' if g else 'denied'}")
+            return D(g.approved, "ask", f"{self.mode} mode -> guardian {'approved' if g.approved else 'denied'}: {g.reason}")
         if getattr(ctx, "interactive", False):
             ok = self._prompt(tool, t)
             return D(ok, "ask", f"{self.mode} mode -> {'allowed' if ok else 'denied'} by user")
@@ -216,14 +216,27 @@ class Permissions:
         return ans == "y"
 
     def _guardian(self, tool, t, reason, ctx):
-        """The guardian's verdict for an ask-tier decision, or None to fall through to the human prompt /
-        headless block (unchanged). ON (top level only) -> a captured fail-closed reviewer decides. OFF
-        -> None, so every ask/prompt site below is byte-identical to today. Governs the ASK tier ONLY."""
-        if config.GUARDIAN and getattr(ctx, "depth", 0) == 0:
-            from . import guardian   # lazy: only needed when the flag is on; keeps permissions low-level
-            shown = t.rel if getattr(t, "kind", None) == "path" else (t.raw or tool)
-            return guardian.review(tool, shown, reason, ctx)
-        return None
+        """The guardian's Verdict(approved, reason) for an ask-tier decision, or None to fall through to
+        the human prompt / headless block (unchanged). Fires ONLY when the flag is on, at the top level
+        (depth 0), and HEADLESS (no human present) — when a human IS present they get the [y/N] prompt as
+        before. OFF / interactive -> None, so every ask/prompt site is byte-identical to today. Identical
+        (tool, target) calls are reviewed once per turn (a cache on ctx), so a repeated command isn't
+        re-litigated. Governs the ASK tier ONLY."""
+        if not (config.GUARDIAN and getattr(ctx, "depth", 0) == 0 and not getattr(ctx, "interactive", False)):
+            return None
+        from . import guardian   # lazy: only needed when the flag is on; keeps permissions low-level
+        shown = t.rel if getattr(t, "kind", None) == "path" else (t.raw or tool)
+        cache = getattr(ctx, "_guardian_cache", None)
+        if cache is None:
+            cache = {}
+            try:
+                ctx._guardian_cache = cache
+            except Exception:  # noqa: BLE001 - a ctx that can't hold the cache just skips memoization
+                pass
+        key = (tool, shown)
+        if key not in cache:
+            cache[key] = guardian.review(tool, shown, reason, ctx)
+        return cache[key]
 
     def _decide_command(self, t, ctx):
         """Gate run_command on execpolicy's parsed segments: deny/ask/allow rules match ANY segment (so
@@ -249,7 +262,7 @@ class Permissions:
             if r:
                 g = self._guardian("run_command", t, f"ask rule {r!r}", ctx)
                 if g is not None:
-                    return D(g, "ask", f"ask rule {r!r} -> guardian {'approved' if g else 'denied'}", r)
+                    return D(g.approved, "ask", f"ask rule {r!r} -> guardian {'approved' if g.approved else 'denied'}: {g.reason}", r)
                 if getattr(ctx, "interactive", False):
                     ok = self._prompt("run_command", t)
                     return D(ok, "ask", f"ask rule {r!r} -> {'allowed' if ok else 'denied'} by user", r)
@@ -262,7 +275,7 @@ class Permissions:
             return D(True, "allow", "bypass mode")
         g = self._guardian("run_command", t, f"{self.mode} mode", ctx)
         if g is not None:
-            return D(g, "ask", f"{self.mode} mode -> guardian {'approved' if g else 'denied'}")
+            return D(g.approved, "ask", f"{self.mode} mode -> guardian {'approved' if g.approved else 'denied'}: {g.reason}")
         if getattr(ctx, "interactive", False):
             ok = self._prompt("run_command", t)
             return D(ok, "ask", f"{self.mode} mode -> {'allowed' if ok else 'denied'} by user")
@@ -300,7 +313,7 @@ class Permissions:
         _wt = self._target("write_file", {"path": new_path}, ctx)
         g = self._guardian("apply_patch move", _wt, "a Move in default mode", ctx)
         if g is not None:
-            return D(g, "ask", f"default mode -> guardian {'approved' if g else 'denied'}", target=old_path)
+            return D(g.approved, "ask", f"default mode -> guardian {'approved' if g.approved else 'denied'}: {g.reason}", target=old_path)
         if getattr(ctx, "interactive", False):
             ok = self._prompt("apply_patch move", _wt)
             return D(ok, "ask", f"default mode -> {'allowed' if ok else 'denied'} by user", target=old_path)

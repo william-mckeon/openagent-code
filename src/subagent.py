@@ -49,7 +49,7 @@ def make_context(cwd, permissions, session_id, depth=0, verbose=False, interacti
     ctx.traj_dir = traj_dir
     # effort is optional so a caller (the grounding verifier) can run the child at its own reasoning
     # effort; a bare spawn(task) keeps the parent's/global effort.
-    ctx.spawn = lambda task, effort=None: run_subagent(task, ctx, effort=effort)
+    ctx.spawn = lambda task, effort=None, label=None: run_subagent(task, ctx, effort=effort, label=label)
     ctx.ask = _terminal_ask if interactive else None
     return ctx
 
@@ -74,9 +74,11 @@ def _classify(result, tool_calls):
     return "completed"
 
 
-def run_subagent(task, parent_ctx, effort=None):
+def run_subagent(task, parent_ctx, effort=None, label=None):
     """Build a child agent for `task`, run it in isolation, return its final text. `effort` overrides
-    the child's reasoning effort (None = the global) — e.g. a grounding verifier at CODE_GROUNDING_EFFORT."""
+    the child's reasoning effort (None = the global) — e.g. a grounding verifier at CODE_GROUNDING_EFFORT.
+    `label` is a short human tag for the console line (a guardian/grounding review) instead of dumping the
+    raw injected prompt; it does NOT change what the child runs."""
     child_depth = parent_ctx.depth + 1
     # Children write to the parent's trajectory dir (None -> the corpus). This keeps subagents spawned
     # INSIDE an eval — e.g. the Phase-10 grounding verifier — under trajectories/eval/ (the firewall),
@@ -95,7 +97,7 @@ def run_subagent(task, parent_ctx, effort=None):
                              depth=child_depth, verbose=parent_ctx.verbose,
                              interactive=False, traj_dir=getattr(parent_ctx, "traj_dir", None))
     if parent_ctx.verbose:
-        print(f"  [subagent depth={child_depth}] {task[:70]}")
+        print(f"  [subagent depth={child_depth}] {(label or task[:70])[:80]}")
 
     agent = build_agent(traj, effort=effort)
     try:

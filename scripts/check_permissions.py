@@ -39,9 +39,12 @@ def allowed(perms, ctx, tool, **args):
 
 
 def main():
-    # Hermetic: these exercise the PREFIX run_command path, so force execpolicy OFF regardless of the
-    # ambient .env (the execpolicy-ON gating has its own harness, check_execpolicy.py).
+    # Hermetic: these exercise the PREFIX run_command path + the human ask/prompt/block logic, so force
+    # execpolicy AND the guardian OFF regardless of the ambient .env — each has its own harness
+    # (check_execpolicy.py, check_guardian.py). Otherwise CODE_GUARDIAN=true in .env would reroute the
+    # headless ask-tier cases through the guardian (no-spawn -> deny), masking the real prompt/block path.
     config.EXECPOLICY = False
+    config.GUARDIAN = False
     ws = tempfile.mkdtemp(prefix="perm-check-")
     ctx = Ctx(ws)
     inside = "foo.py"

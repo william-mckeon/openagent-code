@@ -66,7 +66,7 @@ def main():
 
     # -- problems() is TOP-LEVEL ONLY: a depth>0 agent is skipped entirely ----
     deep_calls = []
-    ctx_deep = _ctx(tmp, depth=1, spawn=lambda t, effort=None: deep_calls.append(t) or "UNGROUNDED: x -> y")
+    ctx_deep = _ctx(tmp, depth=1, spawn=lambda t, effort=None, label=None: deep_calls.append(t) or "UNGROUNDED: x -> y")
     check("depth>0 skips grounding entirely (verifier can't self-ground)",
           grounding.problems("I updated `docker/ghost.md`.", ctx_deep) == [] and not deep_calls)
 
@@ -86,15 +86,15 @@ def main():
     # -- semantic ON: the verifier subagent is the AUTHORITY (not path-existence) ----
     check("semantic ON: verifier is the authority (a phantom path it clears -> clean)",
           grounding.problems("I made `docker/ghost.md`.",
-                             _ctx(tmp, spawn=lambda t, effort=None: "GROUNDED")) == [])
+                             _ctx(tmp, spawn=lambda t, effort=None, label=None: "GROUNDED")) == [])
     dir_calls = []
     grounding.problems("Auth is wired via `docker/auth` per the compose.",
-                       _ctx(tmp, spawn=lambda t, effort=None: dir_calls.append(t) or "GROUNDED"))
+                       _ctx(tmp, spawn=lambda t, effort=None, label=None: dir_calls.append(t) or "GROUNDED"))
     check("semantic ON: a DIRECTORY citation still spawns the verifier (no false-negative)",
           len(dir_calls) == 1)
     calls = []
 
-    def spawn_flag(task, effort=None):
+    def spawn_flag(task, effort=None, label=None):
         calls.append(task)
         return "UNGROUNDED: init.sql is at docker/database -> compose mounts docker/auth/init.sql"
     out = grounding.problems("Init lives in `docker/README.md`.", _ctx(tmp, spawn=spawn_flag))
@@ -110,11 +110,11 @@ def main():
     ro_calls = []
     check("read-only run fires the verifier; a GROUNDED verdict clears it (no over-flag)",
           grounding.problems("This project is documented in `docker/README.md`.",
-                             _ctx(tmp, spawn=lambda t, effort=None: ro_calls.append(t) or "GROUNDED")) == []
+                             _ctx(tmp, spawn=lambda t, effort=None, label=None: ro_calls.append(t) or "GROUNDED")) == []
           and len(ro_calls) == 1)
     check("Tier 2 empty/error verdict -> fail-open",
-          grounding.semantic_problems("x", {"a.md"}, lambda t, effort=None: "") == []
-          and grounding.semantic_problems("x", {"a.md"}, lambda t, effort=None: "(subagent error: boom)") == [])
+          grounding.semantic_problems("x", {"a.md"}, lambda t, effort=None, label=None: "") == []
+          and grounding.semantic_problems("x", {"a.md"}, lambda t, effort=None, label=None: "(subagent error: boom)") == [])
 
     # -- ABSENCE claim spawns Tier 2 even with NO cited path (the live "auth has no Go source" miss) --
     check("absence_claim fires on 'has no Go source' / 'are empty' / 'is not implemented'",
@@ -128,7 +128,7 @@ def main():
     abs_calls = []
     out = grounding.problems(
         "The auth service has no Go source - it is just docs and config.",   # NO backticked path
-        _ctx(tmp, spawn=lambda t, effort=None: abs_calls.append(t) or
+        _ctx(tmp, spawn=lambda t, effort=None, label=None: abs_calls.append(t) or
              "UNGROUNDED: 'no Go source' -> src/auth holds 14 .go files"))
     check("semantic ON: an absence claim with NO cited path STILL spawns the verifier and surfaces it",
           len(abs_calls) == 1 and len(out) == 1 and ".go" in out[0])
@@ -136,7 +136,7 @@ def main():
           "no explicit file path" in abs_calls[0])
     noabs_calls = []
     grounding.problems("Everything looks consistent and well-organized.",   # no path, no absence claim
-                       _ctx(tmp, spawn=lambda t, effort=None: noabs_calls.append(t) or "GROUNDED"))
+                       _ctx(tmp, spawn=lambda t, effort=None, label=None: noabs_calls.append(t) or "GROUNDED"))
     check("semantic ON: a normal no-path answer does NOT spawn (no proportionality regression)",
           len(noabs_calls) == 0)
 
@@ -176,7 +176,7 @@ def main():
           grounding.absence_contradictions(
               "I edited `src/auth/cmd/server/main.go`. Separately, the docs folder is empty.", adir) == [])
     ac = grounding.problems("The `src/auth/cmd/server/main.go` file is missing.",
-                            _ctx(adir, spawn=lambda t, effort=None: "GROUNDED"))
+                            _ctx(adir, spawn=lambda t, effort=None, label=None: "GROUNDED"))
     check("problems() surfaces the deterministic contradiction even when the verifier says GROUNDED",
           any("main.go" in m for m in ac))
 

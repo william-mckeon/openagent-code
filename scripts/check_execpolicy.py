@@ -37,6 +37,7 @@ def _cls(cmd, shell="bash"):
 
 
 def main():
+    config.GUARDIAN = False   # hermetic: exercise execpolicy gating, not the guardian (its own harness)
     ctx = _Ctx()
 
     # -- split_segments: operators, quotes, substitutions --------------------------------------------

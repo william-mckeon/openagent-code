@@ -193,7 +193,8 @@ def semantic_problems(final_text, paths, spawn, effort=None):
         return []
     task = _verifier_task(final_text, paths)
     try:
-        out = spawn(task, effort=effort) if effort else spawn(task)
+        out = (spawn(task, effort=effort, label="grounding: verify final answer")
+               if effort else spawn(task, label="grounding: verify final answer"))
     except Exception as e:  # noqa: BLE001 - a verifier failure must never crash the parent turn
         log.warning("grounding verifier raised (%s) - skipping, fail-open", e)
         return []

@@ -105,6 +105,7 @@ class Agent:
         # later, unrelated turns (the same cross-turn-leak class as the plan/mutations reset above).
         ctx.spawn_count = 0
         ctx._reviewed_digest = None   # a new task may run review_repo fresh (the per-turn re-run guard)
+        ctx._guardian_cache = {}      # per-turn guardian verdicts (specs/0019): a repeated command isn't re-reviewed
         # Situational context (specs/0012): inject the agent's real environment (cwd / OS / shell / date
         # / granted dirs, + git branch when enabled) once per turn as a refreshed pin, so it conditions
         # on live state instead of confabulating it. Pinned (survives compaction) AND logged as a turn
@@ -242,7 +243,10 @@ class Agent:
 
                     flag = "deny" if not pd.allowed else ("ok" if result.ok else "FAIL")
                     if ctx.verbose:
-                        print(f"  [{flag}] {name}({_short(args)})")
+                        # Show the decision reason when a human/guardian was in the loop (action "ask") or
+                        # the call was denied — so the run log explains WHY, e.g. a guardian verdict.
+                        why = f"  -- {pd.reason}" if (not pd.allowed or pd.action == "ask") else ""
+                        print(f"  [{flag}] {name}({_short(args)}){why}")
                     # Richer than the console line: include a result snippet — this is the
                     # detail that makes the run log reviewable for bugs.
                     log.info("step %d [%s] %s(%s) -> %s", step, flag, name, _short(args),
