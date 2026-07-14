@@ -290,6 +290,14 @@ EXECPOLICY = _as_bool(os.environ.get("CODE_EXECPOLICY", "false"))
 # run_command never consults the sandbox and is byte-identical to today.
 SANDBOX = _as_bool(os.environ.get("CODE_SANDBOX", "false"))
 
+# guardian (Phase 19 / specs/0019). A fail-CLOSED LLM approval reviewer for the ASK tier: when a tool
+# hits `ask`, a CAPTURED reviewer subagent decides approve/deny instead of the human prompt (so an
+# unattended run can proceed on a REVIEWED ask-tier action instead of just blocking). Fail-closed - any
+# error / ambiguous verdict DENIES. Off by default -> the human-prompt / headless-block path is unchanged.
+GUARDIAN = _as_bool(os.environ.get("CODE_GUARDIAN", "false"))
+_gd_effort = os.environ.get("CODE_GUARDIAN_EFFORT", "").strip().lower()
+GUARDIAN_EFFORT = _gd_effort if _gd_effort in _EFFORTS else ""
+
 
 def resolved_permission_mode() -> str:
     """The effective mode: explicit CODE_PERMISSION_MODE, else derived from

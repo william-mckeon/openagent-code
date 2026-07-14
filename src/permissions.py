@@ -134,9 +134,12 @@ class Permissions:
         if self.mode == "plan":
             return D(False, "deny", "plan mode is read-only")
 
-        # 5. ask — prompt a human, or block when none is present.
+        # 5. ask — guardian reviews (fail-closed), else prompt a human, else block.
         r = self._match(self.ask, tool, t)
         if r:
+            g = self._guardian(tool, t, f"ask rule {r!r}", ctx)
+            if g is not None:
+                return D(g, "ask", f"ask rule {r!r} -> guardian {'approved' if g else 'denied'}", r)
             if getattr(ctx, "interactive", False):
                 ok = self._prompt(tool, t)
                 return D(ok, "ask", f"ask rule {r!r} -> {'allowed' if ok else 'denied'} by user", r)
@@ -154,7 +157,10 @@ class Permissions:
             # apply_patch passes the OUTER gate here; patch.py still fences each op and blocks a
             # Delete/Move op in acceptEdits (delete_file isn't auto-approved), same as delete_file itself.
             return D(True, "allow", "acceptEdits mode")
-        # default mode (and acceptEdits for run_command): prompt or block.
+        # default mode (and acceptEdits for run_command): guardian reviews, else prompt or block.
+        g = self._guardian(tool, t, f"{self.mode} mode", ctx)
+        if g is not None:
+            return D(g, "ask", f"{self.mode} mode -> guardian {'approved' if g else 'denied'}")
         if getattr(ctx, "interactive", False):
             ok = self._prompt(tool, t)
             return D(ok, "ask", f"{self.mode} mode -> {'allowed' if ok else 'denied'} by user")
@@ -209,6 +215,16 @@ class Permissions:
             return False
         return ans == "y"
 
+    def _guardian(self, tool, t, reason, ctx):
+        """The guardian's verdict for an ask-tier decision, or None to fall through to the human prompt /
+        headless block (unchanged). ON (top level only) -> a captured fail-closed reviewer decides. OFF
+        -> None, so every ask/prompt site below is byte-identical to today. Governs the ASK tier ONLY."""
+        if config.GUARDIAN and getattr(ctx, "depth", 0) == 0:
+            from . import guardian   # lazy: only needed when the flag is on; keeps permissions low-level
+            shown = t.rel if getattr(t, "kind", None) == "path" else (t.raw or tool)
+            return guardian.review(tool, shown, reason, ctx)
+        return None
+
     def _decide_command(self, t, ctx):
         """Gate run_command on execpolicy's parsed segments: deny/ask/allow rules match ANY segment (so
         run_command(rm:*) catches `cd x && rm y`), and a wholly READ-ONLY command (ls, git status) is
@@ -231,6 +247,9 @@ class Permissions:
         for seg in candidates:                                   # ask — matches ANY segment
             r = self._match_command_rules(self.ask, seg)
             if r:
+                g = self._guardian("run_command", t, f"ask rule {r!r}", ctx)
+                if g is not None:
+                    return D(g, "ask", f"ask rule {r!r} -> guardian {'approved' if g else 'denied'}", r)
                 if getattr(ctx, "interactive", False):
                     ok = self._prompt("run_command", t)
                     return D(ok, "ask", f"ask rule {r!r} -> {'allowed' if ok else 'denied'} by user", r)
@@ -241,6 +260,9 @@ class Permissions:
                 return D(True, "allow", f"allow rule {r!r}", r)
         if self.mode == "bypass":
             return D(True, "allow", "bypass mode")
+        g = self._guardian("run_command", t, f"{self.mode} mode", ctx)
+        if g is not None:
+            return D(g, "ask", f"{self.mode} mode -> guardian {'approved' if g else 'denied'}")
         if getattr(ctx, "interactive", False):
             ok = self._prompt("run_command", t)
             return D(ok, "ask", f"{self.mode} mode -> {'allowed' if ok else 'denied'} by user")
@@ -275,8 +297,12 @@ class Permissions:
             return D(False, "deny", "plan mode is read-only", target=old_path)
         if self.mode in ("bypass", "acceptEdits"):
             return D(True, "allow", f"{self.mode} mode (a rename is edit-level)", target=old_path)
+        _wt = self._target("write_file", {"path": new_path}, ctx)
+        g = self._guardian("apply_patch move", _wt, "a Move in default mode", ctx)
+        if g is not None:
+            return D(g, "ask", f"default mode -> guardian {'approved' if g else 'denied'}", target=old_path)
         if getattr(ctx, "interactive", False):
-            ok = self._prompt("apply_patch move", self._target("write_file", {"path": new_path}, ctx))
+            ok = self._prompt("apply_patch move", _wt)
             return D(ok, "ask", f"default mode -> {'allowed' if ok else 'denied'} by user", target=old_path)
         return D(False, "deny", "default mode needs approval, but no human is present", target=old_path)
 

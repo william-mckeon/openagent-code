@@ -423,8 +423,10 @@ built in independently shippable sub-phases. Build order is by *what unblocks wh
   bypass. v1 fences SHELL-level writes; an OS-level jail (restricted-token / AppContainer, for writes a
   program does internally) is the deeper follow-up on this seam. No-op passthrough default.
 - **0018 sandbox — WFP net egress** — carved out of 0017 (admin / AppContainer-gated); optional, own timeline.
-- **0019 guardian** — a captured, fail-CLOSED LLM approval-reviewer for the `ask` tier ONLY (never
-  allow / deny / read-only), emitting reviewer trajectories that feed the flywheel.
+- **0019 guardian** ✅ BUILT (2026-07) — a captured, fail-CLOSED LLM approval-reviewer for the `ask`
+  tier ONLY (never allow / deny / read-only): when a tool hits `ask`, a reviewer subagent decides
+  approve/deny (any error/ambiguous verdict DENIES), so an unattended run can proceed on a REVIEWED
+  ask-tier action instead of just blocking. Depth-0 gated (no recursion); reviews feed the flywheel.
 
 All donor patterns are **rewritten clean as our own Python**; no external agent is named in our code or specs.
 
@@ -459,4 +461,4 @@ All donor patterns are **rewritten clean as our own Python**; no external agent 
 
 ## Status line
 
-Phase 0 ✅ · Phase 1 ✅ (eval now 13 tasks, 13/13 — harder tier added, ceiling not yet found) · Phase 2 ✅ · Phase 3 ✅ · **Phase 4 — compaction ✅ + subagents ✅ + planning ✅ + interactivity ✅ + tool-breadth ✅ + cold-start handling ✅ + permissions Core ✅ + cross-session memory ✅. Remaining: permission hooks (#6 pass 2) + the always-open robustness/eval-ceiling tail** · **Phase 5 — distillation flywheel (gpt-oss-120b/Bedrock teacher → distilled student): Stage 1 (documented) ✅; Stages 2-7 staged (specs/0005)** · **Adoption Track (Phase 12–19): `0012` situational-context ✅ · `0013` edit-layer ✅ · `0014` auto-verify ✅ · `0016` execpolicy ✅ · `0017` sandbox-FS ✅ (both pulled ahead) · `0015` hooks + `0018` sandbox-net + `0019` guardian remain. Foundation hardened by a full adversarial audit (19/19 fixed) + live rides — see docs/AUDIT-FINDINGS.md**.
+Phase 0 ✅ · Phase 1 ✅ (eval now 13 tasks, 13/13 — harder tier added, ceiling not yet found) · Phase 2 ✅ · Phase 3 ✅ · **Phase 4 — compaction ✅ + subagents ✅ + planning ✅ + interactivity ✅ + tool-breadth ✅ + cold-start handling ✅ + permissions Core ✅ + cross-session memory ✅. Remaining: permission hooks (#6 pass 2) + the always-open robustness/eval-ceiling tail** · **Phase 5 — distillation flywheel (gpt-oss-120b/Bedrock teacher → distilled student): Stage 1 (documented) ✅; Stages 2-7 staged (specs/0005)** · **Adoption Track (Phase 12–19): `0012` situational-context ✅ · `0013` edit-layer ✅ · `0014` auto-verify ✅ · `0016` execpolicy ✅ · `0017` sandbox-FS ✅ · `0019` guardian ✅ · remaining: `0015` hooks + `0018` sandbox-net (admin/WFP, own timeline). Foundation hardened by a full adversarial audit (19/19 fixed) + live rides — see docs/AUDIT-FINDINGS.md**.
