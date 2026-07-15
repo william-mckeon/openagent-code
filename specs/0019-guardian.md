@@ -17,6 +17,18 @@ It engages only when `ctx.interactive` is false (eval / Docker / one-shot / head
 the "operate at scale" case. An identical `(tool, target)` is reviewed **once per turn** (a cache on
 `ctx`), so a repeated command isn't re-litigated by a fresh subagent each time.
 
+**Mass-destruction cap (ride-5 decision).** The reviewer is aggregate-blind — it judges one call at a
+time — so a bulk deletion decomposed into single `delete_file` calls was rubber-stamped file-by-file
+(each "matches the request"), and the prompt's "deny MANY files" clause was structurally unreachable. A
+deterministic **hard ceiling** (`CODE_GUARDIAN_MAX_DESTRUCTIVE`, default 5) counts DISTINCT destructive
+ops (delete / move / dangerous command) APPROVED this turn (`ctx._destructive_targets`) and DENIES the
+(N+1)-th regardless of the verdict — *"escalate to a human."* **No enumeration bypass**: the ceiling is
+inviolable (predictability = trust for a partner staked on a real repo); to go further you raise the flag,
+a deliberate, auditable act. The guardian also receives the running count so it can escalate a broad
+*sweep* even before the cap. A guardian-denied op does NOT consume budget; a plain edit/write/install is
+not destructive and is never capped. Composes with corpus integrity (specs/convert): the denials the cap
+generates make the whole mass-delete turn *contested* → excluded from training.
+
 **Useful-autonomy (ride-5 decision).** The reviewer sees the user's **pinned request** (`ctx.request`),
 so it can APPROVE a *destructive-but-requested* op — "delete the file X" → `delete_file(X)` — instead of
 reflexively denying every deletion when no human is present, while still denying anything that EXCEEDS or

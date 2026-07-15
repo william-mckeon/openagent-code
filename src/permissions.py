@@ -57,6 +57,30 @@ def _flush_stdin():
 # cover it here — patch.py re-gates each op through decide() with its single-file equivalent. Listing it
 # here still makes the OUTER gate treat it as a mutation (blocked in plan mode / headless default).
 MUTATING = {"write_file", "edit_file", "delete_file", "run_command", "apply_patch"}
+
+# Delete/remove verbs — a run_command is DESTRUCTIVE (counts toward the mass-destruction cap) if it's
+# dangerous per execpolicy OR removes files. A routine edit / install / build is NOT destructive.
+_DESTRUCTIVE_CMD = re.compile(r"\b(rm|rmdir|rd|del|erase|unlink|remove-item|ri|shred)\b", re.IGNORECASE)
+
+
+def _is_destructive(tool, shown):
+    """Is this ask-tier op DESTRUCTIVE — an irreversible delete / move / dangerous command that the
+    per-turn mass-destruction cap should count? delete_file and an apply_patch Move always are; an
+    apply_patch whose summary deletes/moves is; a run_command that's dangerous or removes files is. A
+    plain edit / write / install / read is NOT (the cap must not throttle ordinary coding)."""
+    if tool in ("delete_file", "apply_patch move"):
+        return True
+    s = (shown or "").lower()
+    if tool == "apply_patch":
+        return "delete " in s or "move " in s
+    if tool == "run_command":
+        try:
+            if execpolicy.assess(shown).worst == execpolicy.DANGEROUS:
+                return True
+        except Exception:  # noqa: BLE001 - classification must never break the gate
+            pass
+        return bool(_DESTRUCTIVE_CMD.search(s))
+    return False
 # Tools whose target is a filesystem path (fence-checked, glob-matched in rules).
 PATH_TOOLS = {"read_file", "write_file", "edit_file", "delete_file", "grep", "glob", "tree"}
 
@@ -254,16 +278,39 @@ class Permissions:
         return cache[key]
 
     def _ask_approver(self, tool, t, reason, ctx):
-        """Auto-decide an ASK-tier call when a human isn't present: a PermissionRequest hook first
-        (deterministic, fail-open), then the guardian (LLM, fail-closed). Returns (approved, why) or None
-        to fall through to the human prompt / headless block. Both are top-level + headless-only."""
+        """Auto-decide an ASK-tier call when a human isn't present: first the deterministic
+        MASS-DESTRUCTION cap (ride-5), then a PermissionRequest hook, then the guardian (breadth-aware).
+        Returns (approved, why) or None to fall through to the human prompt / headless block.
+
+        The cap is a HARD ceiling on DISTINCT destructive ops (delete / move / dangerous command) APPROVED
+        this turn: the reviewer is aggregate-blind (one call at a time), so without this a decomposed bulk
+        delete is rubber-stamped file-by-file. Past N (CODE_GUARDIAN_MAX_DESTRUCTIVE) a new destructive
+        target is DENIED regardless of the verdict — no enumeration bypass; raise the flag to go further."""
+        shown = t.rel if getattr(t, "kind", None) == "path" else (t.raw or tool)
+        destructive = _is_destructive(tool, shown)
+        seen = getattr(ctx, "_destructive_targets", None)
+        if seen is None:
+            seen = set()
+            try:
+                ctx._destructive_targets = seen
+            except Exception:  # noqa: BLE001 - a ctx that can't hold the ledger just skips the cap
+                pass
+        cap = config.GUARDIAN_MAX_DESTRUCTIVE
+        key = (tool, shown)
+        if destructive and cap and key not in seen and len(seen) >= cap:
+            return (False, f"mass-destruction budget exceeded ({cap} destructive ops this turn) - escalate to a human")
+
         hv = self._hooks_permreq(tool, t, ctx)
         if hv is not None:
-            return (hv.approved, f"PermissionRequest hook {'approved' if hv.approved else 'denied'}: {hv.reason}")
-        gv = self._guardian(tool, t, reason, ctx)
-        if gv is not None:
-            return (gv.approved, f"guardian {'approved' if gv.approved else 'denied'}: {gv.reason}")
-        return None
+            verdict = (hv.approved, f"PermissionRequest hook {'approved' if hv.approved else 'denied'}: {hv.reason}")
+        else:
+            gv = self._guardian(tool, t, reason, ctx)   # reads len(ctx._destructive_targets) for breadth
+            if gv is None:
+                return None
+            verdict = (gv.approved, f"guardian {'approved' if gv.approved else 'denied'}: {gv.reason}")
+        if destructive and verdict[0]:                  # a destructive op was APPROVED -> it counts toward the cap
+            seen.add(key)
+        return verdict
 
     def _hooks_pretool(self, tool, t, args, ctx):
         """A PreToolUse hook's DENY (or None). Fires whenever CODE_HOOKS is on — at EVERY depth, since a

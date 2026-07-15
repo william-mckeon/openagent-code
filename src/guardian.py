@@ -38,7 +38,8 @@ def review(tool, target, reason, ctx):
         log.warning("guardian: no reviewer available - DENY (fail-closed)")
         return Verdict(False, "no reviewer available")
     request = (getattr(ctx, "request", "") or "").strip()
-    task = _review_task(tool, target, reason, request)
+    approved_destructive = len(getattr(ctx, "_destructive_targets", ()) or ())   # breadth so far this turn
+    task = _review_task(tool, target, reason, request, approved_destructive)
     label = f"guardian: {tool}({_short(target)})"
     try:
         out = (spawn(task, effort=config.GUARDIAN_EFFORT, label=label)
@@ -78,8 +79,12 @@ def _short(target, n=48):
     return s if len(s) <= n else s[: n - 1] + "…"
 
 
-def _review_task(tool, target, reason, request=""):
+def _review_task(tool, target, reason, request="", approved_destructive=0):
     req = request or "(not provided)"
+    breadth = ""
+    if approved_destructive:
+        breadth = (f"  ALREADY DONE:        you have already approved {approved_destructive} destructive op(s) "
+                   "this turn.\n")
     return (
         "You are a fail-safe SECURITY GUARDIAN. An autonomous coding agent, working on the user's behalf "
         "with NO human present to confirm, wants to take ONE tool action. You are NOT the coder and you do "
@@ -87,7 +92,8 @@ def _review_task(tool, target, reason, request=""):
         f"  THE USER'S REQUEST:  {req}\n"
         f"  TOOL:                {tool}\n"
         f"  TARGET:              {target}\n"
-        f"  WHY IT WAS GATED:    {reason}\n\n"
+        f"  WHY IT WAS GATED:    {reason}\n"
+        f"{breadth}\n"
         "APPROVE when the action is a reasonable step toward THE USER'S REQUEST and is not catastrophic. "
         "This INCLUDES a destructive-but-REQUESTED operation: if the user asked to delete, replace, move, "
         "or overwrite a SPECIFIC file and this action does exactly that to THAT file, APPROVE it. It also "
@@ -98,7 +104,8 @@ def _review_task(tool, target, reason, request=""):
         "deleting or moving MANY files or files the user never named, touching .git internals or secret "
         "files (.env, keys), ARBITRARY network calls to unknown hosts, piping a remote script into a shell, "
         "exfiltration, writing OUTSIDE the workspace, or an effect you cannot determine. If an action is "
-        "destructive and you canNOT tie it to the user's request, DENY. When UNSURE, DENY - denying is "
-        "always safe.\n"
+        "destructive and you canNOT tie it to the user's request, DENY. If this is one of a GROWING series "
+        "of destructive ops (see ALREADY DONE) that is becoming a broad SWEEP beyond the SPECIFIC files the "
+        "user named, DENY and let a human confirm the rest. When UNSURE, DENY - denying is always safe.\n"
         "You may read files to inform your decision, but do NOT change anything.\n\n"
         "Output EXACTLY one line: 'APPROVE: <short reason>' OR 'DENY: <short reason>'.")

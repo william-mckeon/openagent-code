@@ -297,6 +297,15 @@ SANDBOX = _as_bool(os.environ.get("CODE_SANDBOX", "false"))
 GUARDIAN = _as_bool(os.environ.get("CODE_GUARDIAN", "false"))
 _gd_effort = os.environ.get("CODE_GUARDIAN_EFFORT", "").strip().lower()
 GUARDIAN_EFFORT = _gd_effort if _gd_effort in _EFFORTS else ""
+# Mass-destruction backstop (ride-5): a HARD per-turn ceiling on DESTRUCTIVE ops (delete / move /
+# dangerous command) the guardian may auto-approve headless. The guardian reviews one call at a time and
+# is aggregate-blind, so a decomposed bulk delete would be rubber-stamped file-by-file; this deterministic
+# cap denies the (N+1)-th regardless of the reviewer's verdict ("escalate to a human"). Raise it to allow
+# a bigger unattended sweep (a deliberate, auditable act). 0 disables the cap.
+try:
+    GUARDIAN_MAX_DESTRUCTIVE = max(0, int(os.environ.get("CODE_GUARDIAN_MAX_DESTRUCTIVE", "5")))
+except ValueError:
+    GUARDIAN_MAX_DESTRUCTIVE = 5
 
 # hooks (Phase 15 / specs/0015). Opt-in, FAIL-OPEN lifecycle scripts around every tool call: a PreToolUse
 # hook can DENY any tool (a policy about the EFFECT, not the tool name - closes "deny is tool-scoped"); a

@@ -128,6 +128,46 @@ def main():
     check("GUARDIAN only touches ask: a DENY rule still blocks even with an APPROVE verdict",
           not pdeny.decide("edit_file", {"path": ".env"}, _Ctx(_spawn("APPROVE", []), depth=0)).allowed)
 
+    # -- ride-5: the mass-destruction cap (deterministic hard ceiling on decomposed bulk destruction) ----
+    from src.permissions import _is_destructive
+    check("_is_destructive: delete / apply_patch move / delete-patch / rm command ARE destructive",
+          _is_destructive("delete_file", "x") and _is_destructive("apply_patch move", "x")
+          and _is_destructive("apply_patch", "delete a; update b") and _is_destructive("run_command", "rm foo.txt"))
+    check("_is_destructive: edit / write / install / update-patch are NOT destructive",
+          not _is_destructive("edit_file", "x") and not _is_destructive("run_command", "npm install")
+          and not _is_destructive("apply_patch", "update a.py") and not _is_destructive("write_file", "x"))
+
+    _savedcap = config.GUARDIAN_MAX_DESTRUCTIVE
+    config.GUARDIAN_MAX_DESTRUCTIVE = 3
+    pcap = Permissions("default", {}, [])
+
+    def _ctx_req(verdict):
+        c = _Ctx(_spawn(verdict, []), depth=0)
+        c.request = "cleaning up"
+        c._destructive_targets = set()
+        return c
+
+    cx = _ctx_req("APPROVE: ok")
+    outs = [pcap.decide("delete_file", {"path": f"f{i}.md"}, cx).allowed for i in range(5)]
+    check("cap: the first N distinct destructive ops pass, the rest DENY", outs == [True, True, True, False, False])
+    check("cap: the deny reason names the exceeded budget",
+          "mass-destruction budget" in pcap.decide("delete_file", {"path": "z.md"}, cx).reason)
+    cxd = _ctx_req("DENY: no")
+    for i in range(4):
+        pcap.decide("delete_file", {"path": f"g{i}.md"}, cxd)
+    check("cap: guardian-DENIED destructive ops don't consume the budget", len(cxd._destructive_targets) == 0)
+    cxe = _ctx_req("APPROVE: ok")
+    cxe._destructive_targets = {("delete_file", f"d{i}") for i in range(3)}   # already at the cap
+    check("cap: a non-destructive edit is still allowed at the cap (cap targets destruction only)",
+          pcap.decide("edit_file", {"path": "a.py", "old_string": "a", "new_string": "b"}, cxe).allowed)
+    config.GUARDIAN_MAX_DESTRUCTIVE = 0
+    cx0 = _ctx_req("APPROVE: ok")
+    check("cap=0 disables the ceiling (all destructive ops approved)",
+          all(pcap.decide("delete_file", {"path": f"h{i}.md"}, cx0).allowed for i in range(8)))
+    check("breadth: the reviewer prompt surfaces the running destructive count",
+          "already approved 2 destructive" in guardian._review_task("delete_file", "x", "default mode", "req", 2))
+    config.GUARDIAN_MAX_DESTRUCTIVE = _savedcap
+
     # -- flag OFF -> byte-identical (guardian never consulted) --------------------------------------------
     config.GUARDIAN = False
     calls = []
