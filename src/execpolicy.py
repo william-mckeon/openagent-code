@@ -53,6 +53,10 @@ _DANGEROUS_PATTERNS = [re.compile(p, re.I) for p in (
     r"\brm\b[^|;&]*\s-[a-z]*r",                 # rm -r / -rf / -fr
     r"\brm\b\s+-[a-z]*f[a-z]*\s+/",             # rm -f /
     r"\brmdir\b\s+/s", r"\bdel\b\s+/[sq]", r"\brd\b\s+/s",   # windows recursive delete
+    # find/fd that DELETE or RUN a command per match — `find` is a read-only verb below, so without this
+    # `find . -delete` / `find . -exec rm {} \;` would auto-run as "read-only" and defeat a rm deny rule.
+    r"\bfind\b[^|;&]*\s-(?:delete|exec|execdir|ok|okdir|fls|fprintf?)\b",
+    r"\bfd\b[^|;&]*\s(?:-x|-X|--exec(?:-batch)?)\b",
     r"\bdd\b\s+if=", r"\bmkfs", r"\bshred\b", r"\bfdisk\b", r"\bparted\b",
     r"\b(shutdown|reboot|halt|poweroff)\b", r"\binit\b\s+[06]\b",
     r">\s*/dev/sd", r">\s*/dev/null\s+2>&1\s*$",   # (the /dev/sd one is the real danger)
@@ -157,7 +161,11 @@ def _first_token(seg):
     return m.group(0) if m else ""
 
 
-_REDIRECT = re.compile(r"(?:^|\s)(?:\d*>>?|&>|>&)")   # > >> 2> 2>> &> >& (an output redirect = a WRITE)
+# > >> 2> 2>> &> >& (an output redirect = a WRITE). NO leading-whitespace requirement: `echo x>f` (no
+# space) is a real redirect that a `(?:^|\s)` anchor missed, so it was mis-read as read-only AND slipped
+# the sandbox fence. The negative lookbehind keeps `->` / `=>` / `<>` (arrows, not redirects) out; fd
+# dups (`2>&1`, `>&2`) are still discarded by _redirect_target's target filter.
+_REDIRECT = re.compile(r"(?<![-=<>])(?:\d*>>?|&>|>&)")
 _VERSION_FLAGS = {"-v", "-version", "--version", "version"}
 
 
@@ -204,6 +212,24 @@ def _redirect_is_dangerous(target):
     return ".." in t.split("/")                            # parent escape
 
 
+_SORT_O = re.compile(r"(?:^|\s)-o\s*(\S+)|(?:^|\s)--output(?:[= ])(\S+)")   # sort -o FILE / --output FILE
+_YQ_INPLACE = re.compile(r"(?:^|\s)(?:-i|--inplace)\b")                      # yq -i (edits the input file)
+
+
+def _flag_write_class(tok, seg):
+    """A read-only VERB that WRITES via a flag (not a redirect), so it must not be read-only-relaxed:
+    `sort -o FILE` writes/truncates FILE; `yq -i` edits its input in place. Returns DANGEROUS / MUTATING,
+    or None when no such flag is present. Other read-only verbs write only via redirects (already caught)."""
+    if tok == "sort":
+        m = _SORT_O.search(seg)
+        if m:
+            dest = m.group(1) or m.group(2) or ""
+            return DANGEROUS if _redirect_is_dangerous(dest) else MUTATING
+    if tok == "yq" and _YQ_INPLACE.search(seg):
+        return MUTATING
+    return None
+
+
 def classify(segment, shell="bash"):
     """Classify ONE segment: read_only / mutating / dangerous. Unknown -> mutating (conservative)."""
     seg = _PREFIX.sub("", segment or "").strip()
@@ -226,6 +252,9 @@ def classify(segment, shell="bash"):
     tok = re.split(r"[\\/]", tok)[-1]           # basename of the command path
     if tok.endswith(".exe"):
         tok = tok[:-4]
+    fw = _flag_write_class(tok, seg)            # a read-only verb that writes via a flag (sort -o, yq -i)
+    if fw is not None:
+        return fw
     if tok in ("%", "foreach-object", "foreach"):
         # ForEach-Object projecting a property (`% Count`) is read-only; a script block (`% { ... }`)
         # can run anything -> stay conservative.

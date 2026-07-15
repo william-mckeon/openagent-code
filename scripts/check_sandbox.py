@@ -49,6 +49,12 @@ def main():
     check("escapes: a cp to a parent path escapes", bool(esc("cp a.txt ../b.txt")))
     check("escapes: a write INSIDE the workspace is allowed", esc("echo x > sub/out.txt") == [])
     check("escapes: a read-only command never escapes", esc("git status && ls -la") == [])
+    # ride-5 Class B: a NO-SPACE redirect and sort -o must be fenced too (they used to slip)
+    check("escapes: a NO-SPACE redirect outside the workspace escapes", bool(esc("echo x>../out.txt")))
+    check("escapes: a no-space redirect INSIDE is allowed", esc("echo x>out.txt") == [])
+    check("escapes: sort -o to a parent path escapes", bool(esc("sort -o ../evil.txt in.txt")))
+    check("escapes: sort -o INSIDE the workspace is allowed", esc("sort -o out.txt in.txt") == [])
+    check("escapes: yq -i on a parent-path file escapes", bool(esc("yq -i '.a=1' ../x.yml")))
     ext = os.path.realpath(os.path.join(ws, "..", "granted"))
     os.makedirs(ext, exist_ok=True)
     check("escapes: a write into a GRANTED (--add-dir) root is allowed",

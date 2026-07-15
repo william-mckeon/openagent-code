@@ -46,6 +46,17 @@ def _command_write_dests(seg, shell):
         return args
     if cmd == "dd":
         return [t[3:] for t in toks if t.lower().startswith("of=")]
+    if cmd == "sort":                                   # sort -o FILE / --output FILE writes FILE
+        for i, t in enumerate(toks):
+            if t in ("-o", "--output") and i + 1 < len(toks):
+                return [toks[i + 1]]
+            if t.startswith("-o") and len(t) > 2:       # -oFILE (attached)
+                return [t[2:]]
+            if t.startswith("--output="):
+                return [t.split("=", 1)[1]]
+        return []
+    if cmd == "yq" and any(t in ("-i", "--inplace") for t in toks) and args:
+        return [args[-1]]                               # in-place edit: writes its file (the last positional)
     if cmd in _PS_WRITE:
         for i, t in enumerate(toks):                        # -Path / -FilePath / -Destination X
             if t.lower() in ("-path", "-filepath", "-literalpath", "-destination") and i + 1 < len(toks):

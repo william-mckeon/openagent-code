@@ -42,3 +42,8 @@ raises — a line it can't parse degrades to one opaque `mutating` segment (the 
 ## Notes
 - Off by default (`CODE_EXECPOLICY=false`), like every adoption-track phase.
 - The classifier is data (sets + patterns), so new commands are a one-line addition, not new logic.
+- Ride-5 hardening (under-classification holes an adversarial audit found): `find -delete`/`-exec` and
+  `fd --exec` are DANGEROUS (a read-only verb that deletes/runs a command); the redirect matcher no longer
+  requires whitespace before `>` (so `echo x>f` is caught, not mis-read as read-only) while `->`/`=>` and
+  fd-dups (`2>&1`) stay excluded; a read-only verb that writes via a FLAG (`sort -o FILE`, `yq -i`) is
+  mutating/dangerous, not relaxed.

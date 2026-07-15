@@ -40,3 +40,6 @@ unit test. Default OFF -> `run_command` is byte-identical to today.
   "inside the workspace."
 - Parsing is best-effort + conservative: an unresolvable/quoted target it can't judge is left to the
   normal gate, never silently allowed as "inside."
+- Ride-5 hardening: the no-space-redirect fix in execpolicy's `_redirect_target` flows straight through
+  here (a `echo x>../out` write is now fenced), and `sort -o FILE` / `yq -i FILE` destinations are added
+  to the write-command list so their out-of-workspace targets are refused too.

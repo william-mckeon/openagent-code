@@ -106,6 +106,22 @@ def main():
     check("a MUTATING command is still blocked in plan mode",
           not Permissions("plan", {}, []).decide("run_command", {"command": "npm install"}, ctx).allowed)
 
+    # -- ride-5 Class B: destructive verbs mis-classified read-only (they skipped the gate entirely) ---
+    check("find -delete is DANGEROUS (not read-only-relaxed)", execpolicy.classify("find . -name '*.md' -delete") == execpolicy.DANGEROUS)
+    check("find -exec is DANGEROUS", execpolicy.classify("find . -type f -exec rm {} +") == execpolicy.DANGEROUS)
+    check("plain find is still read-only", execpolicy.classify("find . -name '*.md'") == execpolicy.READ_ONLY)
+    check("a NO-SPACE redirect to an absolute path is DANGEROUS", execpolicy.classify("echo x>/etc/passwd") == execpolicy.DANGEROUS)
+    check("a NO-SPACE redirect to a workspace file is MUTATING", execpolicy.classify("git ls-files>files.txt") == execpolicy.MUTATING)
+    check("an arrow '->' is NOT a redirect (stays read-only)", execpolicy.classify("cat a -> b") == execpolicy.READ_ONLY)
+    check("a fd-dup 2>&1 is NOT a write (stays read-only)", execpolicy.classify("echo hi 2>&1") == execpolicy.READ_ONLY)
+    check("sort -o FILE is MUTATING (writes FILE)", execpolicy.classify("sort -o out.txt in.txt") == execpolicy.MUTATING)
+    check("sort -o an absolute path is DANGEROUS", execpolicy.classify("sort -o /etc/x in.txt") == execpolicy.DANGEROUS)
+    check("plain sort is still read-only", execpolicy.classify("sort in.txt") == execpolicy.READ_ONLY)
+    check("gate: 'find . -delete' is NOT read-only-relaxed (blocked in default headless)",
+          not ro.decide("run_command", {"command": "find . -delete"}, ctx).allowed)
+    check("gate: 'echo x>out.txt' (no-space redirect) is NOT relaxed (a write, so it's gated)",
+          not ro.decide("run_command", {"command": "echo x>out.txt"}, ctx).allowed)
+
     # -- flag OFF -> byte-identical to today ---------------------------------------------------------
     config.EXECPOLICY = False
     check("flag OFF: 'git status' is NOT relaxed (run_command blocked in default headless, as today)",
