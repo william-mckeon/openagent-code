@@ -81,11 +81,36 @@ def _first(records, rec_type):
     return None
 
 
+def _has_denial(records):
+    """True if any tool call in the session was BLOCKED (permission allowed==False) — a guardian/permission
+    denial. Such a call must never become a positive SFT target (we'd be training a blocked action)."""
+    return any(r.get("type") == "permission" and r.get("allowed") is False for r in records)
+
+
+def _contested_turns(records):
+    """Turn indices that contained a BLOCKED (denied) tool call — ride-5 corpus integrity. A denied action
+    is a negative, not a training target, and the turn built around it (the give-up / work-around it
+    provoked) is tainted, so the whole turn is excluded. Empty when there are no turn_outcome records."""
+    out, contested, seg = set(), False, 1
+    for r in records:
+        t = r.get("type")
+        if t == "permission" and r.get("allowed") is False:
+            contested = True
+        elif t == "turn_outcome":
+            idx = r.get("turn", seg)
+            if contested:
+                out.add(idx)
+            contested, seg = False, idx + 1
+    return out
+
+
 def trainable_turns(records):
-    """{turn -> bool}: which REPL turns are trainable — an honest keeper outcome AND that turn's OWN
-    verifications all passed. Empty dict when the trajectory has no `turn_outcome` records (one-shot /
-    legacy), which keeps the old whole-session behavior. The verify check is scoped PER TURN, so a single
-    late failing turn no longer drops the good turns beside it (0.7.0 corpus integrity)."""
+    """{turn -> bool}: which REPL turns are trainable — an honest keeper outcome, that turn's OWN
+    verifications all passed, AND no blocked (guardian-denied) call in it. Empty dict when the trajectory
+    has no `turn_outcome` records (one-shot / legacy), which keeps the old whole-session behavior. The
+    verify + contest checks are scoped PER TURN, so a single late failing/contested turn no longer drops
+    the good turns beside it (0.7.0 + ride-5 corpus integrity)."""
+    contested = _contested_turns(records)
     turns, verif_ok, seg = {}, True, 1
     for r in records:
         t = r.get("type")
@@ -93,7 +118,7 @@ def trainable_turns(records):
             verif_ok = verif_ok and bool(r.get("ok"))
         elif t == "turn_outcome":
             idx = r.get("turn", seg)
-            turns[idx] = (r.get("outcome") in KEEP_OUTCOMES) and verif_ok
+            turns[idx] = (r.get("outcome") in KEEP_OUTCOMES) and verif_ok and (idx not in contested)
             verif_ok, seg = True, idx + 1
     return turns
 
@@ -130,6 +155,10 @@ def is_trainable(records):
     verifications = [r for r in records if r.get("type") == "verification"]
     if verifications and not all(v.get("ok") for v in verifications):
         return False, "verify_failed"
+    # Ride-5 corpus integrity: a one-shot run that hit a guardian/permission denial is CONTESTED — its
+    # blocked action is a negative, so drop the whole session rather than train a blocked emission.
+    if _has_denial(records):
+        return False, "guardian_contested"
     # Behavior gate (specs/0004): even a verify-passing run is bad training data if the
     # agent REFUSED (a "narrow the scope" deflection) — we don't want to teach that.
     if rubric.is_refusal(records):
@@ -268,6 +297,7 @@ def main():
     rows, dropped, schema_src = [], {}, {"logged": 0, "reattached": 0}
     versions = set()
     kept_sessions = 0
+    contested_turns_total = 0   # ride-5: turns excluded from KEPT sessions because they held a denied call
 
     for path in files:
         records = load_session(path)
@@ -287,6 +317,7 @@ def main():
             continue
         rows.extend(session_rows)
         kept_sessions += 1
+        contested_turns_total += len(_contested_turns(records))
         schema_src[session_rows[0]["meta"]["tool_schema_source"]] += 1
 
     os.makedirs(OUT_DIR, exist_ok=True)
@@ -303,6 +334,7 @@ def main():
         "excluded_eval_gate": excluded_eval,
         "sessions_kept": kept_sessions,
         "rows_written": len(rows),
+        "contested_turns_excluded": contested_turns_total,   # ride-5: denied-call turns dropped from kept sessions
         "dropped": dropped,
         "tool_schema_source": schema_src,
         "output": os.path.relpath(OUT_FILE, ROOT).replace(os.sep, "/"),

@@ -63,6 +63,11 @@ def _end(outcome="completed", tc=1):
     return {"type": "session_end", "outcome": outcome, "tool_calls": tc}
 
 
+def _perm(step, allowed, action="deny"):
+    return {"type": "permission", "session_id": "s", "step": step, "tool": "delete_file", "target": "x",
+            "allowed": allowed, "action": action, "reason": "guardian denied", "rule": None, "mode": "default"}
+
+
 def _contents(rows):
     return [r["completion"].get("content", "") for r in rows]
 
@@ -121,6 +126,30 @@ def main():
     keep, reason = convert.is_trainable(legacy_fail)
     check("legacy one-shot with a failing verify is still dropped whole (unchanged)",
           (not keep) and reason == "verify_failed")
+
+    # 5b. ride-5 corpus integrity: a turn holding a guardian/permission DENIAL is CONTESTED -> excluded,
+    #     but a clean turn beside it survives; the denied action never becomes a positive SFT target.
+    contested = [_ss(),
+                 _user("t1"), _mc(0, "clean answer", calls=["read_file"]), _tc(True), _tout(1, "completed"),
+                 _user("t2"), _perm(1, False), _mc(1, "I could not delete it", calls=["delete_file"]), _tc(False), _tout(2, "completed"),
+                 _end("completed", tc=2)]
+    check("a contested turn doesn't drop the whole session (clean turn 1 survives)",
+          convert.is_trainable(contested) == (True, "kept"))
+    crows = convert.to_rows(contested, "as_sent")
+    check("the contested turn is excluded (only the clean turn's step is a row)", len(crows) == 1)
+    check("the denied delete_file action is NOT a training target",
+          all("could not delete" not in c for c in _contents(crows)))
+    check("_contested_turns pinpoints the denied turn", convert._contested_turns(contested) == {2})
+
+    onedenied = [_ss(), _user("t"), _perm(0, False), _mc(0, "blocked", calls=["delete_file"]), _tc(False),
+                 _end("completed", tc=1)]
+    check("a one-shot run that hit a denial is dropped as guardian_contested",
+          convert.is_trainable(onedenied) == (False, "guardian_contested"))
+
+    approved = [_ss(), _user("t"), _perm(0, True, "ask"), _mc(0, "done", calls=["delete_file"]), _tc(True), _tout(1, "completed"),
+                _end("completed", tc=1)]
+    check("an APPROVED (allowed) ask-tier call is NOT contested (turn kept)",
+          convert.is_trainable(approved)[0] and convert._contested_turns(approved) == set())
 
     # 6. reasoning channel: a TOOL-CALL target folds its reasoning into content (matching the runtime
     #    planner) instead of dropping it, and the fold is NOT preamble-stripped; a FINAL answer stays
