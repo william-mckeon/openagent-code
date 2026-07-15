@@ -255,6 +255,29 @@ def main():
           not has_reasoning_leak("We shipped the final release of the parser.")
           and not has_reasoning_leak("The handler returns a response to the caller."))
 
+    # ride-5 leak: a MULTI-PARAGRAPH deliberation (SEVERAL 'Thus final answer' transitions, no leading
+    # tell, a stray '.' welded before the bold answer) — the old strip missed it entirely.
+    _multi = ("The glob result shows the current files. So the claim is correct. However the user says "
+              "they never existed. We might be mistaken, but the evidence shows they are gone.\n\n"
+              "Thus final answer: we deleted A and B.\n\nNow we need to answer the request we are currently "
+              "working on. We partially completed it.\n\nThus final answer: mention the read and keep the "
+              "rest as before.\n\n.**Result**\n- A and B were removed.")
+    check("has_reasoning_leak catches the multi-paragraph 'Thus final answer' deliberation", has_reasoning_leak(_multi))
+    _ms = strip_reasoning_preamble(_multi)
+    check("strip cuts the whole multi-paragraph leak down to the real answer anchor",
+          _ms.startswith("**Result**") and "Thus final answer" not in _ms and "the user says" not in _ms
+          and "A and B were removed." in _ms)
+    # SAFETY: a SINGLE 'thus the final answer is X' conclusion (< 2 transitions) is left WHOLE — never
+    # eat a concise real answer; and a legit analysis with a header but no 'final answer' marker is intact.
+    _one = ("We reviewed the compose file. Thus the final answer is that ports 3000 and 8080 are exposed.\n\n"
+            "**Ports**\n- 3000\n- 8080")
+    check("a SINGLE 'thus the final answer is X' conclusion is left whole (not cut)",
+          strip_reasoning_preamble(_one) == _one)
+    _legit2 = ("The parser handles three cases. We validate input, then normalize, then emit.\n\n"
+               "**Summary**\n- input validated\n- output normalized")
+    check("a legit multi-line analysis with a header and NO 'final answer' marker is untouched",
+          strip_reasoning_preamble(_legit2) == _legit2)
+
     passed, total = sum(_results), len(_results)
     print(f"\nVERDICT: {passed}/{total} {'[OK]' if passed == total else '[FAIL]'}")
     return 0 if passed == total else 1

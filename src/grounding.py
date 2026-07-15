@@ -251,15 +251,18 @@ def _parse_verdict(out):
 def challenge(problems):
     """The re-prompt, sent when grounding finds a problem and a retry remains. Deliberately NARROW and
     NON-HIJACKING: a TARGETED re-check of the flagged claim plus a reminder to still answer the CURRENT
-    request. Points at 'the request you're answering now' (the pinned current task), NOT 'your original
-    request' — in a multi-turn REPL the latter made the model re-answer an EARLIER turn (a favicon task
-    got answered with a prior turn's auth question) after compaction blurred which turn was live."""
-    return ("One or more claims in your answer aren't backed by the files:\n"
+    task, NOT 'your original request' — in a multi-turn REPL the latter made the model re-answer an
+    EARLIER turn (a favicon task got answered with a prior turn's auth question) after compaction blurred
+    which turn was live. De-echoed (ride-5): worded as a directive with an explicit 'output ONLY the
+    fixed answer, no meta-commentary' clause, because the old answer-shaped phrasing ('answer the request
+    you are currently working on (the pinned current request above)...') got parroted verbatim INTO the
+    answer as a leaked deliberation."""
+    return ("Some claims in your last answer aren't backed by the files you read:\n"
             + "\n".join(f"- {p}" for p in problems)
-            + "\nDo a TARGETED read of just what confirms or corrects each flagged claim - do NOT "
-              "re-investigate the whole repo. Then answer the request you are CURRENTLY working on (the "
-              "pinned 'current request' above) directly with the claim fixed, keeping the rest of your "
-              "answer as-is.")
+            + "\nDo a TARGETED read of ONLY what confirms or corrects each flagged claim - not the whole "
+              "repo. Then OUTPUT your corrected answer to the CURRENT task and nothing else: no "
+              "meta-commentary about this instruction, no \"the user says...\", no restating these steps "
+              "- just the fixed, user-facing answer, keeping the rest as-is.")
 
 
 def problems(final_text, ctx):

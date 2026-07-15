@@ -304,6 +304,24 @@ _CONCLUSION_META = re.compile(
     re.IGNORECASE)
 _CONCLUSION_STRIP = re.compile(r"(?:" + _CONCLUSION_META.pattern + r").*?(?=\*\*\S|#{1,6}\s)",
                                re.IGNORECASE | re.MULTILINE)
+# A LATER answer anchor (bold header / heading) for the multi-paragraph leak, tolerating a stray leading
+# '.' / bullet the model sometimes welds on ("...as before.\n\n.**Targeted verification**").
+_LEAK_ANCHOR = re.compile(r"(?:^|\n)[ \t.·•\-–—]*(\*\*\S|#{1,6}\s)")
+
+
+def _cut_multi_meta(text):
+    """The multi-PARAGRAPH leak a live run produced: a long deliberation block with SEVERAL 'final answer'
+    meta-transitions and no leading tell, ending in the real answer (a live gpt-oss run dumped ~15
+    sentences of 'So the claim... the user says... Thus final answer:...' before '.**Targeted
+    verification**'). Cut everything up to the first answer anchor AFTER the LAST meta-transition — but
+    ONLY when there are >= 2 such transitions, so a single 'thus the final answer is X' conclusion is left
+    whole. The >= 2 gate + the 'final answer' discriminator keep this from ever eating a concise answer."""
+    metas = sorted(list(_ANSWER_META.finditer(text)) + list(_CONCLUSION_META.finditer(text)),
+                   key=lambda m: m.start())
+    if len(metas) < 2:
+        return text
+    m2 = _LEAK_ANCHOR.search(text, metas[-1].end())
+    return text[m2.start(1):] if m2 else text
 
 
 def looks_like_reasoning_preamble(text):
@@ -374,6 +392,7 @@ def strip_reasoning_preamble(text):
             if i and _ANSWER_ANCHOR.match(line):
                 text = "\n".join(lines[i:]).lstrip("\n")
                 break
+    text = _cut_multi_meta(text)   # multi-paragraph leak with no leading tell -> cut to the answer anchor
     if text == original:
         return original  # nothing stripped -> leave the answer whole (old conservative behavior)
     return re.sub(r"\n{3,}", "\n\n", re.sub(r"[ \t]+\n", "\n", text)).strip()
