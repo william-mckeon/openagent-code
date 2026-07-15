@@ -25,7 +25,10 @@ Protocol: a hook receives the call context as JSON on stdin and returns one JSON
 The payload includes a uniform **`paths`** list — every file the call touches, ACROSS tools — so a hook
 gates on one field instead of learning each tool's arg shape. `apply_patch` hides its targets inside the
 patch body, so the runner parses them out (via `patch.patch_paths`, best-effort even on a malformed hunk)
-into `paths` — otherwise `apply_patch` would slip a path-based hook (the ride-4 hole).
+into `paths` — otherwise `apply_patch` would slip a path-based hook (the ride-4 hole). The payload also
+carries the per-turn **aggregate** — `turn_id` (a stable per-turn key), `mutations` (distinct files
+changed this turn), `destructive` (delete/move/dangerous ops approved so far) — so a hook can enforce its
+OWN budget / rate-limit against bulk destruction outside a protected path (ride-5 finding [6]).
 
 ## Acceptance
 - `src/config.py`: `CODE_HOOKS` (default false) + `CODE_HOOKS_CONFIG` (a path) + `load_hooks_config()`

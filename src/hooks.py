@@ -119,6 +119,13 @@ def _payload(event, tool, target, args, ctx):
     a = args if isinstance(args, dict) else {}
     return {"event": event, "tool": tool, "target": str(target), "args": a,
             "paths": _paths(tool, a),   # uniform: every file a hook can gate on, ACROSS tools
+            # per-turn AGGREGATE so a hook can enforce its OWN budget (a mutation cap, a rate limit)
+            # against bulk destruction outside a protected path: `turn_id` is a stable per-turn key,
+            # `mutations` counts distinct files already changed this turn, `destructive` the delete/move/
+            # dangerous ops the guardian approved so far (ride-5).
+            "turn_id": getattr(ctx, "_turn_id", 0),
+            "mutations": len(getattr(ctx, "mutations", {}) or {}),
+            "destructive": len(getattr(ctx, "_destructive_targets", ()) or ()),
             "cwd": getattr(ctx, "cwd", None), "depth": getattr(ctx, "depth", 0)}
 
 

@@ -119,6 +119,20 @@ def main():
           hooks.pretool("apply_patch", "", {"patch": _PATCH_DOCS}, ctx) is not None)
     check("pretool: the same hook leaves a non-docs apply_patch alone",
           hooks.pretool("apply_patch", "", {"patch": _PATCH_README}, ctx) is None)
+    # a path hook must catch delete_file too (the ride-5 gap where a bulk docs delete slipped)
+    check("pretool: a path hook can DENY delete_file into docs/",
+          hooks.pretool("delete_file", "docs/x.md", {"path": "docs/x.md"}, ctx) is not None)
+
+    # -- ride-5 Class D: the payload exposes per-turn AGGREGATE so a hook can enforce its own budget -----
+    class _AggCtx:
+        cwd, depth, interactive = ws, 0, False
+        _turn_id, mutations = 4, {"a.py": "edit", "b.py": "write"}
+        _destructive_targets = {("delete_file", "x")}
+    _pay = hooks._payload("PreToolUse", "delete_file", "docs/x.md", {"path": "docs/x.md"}, _AggCtx())
+    check("payload: per-turn aggregate (turn_id / mutations / destructive) is exposed to hooks",
+          _pay["turn_id"] == 4 and _pay["mutations"] == 2 and _pay["destructive"] == 1)
+    check("payload: delete_file's path rides in `paths` (a path hook can gate deletes)",
+          _pay["paths"] == ["docs/x.md"])
 
     # -- runner: PermissionRequest ----------------------------------------------------------------------
     set_hooks({"PermissionRequest": [{"command": cmd("allow.py")}]})

@@ -25,7 +25,9 @@ paths = [str(x).replace("\\", "/").lower() for x in (p.get("paths") or [])]
 cmd = str((p.get("args") or {}).get("command") or "").replace("\\", "/").lower()
 
 blocked = False
-if tool in ("write_file", "edit_file", "apply_patch") and any("docs/" in x for x in paths):
+# delete_file INCLUDED: "write-protected" means writes AND deletes — the ride-5 log showed a bulk delete
+# of docs/*.md slip a hook that only guarded write/edit/apply_patch.
+if tool in ("write_file", "edit_file", "apply_patch", "delete_file") and any("docs/" in x for x in paths):
     blocked = True
 elif tool == "run_command" and ">docs/" in cmd.replace(" ", ""):   # a redirect writing into docs/
     blocked = True
