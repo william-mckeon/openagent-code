@@ -36,7 +36,7 @@ from src.tools import TOOLS, openai_schemas  # noqa: E402
 from src.trajectory import Trajectory  # noqa: E402  (for SCHEMA_VERSION)
 from src import config  # noqa: E402  (for SFT_VIEW)
 from eval import rubric  # noqa: E402  (behavior gate — specs/0004-agentic-evals.md)
-from src.prompts import strip_reasoning_preamble  # noqa: E402  (keep leaked CoT out of targets)
+from src.prompts import strip_reasoning_preamble, looks_degenerate  # noqa: E402  (keep leaked CoT/loops out of targets)
 from train import curate  # noqa: E402  (Phase 11 corpus curation — specs/0011)
 
 TRAJ_GLOB = os.path.join(ROOT, "trajectories", "**", "*.jsonl")
@@ -87,6 +87,25 @@ def _has_denial(records):
     return any(r.get("type") == "permission" and r.get("allowed") is False for r in records)
 
 
+def _degenerate_turns(records):
+    """Turn indices whose model produced a REPETITION LOOP as an answer (looks_degenerate on a model_call's
+    content). A DEFENSE-IN-DEPTH backstop behind agent.py's live degeneracy guard: a live review looped
+    into a 21 KB 'Now read X for any other functions.' answer that the guard MISSED (a blank-line gap) and
+    the turn was labelled 'completed' - a keeper. A guard miss must never make a loop a positive training
+    target, so convert drops the turn regardless of its recorded outcome."""
+    out, degen, seg = set(), False, 1
+    for r in records:
+        t = r.get("type")
+        if t == "model_call" and looks_degenerate((r.get("response") or {}).get("content") or ""):
+            degen = True
+        elif t == "turn_outcome":
+            idx = r.get("turn", seg)
+            if degen:
+                out.add(idx)
+            degen, seg = False, idx + 1
+    return out
+
+
 def _contested_turns(records):
     """Turn indices that contained a BLOCKED (denied) tool call — ride-5 corpus integrity. A denied action
     is a negative, not a training target, and the turn built around it (the give-up / work-around it
@@ -111,6 +130,7 @@ def trainable_turns(records):
     verify + contest checks are scoped PER TURN, so a single late failing/contested turn no longer drops
     the good turns beside it (0.7.0 + ride-5 corpus integrity)."""
     contested = _contested_turns(records)
+    degenerate = _degenerate_turns(records)
     turns, verif_ok, seg = {}, True, 1
     for r in records:
         t = r.get("type")
@@ -118,7 +138,8 @@ def trainable_turns(records):
             verif_ok = verif_ok and bool(r.get("ok"))
         elif t == "turn_outcome":
             idx = r.get("turn", seg)
-            turns[idx] = (r.get("outcome") in KEEP_OUTCOMES) and verif_ok and (idx not in contested)
+            turns[idx] = ((r.get("outcome") in KEEP_OUTCOMES) and verif_ok
+                          and (idx not in contested) and (idx not in degenerate))
             verif_ok, seg = True, idx + 1
     return turns
 
@@ -159,6 +180,10 @@ def is_trainable(records):
     # blocked action is a negative, so drop the whole session rather than train a blocked emission.
     if _has_denial(records):
         return False, "guardian_contested"
+    # A repetition-loop answer that the live guard missed must never be trained (defense-in-depth).
+    if any(r.get("type") == "model_call" and looks_degenerate((r.get("response") or {}).get("content") or "")
+           for r in records):
+        return False, "degenerate_content"
     # Behavior gate (specs/0004): even a verify-passing run is bad training data if the
     # agent REFUSED (a "narrow the scope" deflection) — we don't want to teach that.
     if rubric.is_refusal(records):

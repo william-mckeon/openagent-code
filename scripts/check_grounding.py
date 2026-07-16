@@ -156,6 +156,11 @@ def main():
     ch = grounding.challenge(["'x.md' - cited in the answer but not found in the workspace"])
     check("challenge() names the problem, stays targeted + points at the CURRENT request (not 'original')",
           "x.md" in ch and "whole repo" in ch and "current" in ch.lower() and "original request" not in ch.lower())
+    # CAP: 20 flagged claims must not all be dumped on a weak model (that induced a repetition loop live) -
+    # surface a handful, note the rest.
+    _big = grounding.challenge([f"claim {i} not backed" for i in range(20)])
+    check("challenge() caps the list (<= 6 bullets shown) and notes the remainder",
+          _big.count("\n- ") <= 7 and "more unbacked" in _big and "claim 0" in _big and "claim 19" not in _big)
     check("an answer with no cited paths -> clean",
           grounding.problems("All good, nothing to cite here.", _ctx(tmp)) == [])
 

@@ -165,6 +165,20 @@ def main():
                  _end("goal_unmet", tc=1)]
     check("a one-shot goal_unmet run is dropped whole", convert.is_trainable(unmet_one) == (False, "goal_unmet"))
 
+    # 5d. degeneracy backstop: a turn whose model LOOPED (blank-separated repetition) that the live guard
+    #     MISSED and mislabelled 'completed' is still dropped at convert time - a loop must never train.
+    _loop = "\n\n".join(["Now read src/auth/internal/middleware/auth.go for any other functions."] * 200)
+    degen_turn = [_ss(),
+                  _user("t1"), _mc(0, "a clean review", calls=["read_file"]), _tc(True), _tout(1, "completed"),
+                  _user("t2"), _mc(1, _loop), _tout(2, "completed"),   # mislabelled completed despite the loop
+                  _end("completed", tc=1)]
+    check("_degenerate_turns pinpoints the looping turn", convert._degenerate_turns(degen_turn) == {2})
+    check("a mislabelled-'completed' repetition-loop turn is dropped (clean turn survives)",
+          convert.is_trainable(degen_turn)[0] and len(convert.to_rows(degen_turn, "as_sent")) == 1)
+    degen_one = [_ss(), _user("t"), _mc(0, _loop), _end("completed", tc=1)]
+    check("a one-shot loop mislabelled 'completed' is dropped as degenerate_content",
+          convert.is_trainable(degen_one) == (False, "degenerate_content"))
+
     # 6. reasoning channel: a TOOL-CALL target folds its reasoning into content (matching the runtime
     #    planner) instead of dropping it, and the fold is NOT preamble-stripped; a FINAL answer stays
     #    clean and preamble-stripped. Dropping reasoning had trained reasoning-free (looping) tool calls.

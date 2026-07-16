@@ -378,13 +378,21 @@ def looks_degenerate(text, min_repeats=6, min_line=8):
 
     Two deliberate properties keep it from false-flagging normal prose: (1) the run must be CONSECUTIVE -
     six IDENTICAL lines scattered through a table / list / diff is normal, six in a ROW is not; (2) a
-    short (< min_line) or blank line BREAKS the run, so ordinary indentation / bullets never trip it.
-    Digit-normalization catches the common loop that only differs by a ticking counter."""
+    short NON-BLANK (< min_line) line breaks the run, so ordinary indentation / bullets never trip it.
+    Digit-normalization catches the common loop that only differs by a ticking counter.
+
+    A BLANK line does NOT break the run - it is SKIPPED. A live review looped emitting one long phrase
+    with a blank line BETWEEN each repeat ('Now read X for any other functions.\n\n' x hundreds); the old
+    'a blank breaks the run' rule reset the counter on every blank, so a 21 KB repetition loop scored
+    clean and was captured as a `completed` training target. Skipping blanks (not resetting) catches it
+    while a short non-blank line still breaks a normal list."""
     prev, run = None, 0
     for line in (text or "").splitlines():
         s = line.strip()
+        if not s:
+            continue                       # a BLANK line is transparent - it must not reset a real loop
         if len(s) < min_line:
-            prev, run = None, 0            # a short/blank line breaks the run
+            prev, run = None, 0            # a SHORT non-blank line (bullet / indent) still breaks the run
             continue
         key = _DEGEN_DIGITS.sub("#", s)    # collapse digits so a ticking-counter loop still matches
         if key == prev:

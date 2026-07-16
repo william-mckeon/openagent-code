@@ -212,6 +212,12 @@ def main():
     # Phase-13 degeneracy guard: a repeated substantive line is a repetition loop; ordinary prose isn't.
     check("looks_degenerate catches a repetition loop",
           looks_degenerate("\n".join(["Now we also need to rename the comment at line 578? Already done."] * 20)))
+    # the live guard MISS: a loop with a BLANK line between each repeat (a 21 KB review answer that scored
+    # 'clean' and was captured as 'completed'). A blank must be skipped, not reset the run.
+    check("looks_degenerate catches a BLANK-SEPARATED repetition loop (the guard-miss case)",
+          looks_degenerate("\n\n".join(["Now read src/auth/internal/middleware/auth.go for any other functions."] * 200)))
+    check("looks_degenerate does NOT flag blank-separated SHORT lines (a short line still breaks)",
+          not looks_degenerate("\n\n".join(["- ok"] * 12)))
     check("looks_degenerate ignores short/varied interjections (each line < min_line)",
           not looks_degenerate("Ok.\nStop.\nAlright.\nOk.\nStop.\nOk.\nStop.\nOk.\nStop.\nOk."))
     check("looks_degenerate does NOT flag a normal multi-line answer",

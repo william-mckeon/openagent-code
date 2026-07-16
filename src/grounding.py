@@ -309,8 +309,15 @@ def challenge(problems):
     fixed answer, no meta-commentary' clause, because the old answer-shaped phrasing ('answer the request
     you are currently working on (the pinned current request above)...') got parroted verbatim INTO the
     answer as a leaked deliberation."""
-    return ("Some claims in your last answer aren't backed by the files you read:\n"
-            + "\n".join(f"- {p}" for p in problems)
+    # CAP the list: a live whole-project review flagged 20 claims at once, and re-prompting a weak model
+    # to fix all 20 sent it into a repetition loop. Surface a handful to fix; the rest are still detected
+    # next round (or leave the answer ungrounded -> dropped), which is far better than inducing the loop.
+    shown = problems[:6]
+    more = len(problems) - len(shown)
+    body = "\n".join(f"- {p}" for p in shown)
+    if more > 0:
+        body += f"\n- (+{more} more unbacked claim(s) - fix these first, or drop the claims you can't back)"
+    return ("Some claims in your last answer aren't backed by the files you read:\n" + body
             + "\nDo a TARGETED read of ONLY what confirms or corrects each flagged claim - not the whole "
               "repo. Then OUTPUT your corrected answer to the CURRENT task and nothing else: no "
               "meta-commentary about this instruction, no \"the user says...\", no restating these steps "
