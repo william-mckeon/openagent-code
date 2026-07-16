@@ -29,6 +29,10 @@ def _ts():
 
 
 class Trajectory:
+    # 0.8.0: goal loops (Phase 20 / specs/0020). A `goal` record marks a pursued objective + the
+    #        MODEL-PROPOSED bar (argv), attempts burned, and whether the bar finally passed. The bar's
+    #        pass/fail rides the existing `verification` record — logged ONCE, when the loop resolves, so
+    #        a converged loop stays trainable (an intermediate failure would drop it).
     # 0.7.0: per-turn honesty (corpus integrity). A REPL session is ONE trajectory with many turns,
     #        so a `turn_outcome` record now marks each turn's honest outcome (via src/outcomes.classify).
     #        train/convert.py drops exactly the degenerate/ungrounded/unverified turns and keeps the good
@@ -47,7 +51,7 @@ class Trajectory:
     # 0.6.0: `permission` record per gated tool call (Phase 4 #6) — the decision
     #        (allow/ask/deny + which rule/mode decided it), captured before the call.
     # Older data stays usable — the converter falls back to as-sent / reattachment.
-    SCHEMA_VERSION = "0.7.0"
+    SCHEMA_VERSION = "0.8.0"
 
     @classmethod
     def resume(cls, path):
@@ -220,6 +224,22 @@ class Trajectory:
             "command": command,
             "ok": ok,
             "output": output[:4000],
+        })
+
+    def log_goal(self, objective, bar, iterations_used, max_iterations, met):
+        """Record a goal loop's OUTCOME once, when it resolves (specs/0020) — the objective, the bar the
+        model proposed, how many attempts it burned, and whether the bar ultimately passed. An audit trail
+        of what the agent was told to converge on, and a first-class signal for the flywheel (did declaring
+        a bar lead anywhere?). The bar's pass/fail reward itself rides the `verification` record."""
+        self._write({
+            "type": "goal",
+            "session_id": self.session_id,
+            "ts": _ts(),
+            "objective": objective,
+            "bar": list(bar or []),
+            "iterations_used": iterations_used,
+            "max_iterations": max_iterations,
+            "met": bool(met),
         })
 
     def end(self, outcome, final_text=None, terminated=None):

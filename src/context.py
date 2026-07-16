@@ -47,6 +47,7 @@ class ContextManager:
         self.pinned = None       # always-visible, never-compacted message (e.g. the plan)
         self.pinned_task = None   # the current user request, pinned so compaction can't lose it
         self.pinned_review = None  # a completed review_repo digest, pinned so compaction can't drop it
+        self.pinned_goal = None    # the pursued objective + bar (specs/0020), pinned across a long loop
         self.pinned_env = None    # per-turn environment block (specs/0012), refreshed each turn
         if initial_working is None:
             # Fresh session: empty working set; the system prompt is the first raw turn.
@@ -167,6 +168,7 @@ class ContextManager:
         the agent stays on what was actually asked. Bounded like the plan pin (specs/0009).
         """
         self.pinned_review = None  # a new task invalidates any prior turn's review digest
+        self.pinned_goal = None    # ...and any prior turn's goal/bar (the cross-turn hijack class)
         self.pinned_task = (self._capped({"role": "user",
                                           "content": "The user's current request (answer THIS directly):\n" + text})
                             if text else None)
@@ -191,6 +193,20 @@ class ContextManager:
                                             "review by synthesizing THIS; do not re-run review_repo):\n" + text})
                               if text else None)
 
+    def set_goal(self, text):
+        """Pin the pursued objective + its BAR — always sent, never compacted (specs/0020).
+
+        A goal loop is long by construction (N iterations x many steps each), so it WILL compact. The bar
+        arrives once, as the `pursue` tool result, and would be summarized away mid-loop — leaving the
+        agent grinding toward a target it can no longer state. The re-prompt after a failing bar restates
+        it, but only at the END of an iteration; the WORK phase in between is exactly where drift happens.
+        Pinning it keeps "what am I converging on, and what decides it" visible throughout. Cleared when
+        the loop resolves and by a new task (see set_task). Bounded like the other pins (specs/0009).
+
+        A CONTEXT device only: the goal is already in the raw trajectory (the pursue tool call + the `goal`
+        record), so pinning a copy never adds to the captured turn stream."""
+        self.pinned_goal = (self._capped({"role": "user", "content": text}) if text else None)
+
     def set_env_context(self, text):
         """Pin the per-turn environment block (cwd/OS/shell/date/git — see envcontext.py) just before
         the live working messages. It is DYNAMIC state, so unlike the system prompt it must REFRESH each
@@ -203,6 +219,7 @@ class ContextManager:
     def _base(self):
         return ([self.system]
                 + ([self.pinned_task] if self.pinned_task else [])   # the request first — the anchor
+                + ([self.pinned_goal] if self.pinned_goal else [])   # then the bar that decides "done"
                 + ([self.pinned] if self.pinned else [])             # then the working plan
                 + ([self.pinned_review] if self.pinned_review else [])   # then a completed review digest
                 + ([self.pinned_env] if self.pinned_env else []))    # then the live environment block

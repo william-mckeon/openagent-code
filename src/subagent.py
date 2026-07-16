@@ -15,6 +15,7 @@ Import direction is one-way (subagent -> runtime), so wiring `ctx.spawn` here ke
 tools.py free of any agent/runtime import and avoids a cycle.
 """
 from . import config
+from . import outcomes
 from .tools import Context
 from .trajectory import Trajectory
 from .runtime import build_agent
@@ -55,23 +56,16 @@ def make_context(cwd, permissions, session_id, depth=0, verbose=False, interacti
 
 
 def _classify(result, tool_calls):
-    """Honest outcome for a subagent (no verify command). Mirrors cli.py — honest gate outcomes are
-    checked BEFORE the tool_calls==0 fallback (a gate can fire with zero tool calls)."""
-    if result.terminated == "nudge_exhausted":
-        return "protocol_stalled"
-    if result.terminated == "unverified_completion":
-        return "unverified_completion"
-    if result.terminated == "ungrounded_completion":
-        return "ungrounded_completion"
-    if result.terminated == "degenerate":
-        return "degenerate"
-    if result.terminated == "verify_failed_edits":
-        return "verify_failed_edits"
-    if tool_calls == 0:
-        return "no_action"
-    if result.terminated == "max_steps":
-        return "max_steps"
-    return "completed"
+    """Honest outcome for a subagent — DELEGATES to the ONE shared mapping (src/outcomes.classify).
+
+    This module used to keep a hand-copied duplicate of that mapping. AUDIT-FINDINGS row 3 fixed exactly
+    this class in eval/harness.py ("collapsed honest labels to success on the corpus path" -> one shared
+    outcomes.classify) and left this copy behind. It is a corpus-poison trap: a subagent (spawn_agent /
+    review_repo child) whose run ends on a NEW gate outcome the copy doesn't know falls through to
+    "completed" — a KEEP_OUTCOMES label — so a thrashing run becomes a positive SFT target. Children write
+    to the same corpus, so the leak is live. Delegating means a new gate outcome can never be added in one
+    place and silently mislabeled here."""
+    return outcomes.classify(result.terminated, tool_calls)
 
 
 def run_subagent(task, parent_ctx, effort=None, label=None):

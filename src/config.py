@@ -316,6 +316,46 @@ except ValueError:
 HOOKS = _as_bool(os.environ.get("CODE_HOOKS", "false"))
 HOOKS_CONFIG = _resolve_install_path(os.environ.get("CODE_HOOKS_CONFIG", ""))
 
+# goal loop (Phase 20 / specs/0020). The agent declares a MACHINE-CHECKABLE bar via the `pursue` tool and
+# the HARNESS iterates until the bar passes: the model never decides "done", the bar command does. Unlike
+# 0014's verifier (operator-configured argv), this bar is MODEL-proposed, so it is argv-only (shell=False),
+# entry-filtered (no DANGEROUS / no shell interpreter), and permission-gated. Off by default -> `pursue`
+# isn't even offered to the model and the gate is a no-op (byte-identical).
+GOAL_LOOP = _as_bool(os.environ.get("CODE_GOAL_LOOP", "false"))
+# Hard ceiling on bar iterations, whatever the model asks for. The destructive cap counts DISTINCT targets,
+# so it does NOT bound a bar re-running — this is the ONLY thing that does.
+try:
+    GOAL_MAX_ITERATIONS = max(1, int(os.environ.get("CODE_GOAL_MAX_ITERATIONS", "3")))
+except ValueError:
+    GOAL_MAX_ITERATIONS = 3
+# Steps kept in reserve: run() falls THROUGH the gate chain to the synthesis path when max_steps runs out
+# (returning 'max_steps', not 'goal_unmet'), so the gate stops re-prompting this close to the ceiling.
+try:
+    GOAL_STEP_HEADROOM = max(1, int(os.environ.get("CODE_GOAL_STEP_HEADROOM", "6")))
+except ValueError:
+    GOAL_STEP_HEADROOM = 6
+# Seconds a single bar run may take before it's killed (a hung bar must not hang the loop).
+try:
+    GOAL_TIMEOUT = max(1, int(os.environ.get("CODE_GOAL_TIMEOUT", "120")))
+except ValueError:
+    GOAL_TIMEOUT = 120
+# OPTIONAL operator allowlist: a JSON file of permitted bar argv lists (e.g. [["npm","test"],["pytest"]]).
+# Unset = no allowlist (the entry filter + permission gate still apply). Set = ONLY these bars may run.
+GOAL_BARS_CONFIG = _resolve_install_path(os.environ.get("CODE_GOAL_BARS_CONFIG", ""))
+
+
+def load_goal_bars() -> list:
+    """The operator's allowlist of permitted bar argv lists from CODE_GOAL_BARS_CONFIG. Missing / unset /
+    bad file -> [] (no allowlist). Never raises. argv lists ONLY — a shell string is never accepted."""
+    if not GOAL_BARS_CONFIG or not os.path.isfile(GOAL_BARS_CONFIG):
+        return []
+    try:
+        with open(GOAL_BARS_CONFIG, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return []
+    return [list(b) for b in data if isinstance(b, list) and b and all(isinstance(x, str) for x in b)]
+
 
 def resolved_permission_mode() -> str:
     """The effective mode: explicit CODE_PERMISSION_MODE, else derived from

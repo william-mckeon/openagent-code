@@ -14,7 +14,8 @@ exist to reject became SFT targets (corpus poison).
 # The honest gate outcomes (Phases 6 / 10 / 13 / 14). A run that ended in one of these is NOT trainable,
 # and the label MUST survive to train/convert.py. They take precedence over any success relabel a caller
 # applies (a verify command that happens to pass must never mask an ungrounded/unverified answer).
-GATE_OUTCOMES = ("unverified_completion", "ungrounded_completion", "degenerate", "verify_failed_edits")
+GATE_OUTCOMES = ("unverified_completion", "ungrounded_completion", "degenerate", "verify_failed_edits",
+                 "goal_unmet")
 
 
 def classify(terminated, tool_calls):

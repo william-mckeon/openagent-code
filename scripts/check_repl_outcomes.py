@@ -151,6 +151,20 @@ def main():
     check("an APPROVED (allowed) ask-tier call is NOT contested (turn kept)",
           convert.is_trainable(approved)[0] and convert._contested_turns(approved) == set())
 
+    # 5c. Phase 20: a goal loop that THRASHED to exhaustion ends 'goal_unmet' — not a keeper, so it drops
+    #     itself. Teaching "pursue a bar, never meet it, stop" is exactly the thrash we must not train.
+    check("classify: goal_unmet is preserved as an honest outcome", outcomes.classify("goal_unmet", 6) == "goal_unmet")
+    unmet_turn = [_ss(),
+                  _user("t1"), _mc(0, "good", calls=["read_file"]), _tc(True), _tout(1, "completed"),
+                  _user("t2"), _mc(1, "I could not make the bar pass", calls=["edit_file"]), _tc(True),
+                  _tout(2, "goal_unmet", terminated="goal_unmet"),
+                  _end("completed", tc=2)]
+    check("a goal_unmet TURN is dropped while the good turn beside it survives",
+          convert.is_trainable(unmet_turn)[0] and len(convert.to_rows(unmet_turn, "as_sent")) == 1)
+    unmet_one = [_ss(), _user("t"), _mc(0, "never converged", calls=["edit_file"]), _tc(True),
+                 _end("goal_unmet", tc=1)]
+    check("a one-shot goal_unmet run is dropped whole", convert.is_trainable(unmet_one) == (False, "goal_unmet"))
+
     # 6. reasoning channel: a TOOL-CALL target folds its reasoning into content (matching the runtime
     #    planner) instead of dropping it, and the fold is NOT preamble-stripped; a FINAL answer stays
     #    clean and preamble-stripped. Dropping reasoning had trained reasoning-free (looping) tool calls.

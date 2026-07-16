@@ -56,7 +56,10 @@ def _flush_stdin():
 # apply_patch mutates too, but ONE envelope carries MANY paths, so decide()'s single-path fence can't
 # cover it here — patch.py re-gates each op through decide() with its single-file equivalent. Listing it
 # here still makes the OUTER gate treat it as a mutation (blocked in plan mode / headless default).
-MUTATING = {"write_file", "edit_file", "delete_file", "run_command", "apply_patch"}
+# `pursue` (Phase 20) is MUTATING even though it only registers a goal: it hands the harness a
+# MODEL-PROPOSED command to run repeatedly, unattended. Omit it here and decide() would fall to the
+# "read-only tool" allow at step 3 and the bar would face NO gate at all.
+MUTATING = {"write_file", "edit_file", "delete_file", "run_command", "apply_patch", "pursue"}
 
 # Delete/remove verbs — a run_command is DESTRUCTIVE (counts toward the mass-destruction cap) if it's
 # dangerous per execpolicy OR removes files. A routine edit / install / build is NOT destructive.
@@ -218,6 +221,16 @@ class Permissions:
                 return _Target("other", patch.patch_summary(args.get("patch", "")) or "apply_patch")
             except Exception:  # noqa: BLE001 - a bad patch still gets a (useless-but-safe) generic target
                 return _Target("other", "apply_patch")
+        if tool == "pursue":
+            # Same class as apply_patch: `pursue` hides its BAR in an args field, so without this the
+            # target is '' — the log line and the guardian's review would see a bare 'pursue' with the
+            # command invisible, and a bar-scoped rule (`pursue(pytest:*)`) could never match. kind
+            # "command" routes it through the command matcher so such rules are real.
+            try:
+                from . import goal
+                return _Target("command", goal.render(args.get("bar")) or "pursue")
+            except Exception:  # noqa: BLE001
+                return _Target("command", "pursue")
         if tool == "web_fetch":
             return _Target("other", args.get("url", ""))
         if tool == "web_search":

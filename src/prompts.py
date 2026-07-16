@@ -160,6 +160,16 @@ def build_system_prompt(mode, tools, memory=None, granted_dirs=None):
     if any(t["name"].startswith("web_") for t in tools):
         note = ("\n\nNote: web_fetch / web_search send data OFF this machine. Read local code "
                 "first; use them only when you genuinely need external information.")
+    # Goal loops (specs/0020): teach WHEN to hand control flow to the harness. Only advertised when the
+    # tool is actually offered (CODE_GOAL_LOOP), so a flag-off prompt is byte-identical.
+    if any(t["name"] == "pursue" for t in tools):
+        note += ("\n\nGOAL LOOPS: if the task has a VERIFIABLE end state you can name a COMMAND for, call "
+                 "`pursue` FIRST with that command as the bar, then do the work — the harness re-runs the "
+                 "bar for you and ITS exit code decides when you are done, not your judgment. Examples: "
+                 "\"make the tests pass\" -> [\"npm\",\"test\"]; \"fix the lint errors\" -> "
+                 "[\"ruff\",\"check\",\".\"]. If there is NO runnable check (\"refactor this nicely\", "
+                 "\"what does this do?\"), do NOT call pursue — just do the work. Never claim the goal is "
+                 "met: the bar says so or it doesn't.")
     # Reference directories granted beyond the workspace (--add-dir / CODE_ADD_DIRS).
     # Advertised so the agent USES them instead of defaulting to the workspace, and
     # knows to address them by absolute path (the workspace is still the default root).

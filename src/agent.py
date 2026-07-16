@@ -18,6 +18,7 @@ made no tool calls, or stalled on the protocol, is not a success.
 import os
 
 from . import config
+from . import goal
 from . import grounding
 from . import envcontext
 from . import verify_edits
@@ -108,6 +109,7 @@ class Agent:
         ctx._guardian_cache = {}      # per-turn guardian verdicts (specs/0019): a repeated command isn't re-reviewed
         ctx._destructive_targets = set()  # per-turn mass-destruction ledger (ride-5): distinct approved delete/move/dangerous ops
         ctx._turn_id = getattr(ctx, "_turn_id", 0) + 1   # a stable per-turn id a hook can key its own budget on
+        ctx.goal = None               # a PREVIOUS task's bar must never be pursued on this one (specs/0020)
         ctx.request = task            # pin the user's request so the guardian can weigh "is this what was asked"
         # Situational context (specs/0012): inject the agent's real environment (cwd / OS / shell / date
         # / granted dirs, + git branch when enabled) once per turn as a refreshed pin, so it conditions
@@ -129,6 +131,13 @@ class Agent:
             for step in range(self.max_steps):
                 self.traj.steps = step + 1
                 self.cm.set_pinned(ctx.plan)   # keep the current plan visible (Phase 4 planning)
+                # Keep the pursued bar visible too (specs/0020) — a goal loop is long by construction, so
+                # the bar WOULD be compacted away mid-loop. Mirrors the plan pin: set while active, cleared
+                # the moment the loop resolves (ctx.goal = None), so a met goal can't linger in context.
+                _g = getattr(ctx, "goal", None)
+                self.cm.set_goal(
+                    f"You are pursuing this goal. The BAR decides when it is done - not you:\n"
+                    f"  GOAL: {_g['objective']}\n  BAR:  {goal.render(_g['bar'])}" if _g else None)
                 decision = self.planner.step(self.cm.context(), step)
 
                 # Degeneracy guard (repetition loop): a weak model can get stuck emitting the same line
@@ -199,6 +208,41 @@ class Agent:
                                 self.traj.log_verification(r["cmd"], r["ok"], r["output"])
                         if failing:
                             return RunResult(decision.final, "verify_failed_edits", tool_calls)
+
+                    # Goal gate (Phase 20 / specs/0020): the model says done — but if it declared a BAR
+                    # via `pursue`, the bar decides, not the model. Run it; a failure re-prompts with the
+                    # REAL output and loops, else an honest 'goal_unmet'. Sits AFTER completion/auto-verify
+                    # (so each iteration is honest) and BEFORE grounding (so grounding judges the REAL
+                    # final answer, not an interim one). The whole loop stays inside THIS run(), which is
+                    # what makes the per-turn guarantees — above all the mass-destruction cap — span it.
+                    g = getattr(ctx, "goal", None)
+                    if config.GOAL_LOOP and g:
+                        bar_ok, bar_out = goal.run_bar(g["bar"], ctx.cwd)
+                        # Steps run out -> run() falls THROUGH this chain to the synthesis path and returns
+                        # 'max_steps', so 'goal_unmet' would be unreachable. Stop re-prompting while there's
+                        # still headroom and own the honest label here.
+                        room = (self.max_steps - step) > config.GOAL_STEP_HEADROOM
+                        if not bar_ok and g["used"] + 1 < g["max_iterations"] and room:
+                            g["used"] += 1
+                            if ctx.verbose:
+                                print(f"  [goal] bar failed ({g['used']}/{g['max_iterations']}): "
+                                      f"{goal.render(g['bar'])}")
+                            log.info("goal challenge (attempt %d/%d): %s", g["used"], g["max_iterations"],
+                                     bar_out[:200].replace("\n", " "))
+                            self.cm.add({"role": "user", "content": goal.challenge(
+                                g["objective"], g["bar"], bar_out, g["used"], g["max_iterations"])})
+                            continue
+                        # RESOLVED (passed, or budget/steps exhausted): log ONLY this final result as the
+                        # reward — logging each failing attempt would make verif_ok False and drop every
+                        # successfully-converged loop from the corpus (the 0014 lesson).
+                        self.traj.log_goal(g["objective"], g["bar"], g["used"] + (0 if bar_ok else 1),
+                                           g["max_iterations"], bar_ok)
+                        self.traj.log_verification(goal.render(g["bar"]), bar_ok, bar_out)
+                        ctx.goal = None          # met-or-spent: never re-run it on a later re-prompt
+                        if ctx.verbose:
+                            print(f"  [goal] bar {'PASSED' if bar_ok else 'NOT met'}: {goal.render(g['bar'])}")
+                        if not bar_ok:
+                            return RunResult(decision.final, "goal_unmet", tool_calls)
 
                     # Grounding gate (Phase 10 / specs/0010): completion is verified — the plan's
                     # changes are real. Now check the closing answer's CLAIMS are grounded in the

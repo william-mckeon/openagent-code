@@ -12,7 +12,7 @@ per-run agreement is what keeps the Phase-3 self-containment gate accurate as th
 toolset varies.
 """
 from . import config
-from .tools import TOOLS, WEB_TOOLS, MEMORY_TOOLS, SKILL_TOOLS, PATCH_TOOLS, openai_schemas
+from .tools import TOOLS, WEB_TOOLS, MEMORY_TOOLS, SKILL_TOOLS, PATCH_TOOLS, GOAL_TOOLS, openai_schemas
 from .mcp_client import mcp_tools
 
 
@@ -25,6 +25,11 @@ def active_tools():
         tools += SKILL_TOOLS
     if config.APPLY_PATCH:
         tools += PATCH_TOOLS
+    # The ONLY site that offers `pursue` (Phase 20). Adding it to the base TOOLS list and refusing it at
+    # call time instead would change every trajectory's logged tool_schemas even with the flag OFF - a
+    # toolset change, which is exactly what corrupts conversion (ROADMAP Phase 3).
+    if config.GOAL_LOOP:
+        tools += GOAL_TOOLS
     if config.ENABLE_WEB:
         tools += WEB_TOOLS
     tools += mcp_tools()

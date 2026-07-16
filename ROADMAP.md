@@ -431,6 +431,14 @@ built in independently shippable sub-phases. Build order is by *what unblocks wh
   tier ONLY (never allow / deny / read-only): when a tool hits `ask`, a reviewer subagent decides
   approve/deny (any error/ambiguous verdict DENIES), so an unattended run can proceed on a REVIEWED
   ask-tier action instead of just blocking. Depth-0 gated (no recursion); reviews feed the flywheel.
+- **0020 goal-loop** ✅ BUILT (2026-07) — stop being the loop. The agent calls `pursue` with an objective
+  and a MACHINE-CHECKABLE bar; the HARNESS iterates (work → run the bar → feed the real output back) until
+  the bar passes or the budget runs out. **The model never decides "done" — the bar's exit code does**, and
+  requiring a runnable bar IS the "is this loop-shaped?" filter (no bar, no loop). The trust inversion vs
+  0014: this bar is MODEL-proposed, so it's argv-only (`shell=False`), entry-filtered (no destructive bar,
+  no shell/interpreter, optional operator allowlist) and permission-gated. Implemented as a GATE inside
+  `run()` so every per-turn guarantee — above all the mass-destruction cap — spans the whole loop. Honest
+  `goal_unmet` on exhaustion, auto-dropped from the corpus. `CODE_GOAL_LOOP`, default off; `check_goal` (29).
 
 All donor patterns are **rewritten clean as our own Python**; no external agent is named in our code or specs.
 
@@ -465,4 +473,4 @@ All donor patterns are **rewritten clean as our own Python**; no external agent 
 
 ## Status line
 
-Phase 0 ✅ · Phase 1 ✅ (eval now 13 tasks, 13/13 — harder tier added, ceiling not yet found) · Phase 2 ✅ · Phase 3 ✅ · **Phase 4 — compaction ✅ + subagents ✅ + planning ✅ + interactivity ✅ + tool-breadth ✅ + cold-start handling ✅ + permissions Core ✅ + cross-session memory ✅ + permission hooks ✅ (specs/0015). Remaining: the always-open robustness/eval-ceiling tail** · **Phase 5 — distillation flywheel (gpt-oss-120b/Bedrock teacher → distilled student): Stage 1 (documented) ✅; Stages 2-7 staged (specs/0005)** · **Adoption Track (Phase 12–19): `0012` situational-context ✅ · `0013` edit-layer ✅ · `0014` auto-verify ✅ · `0015` hooks ✅ · `0016` execpolicy ✅ · `0017` sandbox-FS ✅ · `0019` guardian ✅ · remaining: `0018` sandbox-net (admin/WFP, own timeline). Foundation hardened by a full adversarial audit (19/19 fixed) + live rides — see docs/AUDIT-FINDINGS.md**.
+Phase 0 ✅ · Phase 1 ✅ (eval now 13 tasks, 13/13 — harder tier added, ceiling not yet found) · Phase 2 ✅ · Phase 3 ✅ · **Phase 4 — compaction ✅ + subagents ✅ + planning ✅ + interactivity ✅ + tool-breadth ✅ + cold-start handling ✅ + permissions Core ✅ + cross-session memory ✅ + permission hooks ✅ (specs/0015). Remaining: the always-open robustness/eval-ceiling tail** · **Phase 5 — distillation flywheel (gpt-oss-120b/Bedrock teacher → distilled student): Stage 1 (documented) ✅; Stages 2-7 staged (specs/0005)** · **Adoption Track (Phase 12–19): `0012` situational-context ✅ · `0013` edit-layer ✅ · `0014` auto-verify ✅ · `0015` hooks ✅ · `0016` execpolicy ✅ · `0017` sandbox-FS ✅ · `0019` guardian ✅ · `0020` goal-loop ✅ · remaining: `0018` sandbox-net (admin/WFP, own timeline). Foundation hardened by a full adversarial audit (19/19 fixed) + live rides — see docs/AUDIT-FINDINGS.md**.

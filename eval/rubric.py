@@ -17,6 +17,7 @@ import json
 
 from src.prompts import has_reasoning_leak
 from src import grounding
+from src import outcomes
 
 # "narrow the scope / which part?" deflections — refusing a broad review instead of mapping
 # it. Matched against a turn's final answer when that turn did little/no investigation.
@@ -186,8 +187,9 @@ def score(records, rubric=None):
     # failures the per-turn checks can't see. Fold into the checks AND cap the score, so the flywheel
     # selects hard against a lying, an honest-but-wrong, OR a degenerate run.
     end = next((r for r in records if r.get("type") == "session_end"), {})
-    verified_done = end.get("outcome") not in ("unverified_completion", "ungrounded_completion",
-                                                "degenerate", "verify_failed_edits")
+    # Read the gate list from the ONE shared mapping rather than re-typing it: a hand-copied tuple here
+    # silently mis-scores every NEW gate outcome (Phase 20's 'goal_unmet' was the third such site).
+    verified_done = end.get("outcome") not in outcomes.GATE_OUTCOMES
     agg["verified_done"] = verified_done
     base_score = sum(p["score"] for p in per) / n
     return {

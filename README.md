@@ -84,6 +84,7 @@ openagent-code/
 │   ├── sandbox.py            # FS confinement: fence run_command's writes to the workspace (specs/0017)
 │   ├── guardian.py           # fail-closed LLM approval reviewer for the ask tier (specs/0019)
 │   ├── hooks.py              # opt-in, fail-open PreToolUse/PostToolUse/PermissionRequest hooks (specs/0015)
+│   ├── goal.py               # goal loop: pursue a machine-checkable bar; the bar decides done (specs/0020)
 │   ├── skills.py             # skills (specs/0008): SKILL.md workflows; run_skill fans out captured concern subagents
 │   ├── memory.py             # cross-session project memory — load + remember (Phase 4)
 │   ├── context.py            # ContextManager — live context + compaction (Phase 4)
@@ -139,7 +140,8 @@ Common flags (instead of `$env:CODE_*`):
 e.g. review another repo read-only while it stays out of harm's way:
 `openagent-code -C C:\my\project --mode plan --add-dir C:\other\repo`.
 Each run is labelled with an honest outcome (`success` / `completed` / `verify_failed` /
-`no_action` / `protocol_stalled` / `max_steps` / `error`); only `success`/`completed` exit `0`.
+`no_action` / `protocol_stalled` / `max_steps` / `goal_unmet` / `error`); only `success`/`completed`
+exit `0`.
 
 ### Docker (the sandbox / eval path)
 

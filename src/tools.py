@@ -54,6 +54,7 @@ class Context:
         self.plan = None               # current plan text (set by update_plan; pinned by the loop)
         self.plan_items = []           # structured steps [{content,status,file}] for the completion gate
         self.mutations = {}            # {workspace-rel path: "write"|"edit"|"delete"} applied this run
+        self.goal = None               # {objective,bar,max_iterations,used} set by pursue; run by the goal gate
         self.ask = None                # callable(question) -> answer; wired by make_context
         self.interactive = False       # True only when a human is present to answer
 
@@ -754,6 +755,62 @@ SKILL_TOOLS = [
 # Opt-in apply_patch tool (specs/0013) — added to the active toolset by src/toolset.py only when
 # CODE_APPLY_PATCH is on. One envelope makes several file ops (Add/Update/Delete/Move) ATOMICALLY;
 # every touched path goes through _record_mutation, so the completion + grounding gates already cover it.
+def pursue(args, ctx):
+    """Declare a GOAL plus a machine-checkable BAR; the HARNESS then loops until the bar passes (Phase 20).
+
+    A registration tool, like update_plan: it validates and stashes on ctx.goal — it does NOT run the loop
+    (agent.py's goal gate does, so the whole loop stays inside ONE run() and the per-turn guarantees, above
+    all the mass-destruction cap, span it). The bar is MODEL-proposed, so it is argv-only, entry-filtered
+    and permission-gated here, ONCE, before any looping can start.
+    """
+    from . import goal
+    if ctx.depth > 0:
+        return ToolResult(False, "pursue is top-level only - a subagent does its bounded task and reports.")
+    objective = (args.get("objective") or "").strip()
+    if not objective:
+        return ToolResult(False, "pursue needs an `objective` (what done looks like).")
+    bar = args.get("bar")
+    ok, why = goal.entry_ok(bar)
+    if not ok:
+        return ToolResult(False, f"Refused this bar: {why}. A bar must be a runnable CHECK as an argv "
+                                 "list, e.g. [\"npm\",\"test\"] or [\"python\",\"-m\",\"pytest\"]. If the "
+                                 "task has no checkable bar, just do the work - don't loop.")
+    allowed, reason = goal.gate(bar, ctx)
+    if not allowed:
+        return ToolResult(False, f"Permission denied for this bar: {reason}")
+    want = args.get("max_iterations") or config.GOAL_MAX_ITERATIONS
+    try:
+        want = int(want)
+    except (TypeError, ValueError):
+        want = config.GOAL_MAX_ITERATIONS
+    iters = max(1, min(want, config.GOAL_MAX_ITERATIONS))   # the operator's ceiling always wins
+    argv = goal.normalize_bar(bar)
+    ctx.goal = {"objective": objective, "bar": argv, "max_iterations": iters, "used": 0}
+    return ToolResult(True, f"Pursuing: {objective}\nBar: {goal.render(argv)} (up to {iters} attempt(s)). "
+                            "Do the work now - the bar will be run for you, and its real output decides "
+                            "when this is done.")
+
+
+GOAL_TOOLS = [
+    {
+        "name": "pursue", "fn": pursue,
+        "description": ("Declare a goal with a MACHINE-CHECKABLE bar and let the harness loop until the "
+                        "bar passes. Use this when the task has a verifiable end state you can name a "
+                        "command for - 'make the tests pass' -> [\"npm\",\"test\"]; 'fix the lint errors' "
+                        "-> [\"ruff\",\"check\",\".\"]. The bar is re-run for you and ITS exit code "
+                        "decides when you're done - you do not decide. Do NOT use it when there is no "
+                        "runnable check (e.g. 'refactor this nicely'): just do the work. The bar must be "
+                        "an argv LIST, must be a check (never destructive), and cannot be a shell."),
+        "parameters": {"type": "object", "properties": {
+            "objective": {"type": "string", "description": "what 'done' means, in one line"},
+            "bar": {"type": "array", "items": {"type": "string"},
+                    "description": "the check as an argv list, e.g. [\"npm\",\"test\"] - NOT a shell string"},
+            "max_iterations": {"type": "integer", "description": "optional; capped by the operator"},
+        }, "required": ["objective", "bar"]},
+    },
+]
+
+
 PATCH_TOOLS = [
     {
         "name": "apply_patch", "fn": apply_patch,
