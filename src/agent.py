@@ -110,6 +110,7 @@ class Agent:
         ctx._destructive_targets = set()  # per-turn mass-destruction ledger (ride-5): distinct approved delete/move/dangerous ops
         ctx._turn_id = getattr(ctx, "_turn_id", 0) + 1   # a stable per-turn id a hook can key its own budget on
         ctx.goal = None               # a PREVIOUS task's bar must never be pursued on this one (specs/0020)
+        ctx._verified_ok = False      # did a CHECK actually confirm success this turn? (grounding's unverified-success net)
         ctx.request = task            # pin the user's request so the guardian can weigh "is this what was asked"
         # Situational context (specs/0012): inject the agent's real environment (cwd / OS / shell / date
         # / granted dirs, + git branch when enabled) once per turn as a refreshed pin, so it conditions
@@ -208,6 +209,8 @@ class Agent:
                                 self.traj.log_verification(r["cmd"], r["ok"], r["output"])
                         if failing:
                             return RunResult(decision.final, "verify_failed_edits", tool_calls)
+                        if vres:
+                            ctx._verified_ok = True   # the touched files compiled/passed -> a real check ran
 
                     # Goal gate (Phase 20 / specs/0020): the model says done — but if it declared a BAR
                     # via `pursue`, the bar decides, not the model. Run it; a failure re-prompts with the
@@ -238,6 +241,8 @@ class Agent:
                         self.traj.log_goal(g["objective"], g["bar"], g["used"] + (0 if bar_ok else 1),
                                            g["max_iterations"], bar_ok)
                         self.traj.log_verification(goal.render(g["bar"]), bar_ok, bar_out)
+                        if bar_ok:
+                            ctx._verified_ok = True   # the bar ran and passed -> a success claim IS backed
                         ctx.goal = None          # met-or-spent: never re-run it on a later re-prompt
                         if ctx.verbose:
                             print(f"  [goal] bar {'PASSED' if bar_ok else 'NOT met'}: {goal.render(g['bar'])}")
@@ -278,6 +283,12 @@ class Agent:
                     retry_index = consecutive_fail.get(name, 0)
                     self.traj.log_tool_call(step, name, args, result, retry_index)
                     consecutive_fail[name] = 0 if result.ok else retry_index + 1
+
+                    # A run_command that IS a check (test / build / lint) and SUCCEEDED is real evidence a
+                    # "the tests pass" claim can rest on — so the grounding unverified-success net won't
+                    # flag it even if the model verified manually instead of via `pursue`.
+                    if name == "run_command" and result.ok and grounding.ran_check(args.get("command", "")):
+                        ctx._verified_ok = True
 
                     # PostToolUse hooks (Phase 15): observe the executed call (side effects / telemetry /
                     # trajectory annotation). Observe-only + fail-open — never alters `result`, never

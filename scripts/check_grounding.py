@@ -180,6 +180,32 @@ def main():
     check("problems() surfaces the deterministic contradiction even when the verifier says GROUNDED",
           any("main.go" in m for m in ac))
 
+    # -- UNVERIFIED SUCCESS claim (specs/0020 net): "the tests now pass" with nothing that confirmed it --
+    _RIDE = ("These class names are present in Button.tsx, matching the test suite's expectations, "
+             "so the homepage tests now pass.")
+    check("a 'tests now pass' claim with NO check this turn is flagged unverified",
+          grounding.unverified_success_claim(_RIDE, verified=False))
+    check("the SAME claim is clean once a check actually passed (verified=True)",
+          grounding.unverified_success_claim(_RIDE, verified=True) == [])
+    check("a HEDGED mention is not flagged ('run npm test to confirm', 'should pass', 'could not run')",
+          grounding.unverified_success_claim("Run npm test to confirm the styles.", False) == []
+          and grounding.unverified_success_claim("The tests should now pass.", False) == []
+          and grounding.unverified_success_claim("I could not run the tests, so I have not verified this.", False) == [])
+    check("a NEGATED / descriptive answer is not flagged",
+          grounding.unverified_success_claim("The tests still fail on the icon case.", False) == []
+          and grounding.unverified_success_claim("I added the secondary variant styles to Button.tsx.", False) == [])
+    check("ran_check: a test/build command counts as verification, a plain command does not",
+          grounding.ran_check("cd src/homepage && npm test") and grounding.ran_check("python -m pytest")
+          and not grounding.ran_check("npm install") and not grounding.ran_check("git status"))
+    # end-to-end through problems(): flagged when ctx says nothing was verified, clean when it was
+    _c = _ctx(tmp)
+    check("problems() flags the unverified success claim (ctx._verified_ok False)",
+          any("PASSES" in m for m in grounding.problems(_RIDE, _c)))
+    _c2 = _ctx(tmp)
+    _c2._verified_ok = True
+    check("problems() clears it once a check confirmed success (ctx._verified_ok True)",
+          not any("PASSES" in m for m in grounding.problems(_RIDE, _c2)))
+
     passed, total = sum(_results), len(_results)
     print(f"\nVERDICT: {passed}/{total} {'[OK]' if passed == total else '[FAIL]'}")
     return 0 if passed == total else 1

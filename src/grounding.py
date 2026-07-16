@@ -68,6 +68,58 @@ def absence_claim(final_text):
     return bool(_ABSENCE.search(final_text or ""))
 
 
+# An UNCONDITIONAL assertion that a build / test / check SUCCEEDED — the "so the homepage tests now pass"
+# class, where the model INFERS success from reading code instead of RUNNING the check. Runtime success
+# is not a file-content claim, so the citation-based verifier waves it through; this catches it when
+# NOTHING actually confirmed it this turn (specs/0020 exists so the bar decides — but only if the model
+# calls pursue; this is the net for when it doesn't).
+_SUCCESS = re.compile(
+    r"\b(?:tests?|test\s+suite|build|lint(?:ing)?|type[- ]?check|compilation|checks?)\b"
+    r"[^.\n]{0,48}?\b(?:pass(?:es|ed|ing)?|succeed(?:s|ed)?|are\s+green|is\s+green|"
+    r"clean(?:ly)?|compil(?:es|ed)|without\s+errors?|no\s+errors?)\b"
+    r"|\b(?:it|the\s+code|the\s+app|everything)\b[^.\n]{0,24}?\b(?:now\s+)?works?\b"
+    r"|\bcompiles?\s+(?:cleanly|successfully|without\s+errors?)\b"
+    r"|\bno\s+(?:test\s+)?(?:errors?|failures?)\b",
+    re.I)
+# HEDGES that make a success mention CONDITIONAL / future / negated (not an assertion of a real result):
+# "run the tests to confirm", "should pass", "you can run npm test", "I could not run", "the tests fail".
+_HEDGED = re.compile(
+    r"\b(?:should|would|will|to\s+(?:confirm|verify|check|ensure)|run\s+(?:the\s+|npm\s+|)?tests?|"
+    r"you\s+can|please\s+run|if\s+you\s+run|once\s+you|after\s+(?:you\s+)?run|expected\s+to|ought\s+to|"
+    r"could|might|may|need\s+to\s+run|have\s+not|haven'?t|has\s+not|did\s+not|didn'?t|do\s+not|don'?t|"
+    r"cannot|can'?t|unable|fail(?:s|ed|ing)?|not\s+(?:yet\s+)?(?:pass|passing|verified|run|able))\b",
+    re.I)
+# A run_command that IS a check — a success from one of these is real verification of a success claim.
+_CHECK_CMD = re.compile(
+    r"\b(?:pytest|jest|vitest|mocha|tox|nox|go\s+test|cargo\s+test|ctest|"
+    r"npm\s+(?:test|run|ci)|yarn\s+(?:test|run)|pnpm\s+(?:test|run)|make(?:\s+\w+)?|"
+    r"tsc|eslint|ruff|flake8|pylint|mypy|pyright|black\s+--check|prettier\s+--check|"
+    r"gradle|mvn|dotnet\s+test|rspec|phpunit|build|compile|lint|type-?check)\b",
+    re.I)
+
+
+def ran_check(command):
+    """True if a run_command is a CHECK (test/build/lint) whose SUCCESS is real evidence of a success
+    claim — the agent flips ctx._verified_ok when one of these returns ok."""
+    return bool(_CHECK_CMD.search(command or ""))
+
+
+def unverified_success_claim(final_text, verified):
+    """DETERMINISTIC, model-free backstop: flag an UNCONDITIONAL claim that a build/test/check PASSES when
+    NOTHING confirmed it this turn (`verified` is False — no goal bar met, no auto-verify pass, no passing
+    check command). Scoped PER SENTENCE so a hedged/negated mention ("run npm test to confirm", "should
+    pass", "I couldn't run the tests") is NOT flagged — only a bare assertion of a real result. Returns []
+    when the claim was actually verified, so a real `pursue`/check pass is never second-guessed."""
+    if verified or not final_text:
+        return []
+    for sent in re.split(r"(?<=[.!?])\s+|\n+", final_text):
+        if _SUCCESS.search(sent) and not _HEDGED.search(sent):
+            return ["you state a build/test/check PASSES, but nothing verified that this run - RUN the "
+                    "check (declare a bar with `pursue` so it is run for you), or say plainly that you "
+                    "have NOT verified it. Do not assert a result you did not observe."]
+    return []
+
+
 def absence_contradictions(final_text, cwd):
     """DETERMINISTIC, model-free: flag a claim that a cited path is empty / missing / absent when that
     path actually EXISTS on disk (a present file, or a NON-EMPTY directory). os.path is authoritative for
@@ -287,6 +339,10 @@ def problems(final_text, ctx):
     # and ALONGSIDE the semantic verifier — the verifier can mis-read a tree and wrongly agree a path is
     # empty, so os.path.exists is the backstop (the src/auth/cmd main.go case).
     det = absence_contradictions(final_text, getattr(ctx, "cwd", "") or "")
+    # ...and a claim that a build/test PASSES when nothing confirmed it this turn (specs/0020's net for a
+    # model that asserts success from reading code instead of running the check). Model-free, so it runs
+    # alongside the semantic verifier — which mis-clears it, since "the tests pass" cites no file.
+    det += unverified_success_claim(final_text, bool(getattr(ctx, "_verified_ok", False)))
     if config.VERIFY_GROUNDING_SEMANTIC and getattr(ctx, "spawn", None) is not None:
         paths = cited_paths(final_text, strict=False)   # BROAD: the verifier judges, so include dirs
         # Spawn the verifier when the answer cites a path OR makes an ABSENCE claim (which typically
