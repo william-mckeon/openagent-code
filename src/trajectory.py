@@ -29,6 +29,9 @@ def _ts():
 
 
 class Trajectory:
+    # 0.9.0: adaptive effort (Phase 21 / specs/0021). `model_call` gains an `effort` field (the reasoning
+    #        level that call ran at), and an `effort_change` record marks each escalation (old->new + the
+    #        struggle that drove it) - the metacognitive signal the flywheel learns an effort policy from.
     # 0.8.0: goal loops (Phase 20 / specs/0020). A `goal` record marks a pursued objective + the
     #        MODEL-PROPOSED bar (argv), attempts burned, and whether the bar finally passed. The bar's
     #        pass/fail rides the existing `verification` record — logged ONCE, when the loop resolves, so
@@ -51,7 +54,7 @@ class Trajectory:
     # 0.6.0: `permission` record per gated tool call (Phase 4 #6) — the decision
     #        (allow/ask/deny + which rule/mode decided it), captured before the call.
     # Older data stays usable — the converter falls back to as-sent / reattachment.
-    SCHEMA_VERSION = "0.8.0"
+    SCHEMA_VERSION = "0.9.0"
 
     @classmethod
     def resume(cls, path):
@@ -104,7 +107,7 @@ class Trajectory:
         self.f.write(json.dumps(rec, ensure_ascii=False) + "\n")
         self.f.flush()
 
-    def log_model_call(self, step, messages, tool_names, msg, usage, latency_ms):
+    def log_model_call(self, step, messages, tool_names, msg, usage, latency_ms, effort=None):
         tool_calls = [
             {"id": tc.id, "name": tc.function.name, "arguments": tc.function.arguments}
             for tc in (msg.tool_calls or [])
@@ -125,6 +128,9 @@ class Trajectory:
             # AS-SENT (possibly summarized) view, not the raw history — the raw
             # history lives in the `turn` records. as_sent=True marks that.
             "request": {"messages": messages, "tools": tool_names, "as_sent": True},
+            # The reasoning effort this call actually ran at (specs/0021) — a per-step field so a
+            # step-level / DPO filter can weight by effort. None when unset (inherit the provider default).
+            "effort": effort or None,
             "response": {
                 "content": msg.content,
                 # gpt-oss / reasoning models surface a separate reasoning channel.
@@ -224,6 +230,21 @@ class Trajectory:
             "command": command,
             "ok": ok,
             "output": output[:4000],
+        })
+
+    def log_effort_change(self, old, new, struggle, request):
+        """Record an adaptive-effort escalation (specs/0021): the level before/after, the struggle score
+        that (with any tool request) drove it, and the task it happened on. The trainable metacognitive
+        signal - 'a task shaped like THIS needed more thinking' - the flywheel learns an effort policy
+        from, and the same signal the online learner feeds on. Logged only when the level actually moves."""
+        self._write({
+            "type": "effort_change",
+            "session_id": self.session_id,
+            "ts": _ts(),
+            "old": old or "",
+            "new": new or "",
+            "struggle": struggle,
+            "request": (request or "")[:400],
         })
 
     def log_goal(self, objective, bar, iterations_used, max_iterations, met):

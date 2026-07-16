@@ -12,7 +12,8 @@ per-run agreement is what keeps the Phase-3 self-containment gate accurate as th
 toolset varies.
 """
 from . import config
-from .tools import TOOLS, WEB_TOOLS, MEMORY_TOOLS, SKILL_TOOLS, PATCH_TOOLS, GOAL_TOOLS, openai_schemas
+from .tools import (TOOLS, WEB_TOOLS, MEMORY_TOOLS, SKILL_TOOLS, PATCH_TOOLS, GOAL_TOOLS, EFFORT_TOOLS,
+                    openai_schemas)
 from .mcp_client import mcp_tools
 
 
@@ -30,6 +31,11 @@ def active_tools():
     # toolset change, which is exactly what corrupts conversion (ROADMAP Phase 3).
     if config.GOAL_LOOP:
         tools += GOAL_TOOLS
+    # Offer escalate_effort only when adaptive effort is on AND the model is allowed to self-escalate
+    # (the 'off' policy owns the level, so exposing the tool would be a lie). Flag-off -> not offered,
+    # so a flag-off run's tool_schemas are byte-identical.
+    if config.ADAPTIVE_EFFORT and (config.EFFORT_POLICY or "reactive").strip().lower() not in ("off", "none"):
+        tools += EFFORT_TOOLS
     if config.ENABLE_WEB:
         tools += WEB_TOOLS
     tools += mcp_tools()

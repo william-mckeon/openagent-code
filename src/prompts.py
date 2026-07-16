@@ -166,6 +166,14 @@ def build_system_prompt(mode, tools, memory=None, granted_dirs=None):
     if any(t["name"].startswith("web_") for t in tools):
         note = ("\n\nNote: web_fetch / web_search send data OFF this machine. Read local code "
                 "first; use them only when you genuinely need external information.")
+    # Adaptive effort (specs/0021): teach WHEN to think harder. Only advertised when escalate_effort is
+    # actually offered (CODE_ADAPTIVE_EFFORT, non-'off' policy), so a flag-off prompt is byte-identical.
+    if any(t["name"] == "escalate_effort" for t in tools):
+        note += ("\n\nEFFORT: you run at a fixed reasoning effort by default. If you size up a task as "
+                 "HARDER than routine - a broad multi-file change, a subtle bug, tangled logic - call "
+                 "`escalate_effort` EARLY to think more carefully, rather than after going in circles. "
+                 "Don't use it for simple work. (The harness also raises it automatically if it sees you "
+                 "struggling, but asking up front is better.)")
     # Goal loops (specs/0020): teach WHEN to hand control flow to the harness. Only advertised when the
     # tool is actually offered (CODE_GOAL_LOOP), so a flag-off prompt is byte-identical.
     if any(t["name"] == "pursue" for t in tools):

@@ -85,6 +85,8 @@ openagent-code/
 │   ├── guardian.py           # fail-closed LLM approval reviewer for the ask tier (specs/0019)
 │   ├── hooks.py              # opt-in, fail-open PreToolUse/PostToolUse/PermissionRequest hooks (specs/0015)
 │   ├── goal.py               # goal loop: pursue a machine-checkable bar; the bar decides done (specs/0020)
+│   ├── effort.py             # adaptive reasoning effort: pluggable policy, escalate-only (specs/0021)
+│   ├── effort_online.py      # opt-in self-learning effort policy (CODE_EFFORT_POLICY=online, specs/0021)
 │   ├── skills.py             # skills (specs/0008): SKILL.md workflows; run_skill fans out captured concern subagents
 │   ├── memory.py             # cross-session project memory — load + remember (Phase 4)
 │   ├── context.py            # ContextManager — live context + compaction (Phase 4)

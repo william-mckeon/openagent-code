@@ -55,6 +55,7 @@ class Context:
         self.plan_items = []           # structured steps [{content,status,file}] for the completion gate
         self.mutations = {}            # {workspace-rel path: "write"|"edit"|"delete"} applied this run
         self.goal = None               # {objective,bar,max_iterations,used} set by pursue; run by the goal gate
+        self.effort = None             # a sticky per-turn reasoning-effort request set by escalate_effort (specs/0021)
         self.ask = None                # callable(question) -> answer; wired by make_context
         self.interactive = False       # True only when a human is present to answer
 
@@ -789,6 +790,38 @@ def pursue(args, ctx):
     return ToolResult(True, f"Pursuing: {objective}\nBar: {goal.render(argv)} (up to {iters} attempt(s)). "
                             "Do the work now - the bar will be run for you, and its real output decides "
                             "when this is done.")
+
+
+def escalate_effort(args, ctx):
+    """Ask for MORE reasoning on this task (Phase 20+1). A registration tool like update_plan/pursue: it
+    only STASHES the requested level on ctx.effort (sticky for the turn); the harness applies it to the
+    next model call and the pluggable effort policy enforces the ceiling. Escalate-only - it can raise the
+    level, never lower it."""
+    from . import effort
+    level = str(args.get("level") or "high").strip().lower()
+    if level not in effort.LADDER:
+        return ToolResult(False, f"level must be one of {', '.join(effort.LADDER)} (got {level!r}).")
+    # keep the HIGHER of any prior request this turn (escalate-only)
+    cur = getattr(ctx, "effort", None)
+    ctx.effort = level if (cur is None or effort.rank(level) > effort.rank(cur)) else cur
+    return ToolResult(True, f"Reasoning effort raised to '{ctx.effort}' for this task. Keep going - think "
+                            "it through more carefully; the harder reasoning applies from your next step.")
+
+
+EFFORT_TOOLS = [
+    {
+        "name": "escalate_effort", "fn": escalate_effort,
+        "description": ("Raise your own reasoning effort when a task is HARDER than it first looked - a "
+                        "broad multi-file change, a subtle bug, tangled logic, or you're going in circles. "
+                        "It makes you think more carefully from the next step on; use it EARLY when you "
+                        "size up a hard task rather than after struggling. Do NOT use it for routine work. "
+                        "Levels: low, medium, high (you can only go UP)."),
+        "parameters": {"type": "object", "properties": {
+            "level": {"type": "string", "enum": ["low", "medium", "high"],
+                      "description": "the reasoning effort to raise to (default high)"},
+        }, "required": ["level"]},
+    },
+]
 
 
 GOAL_TOOLS = [

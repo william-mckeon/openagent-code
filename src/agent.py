@@ -18,6 +18,7 @@ made no tool calls, or stalled on the protocol, is not a success.
 import os
 
 from . import config
+from . import effort
 from . import goal
 from . import grounding
 from . import envcontext
@@ -83,6 +84,24 @@ class Agent:
         self.traj = trajectory
         self.max_steps = max_steps
         self.cm = context_manager       # owns the system prompt + the live context
+        # Adaptive effort (specs/0021): snapshot the model's AS-BUILT effort so a per-turn escalation can be
+        # restored (a subagent is built with its own GUARDIAN_/GROUNDING_EFFORT — restore to THIS, never
+        # config.REASONING_EFFORT). Policy loaded lazily on first use; None planner-model (test stubs) opts out.
+        self._baseline_effort = getattr(getattr(planner, "model", None), "effort", None)
+        self._effort_policy = None
+        self._escalated = False
+
+    def _finish(self, ctx, final, terminated, tool_calls):
+        """Feed the effort policy this turn's OUTCOME (specs/0021), then return the RunResult. Only fires
+        when the turn escalated and a policy is active: the deterministic policies ignore it; the online
+        learner learns from it ('a task shaped like THIS, escalated -> {succeeded|not}'). Every run() exit
+        routes through here so the learner sees failures as well as successes."""
+        if self._effort_policy is not None and self._escalated:
+            try:
+                self._effort_policy.update(getattr(ctx, "request", "") or "", True, terminated == "final")
+            except Exception:  # noqa: BLE001 - a learner must never break the run
+                pass
+        return RunResult(final, terminated, tool_calls)
 
     def run(self, task, ctx):
         # Snapshot the live context BEFORE this turn. If a model call dies mid-turn (a
@@ -111,6 +130,11 @@ class Agent:
         ctx._turn_id = getattr(ctx, "_turn_id", 0) + 1   # a stable per-turn id a hook can key its own budget on
         ctx.goal = None               # a PREVIOUS task's bar must never be pursued on this one (specs/0020)
         ctx._verified_ok = False      # did a CHECK actually confirm success this turn? (grounding's unverified-success net)
+        ctx.effort = None             # a prior turn's effort request must not carry over (specs/0021)
+        self._escalated = False
+        _emdl = getattr(self.planner, "model", None)
+        if _emdl is not None:         # restore the AS-BUILT effort so a prior turn's escalation never leaks
+            _emdl.effort = self._baseline_effort
         ctx.request = task            # pin the user's request so the guardian can weigh "is this what was asked"
         # Situational context (specs/0012): inject the agent's real environment (cwd / OS / shell / date
         # / granted dirs, + git branch when enabled) once per turn as a refreshed pin, so it conditions
@@ -139,6 +163,30 @@ class Agent:
                 self.cm.set_goal(
                     f"You are pursuing this goal. The BAR decides when it is done - not you:\n"
                     f"  GOAL: {_g['objective']}\n  BAR:  {goal.render(_g['bar'])}" if _g else None)
+                # Adaptive reasoning effort (specs/0021): set the effort for THIS call from the task's
+                # difficulty. Depth-0 ONLY (a subagent's own effort must stay untouched) + flag-gated +
+                # only with a real planner model (test stubs opt out). The pluggable policy raises from the
+                # baseline floor on the model's sticky request (ctx.effort) or the accumulated struggle
+                # (signals tracked below); escalate-only, capped, reset to baseline each task.
+                _mdl = getattr(self.planner, "model", None)
+                if config.ADAPTIVE_EFFORT and _mdl is not None and getattr(ctx, "depth", 0) == 0:
+                    if self._effort_policy is None:
+                        self._effort_policy = effort.load_policy()
+                    _base = effort.resolve_baseline(self._baseline_effort)
+                    _score = effort.struggle_score(
+                        consec=max(consecutive_fail.values(), default=0),
+                        retries=verify_retries + edit_verify_retries + ground_retries,
+                        goal_fails=(_g or {}).get("used", 0))
+                    _new = self._effort_policy.decide(_base, getattr(ctx, "effort", None), _score,
+                                                      config.EFFORT_MAX, getattr(ctx, "request", ""))
+                    # Escalate-only + MONOTONIC within the turn: only RAISE above the current level and the
+                    # floor. A non-escalating turn leaves the as-built effort untouched (byte-identical); a
+                    # bump can't be undone mid-turn (once it's thinking hard it stays), and the per-task
+                    # reset restores the baseline so nothing leaks to the next turn.
+                    if effort.rank(_new) > max(effort.rank(_mdl.effort), effort.rank(_base)):
+                        self.traj.log_effort_change(_mdl.effort, _new, _score, getattr(ctx, "request", ""))
+                        _mdl.effort = _new
+                        self._escalated = True
                 decision = self.planner.step(self.cm.context(), step)
 
                 # Degeneracy guard (repetition loop): a weak model can get stuck emitting the same line
@@ -151,14 +199,14 @@ class Agent:
                     log.info("degenerate repetition loop at step %d - ending turn (outcome=degenerate)", step)
                     self.cm.add({"role": "assistant",
                                  "content": "[degenerate repetition output detected and suppressed]"})
-                    return RunResult(decision.final or "(the model produced a repetition loop; the turn "
-                                     "was ended before it could finish)", "degenerate", tool_calls)
+                    return self._finish(ctx, decision.final or "(the model produced a repetition loop; the turn "
+                                        "was ended before it could finish)", "degenerate", tool_calls)
 
                 self.cm.add(decision.assistant)
 
                 # Model never produced a usable action (json protocol exhausted).
                 if decision.gave_up:
-                    return RunResult(decision.final, "nudge_exhausted", tool_calls)
+                    return self._finish(ctx, decision.final, "nudge_exhausted", tool_calls)
 
                 # Model broke protocol once — re-prompt instead of ending.
                 if decision.nudge:
@@ -182,7 +230,7 @@ class Agent:
                         self.cm.add({"role": "user", "content": _completion_challenge(unmet)})
                         continue
                     if unmet:
-                        return RunResult(decision.final, "unverified_completion", tool_calls)
+                        return self._finish(ctx, decision.final, "unverified_completion", tool_calls)
 
                     # Auto-verify gate (Phase 14 / specs/0014): completion proved the changes are REAL —
                     # now run a configured check (default py_compile) on just the TOUCHED files. A failure
@@ -208,7 +256,7 @@ class Agent:
                             for r in vres:
                                 self.traj.log_verification(r["cmd"], r["ok"], r["output"])
                         if failing:
-                            return RunResult(decision.final, "verify_failed_edits", tool_calls)
+                            return self._finish(ctx, decision.final, "verify_failed_edits", tool_calls)
                         if vres:
                             ctx._verified_ok = True   # the touched files compiled/passed -> a real check ran
 
@@ -247,7 +295,7 @@ class Agent:
                         if ctx.verbose:
                             print(f"  [goal] bar {'PASSED' if bar_ok else 'NOT met'}: {goal.render(g['bar'])}")
                         if not bar_ok:
-                            return RunResult(decision.final, "goal_unmet", tool_calls)
+                            return self._finish(ctx, decision.final, "goal_unmet", tool_calls)
 
                     # Grounding gate (Phase 10 / specs/0010): completion is verified — the plan's
                     # changes are real. Now check the closing answer's CLAIMS are grounded in the
@@ -263,8 +311,8 @@ class Agent:
                                  "; ".join(ungrounded))
                         self.cm.add({"role": "user", "content": grounding.challenge(ungrounded)})
                         continue
-                    return RunResult(decision.final,
-                                     "ungrounded_completion" if ungrounded else "final", tool_calls)
+                    return self._finish(ctx, decision.final,
+                                        "ungrounded_completion" if ungrounded else "final", tool_calls)
 
                 for call in decision.calls:
                     name, args = call["name"], call["args"]
@@ -340,7 +388,7 @@ class Agent:
                 self.cm.add({"role": "assistant", "content": text})
         except Exception:
             pass
-        return RunResult(final, "max_steps", tool_calls)
+        return self._finish(ctx, final, "max_steps", tool_calls)
 
 
 def _short(args):

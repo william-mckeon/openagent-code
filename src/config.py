@@ -357,6 +357,28 @@ def load_goal_bars() -> list:
     return [list(b) for b in data if isinstance(b, list) and b and all(isinstance(x, str) for x in b)]
 
 
+# adaptive reasoning effort (Phase 21 / specs/0021). Match effort to task difficulty instead of a fixed
+# level: the agent can self-escalate (the `escalate_effort` tool) and the harness auto-escalates when the
+# run is STRUGGLING. The decision goes through a PLUGGABLE policy so an operator can swap the deterministic
+# default for an opt-in online learner (or their own). Off by default -> effort is byte-identical to today.
+ADAPTIVE_EFFORT = _as_bool(os.environ.get("CODE_ADAPTIVE_EFFORT", "false"))
+# Which policy decides: 'off' (never escalate) | 'reactive' (deterministic default) | 'online' (the opt-in
+# learner in src/effort_online.py) | a dotted 'module:Class' an operator wrote. Bad value -> reactive.
+EFFORT_POLICY = os.environ.get("CODE_EFFORT_POLICY", "reactive").strip()
+# The concrete floor to ladder from when the base effort is empty (send-nothing); and the hard ceiling.
+_ef_floor = os.environ.get("CODE_EFFORT_FLOOR", "").strip().lower()
+EFFORT_FLOOR = _ef_floor if _ef_floor in _EFFORTS else "medium"
+_ef_max = os.environ.get("CODE_EFFORT_MAX", "").strip().lower()
+EFFORT_MAX = _ef_max if _ef_max in _EFFORTS else "high"
+# Struggle score at which the harness auto-escalates one rung (a single flaky retry shouldn't jump).
+try:
+    EFFORT_THRESHOLD = max(1, int(os.environ.get("CODE_EFFORT_THRESHOLD", "2")))
+except ValueError:
+    EFFORT_THRESHOLD = 2
+# OPTIONAL state file for the online learner (its persisted per-signature stats). Unset = in-memory only.
+EFFORT_STATE = _resolve_install_path(os.environ.get("CODE_EFFORT_STATE", ""))
+
+
 def resolved_permission_mode() -> str:
     """The effective mode: explicit CODE_PERMISSION_MODE, else derived from
     CODE_AUTO_APPROVE (back-compat). An invalid value falls back to the derived one."""

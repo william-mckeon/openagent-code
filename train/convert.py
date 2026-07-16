@@ -233,6 +233,8 @@ def _step_row(step, view, tools, base_meta):
             "tools_called": [tc.get("tool") for tc in tcs],
             "all_ok": (all(tc.get("ok") for tc in tcs) if tcs else None),
             "max_retry": max([tc.get("retry_index", 0) for tc in tcs], default=0),
+            "effort": mc.get("effort") or None,   # the reasoning level this step ran at (specs/0021) - a
+                                                   # step-level/DPO filter can weight by it. Neutral to keep/drop.
         },
     }
 

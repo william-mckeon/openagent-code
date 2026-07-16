@@ -175,6 +175,7 @@ class Model:
             self.traj.log_model_call(
                 step, messages, tool_names,
                 msg, getattr(resp, "usage", None), latency_ms,
+                effort=self.effort or config.REASONING_EFFORT,   # the RESOLVED level this call ran at (0021)
             )
             return msg
 
