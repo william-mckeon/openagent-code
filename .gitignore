@@ -105,3 +105,7 @@ desktop.ini
 # --- Docker (build artifacts only; Dockerfile and compose are tracked) -----
 .docker/
 *.tar
+
+# adaptive-effort online learner state (Phase 21) - local data, never committed
+effort_state.json
+*.effort_state.json
