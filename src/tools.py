@@ -738,6 +738,69 @@ MEMORY_TOOLS = [
 ]
 
 
+# Opt-in project-todos tool (specs/0023) — added to the active toolset by src/toolset.py only when
+# CODE_PROJECT_TODOS is on. Like remember, it is NON-mutating for permission gating (the agent's own
+# tracker, not a project edit): it writes .openagent/todos.md via src/todos.py directly, never through
+# write_file/_record_mutation, so the completion + grounding gates don't treat the tracker as a code change.
+def project_todos(args, ctx):
+    """Maintain the project's persistent BACKLOG (Phase 23 / specs/0023) - the durable, cross-session list of
+    outstanding work on THIS repo, distinct from update_plan (this task's verified steps). Actions:
+      list                      - show the current backlog
+      add(content[,status])     - record a new item (default pending)
+      start(item)               - mark an item in_progress
+      done(item)                - check an item off
+      clear                     - drop the completed items
+    `item` is the NUMBER shown in the list (preferred) or the item's exact text. Writes .openagent/todos.md
+    directly, like remember - the agent's own tracker, not a project edit."""
+    from . import todos
+    action = str(args.get("action") or "list").strip().lower()
+    items = todos.load(ctx.cwd)
+    if action == "list":
+        return ToolResult(True, "Project todos:\n" + todos.render(items))
+    if action == "add":
+        content = (args.get("content") or "").strip()
+        if not content:
+            return ToolResult(False, "project_todos add needs 'content' (what to do).")
+        status = str(args.get("status") or "pending").strip().lower()
+        items = todos.add(items, content, status)
+    elif action in ("start", "done", "update"):
+        selector = args.get("item") or args.get("content") or args.get("index")
+        status = ("done" if action == "done" else "in_progress" if action == "start"
+                  else str(args.get("status") or "pending").strip().lower())
+        items, err = todos.set_status(items, selector, status)
+        if err:
+            return ToolResult(False, f"project_todos {action}: {err}. Call project_todos(action='list') "
+                                     "to see the current items and their numbers.")
+    elif action == "clear":
+        items = todos.clear_done(items)
+    else:
+        return ToolResult(False, f"unknown action {action!r} - use list | add | start | done | clear.")
+    todos.save(ctx.cwd, items)
+    return ToolResult(True, "Project todos:\n" + todos.render(items))
+
+
+TODO_TOOLS = [
+    {
+        "name": "project_todos", "fn": project_todos,
+        "description": ("Maintain a durable, cross-session BACKLOG of outstanding work on THIS repo - the "
+                        "project's 'what's still to do', reloaded every session. It is SEPARATE from "
+                        "update_plan (which tracks the steps of the CURRENT task): record work you discover "
+                        "with action='add', mark an item 'start' (in progress) or 'done' as you go, 'list' "
+                        "it, or 'clear' completed items. When you START a backlog item, pull it into your "
+                        "update_plan for the task rather than tracking it in both places; don't re-list the "
+                        "whole backlog every turn. Reference an item by the NUMBER shown in the list, or its "
+                        "exact text."),
+        "parameters": {"type": "object", "properties": {
+            "action": {"type": "string", "enum": ["list", "add", "start", "done", "clear"]},
+            "content": {"type": "string", "description": "the item text (for add)"},
+            "item": {"type": "string", "description": "which item to change: its number in the list, or its exact text"},
+            "status": {"type": "string", "enum": ["pending", "in_progress", "done"],
+                       "description": "optional explicit status for add"},
+        }, "required": ["action"]},
+    },
+]
+
+
 # Opt-in skills tool (specs/0008) — added to the active toolset by src/toolset.py only when
 # CODE_SKILLS is on. run_skill loads a SKILL.md workflow by name; an orchestrator skill fans out
 # one captured subagent per concern (harness-driven, like review_repo). Non-mutating (a review).

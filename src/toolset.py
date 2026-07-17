@@ -13,7 +13,7 @@ toolset varies.
 """
 from . import config
 from .tools import (TOOLS, WEB_TOOLS, MEMORY_TOOLS, SKILL_TOOLS, PATCH_TOOLS, GOAL_TOOLS, EFFORT_TOOLS,
-                    PROPOSE_TOOLS, openai_schemas)
+                    PROPOSE_TOOLS, TODO_TOOLS, openai_schemas)
 from .mcp_client import mcp_tools
 
 
@@ -22,6 +22,10 @@ def active_tools():
     tools = list(TOOLS)
     if config.MEMORY:
         tools += MEMORY_TOOLS
+    # The ONLY site that offers project_todos (Phase 22 propose / Phase 23 todos rule): gate at the toolset,
+    # not by refusing at call time, so a flag-off run's logged tool_schemas stay byte-identical (toolset L29-31).
+    if config.PROJECT_TODOS:
+        tools += TODO_TOOLS
     if config.SKILLS:
         tools += SKILL_TOOLS
     if config.APPLY_PATCH:

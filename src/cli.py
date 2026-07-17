@@ -46,6 +46,30 @@ def _load_memory(workspace):
     return mem
 
 
+def _load_todos(workspace):
+    """Load the project backlog (outstanding items) as markdown for the SYSTEM PROMPT (Phase 23 / specs/
+    0023). Mirrors _load_memory but returns the rendered checklist; display is _show_todos' job, so this one
+    stays silent (the REPL path must not double-print). "" when off/empty."""
+    if not config.PROJECT_TODOS:
+        return ""
+    from . import todos
+    return todos.backlog_text(workspace)
+
+
+def _show_todos(workspace):
+    """Print the outstanding backlog as a startup SECTION for the user (Phase 23). Separate from _load_todos
+    (which feeds the prompt) so the REPL doesn't print it twice. Shows ONLY when there are outstanding items
+    (no zero-count noise); returns the rendered text so a caller can detect a change after a turn."""
+    if not config.PROJECT_TODOS:
+        return ""
+    from . import todos
+    text = todos.backlog_text(workspace)
+    if text:
+        n = len(todos.outstanding(todos.load(workspace)))
+        print(f"\nProject todos ({n} outstanding):\n{text}\n")
+    return text
+
+
 def _parse_flags(argv):
     """Pull launcher flags out of argv so the common knobs are FLAGS, not CODE_* env
     vars (the env-juggling that makes local use painful). Applies the config-level
@@ -55,6 +79,7 @@ def _parse_flags(argv):
       --mode <name>             permission mode (default/acceptEdits/plan/bypass)
       --add-dir <path>          grant a reference folder beyond the workspace (repeatable)
       --memory / --no-memory    toggle cross-session memory for this run
+      --todos / --no-todos      toggle the persistent project backlog for this run
       --warmup <seconds>        cold-start warm-up budget
     """
     mode, dirs, rest = None, [], []
@@ -71,6 +96,10 @@ def _parse_flags(argv):
             config.MEMORY = True; i += 1
         elif a == "--no-memory":
             config.MEMORY = False; i += 1
+        elif a == "--todos":
+            config.PROJECT_TODOS = True; i += 1
+        elif a == "--no-todos":
+            config.PROJECT_TODOS = False; i += 1
         elif a == "--warmup" and i + 1 < len(argv):
             config.WARMUP_BUDGET = float(argv[i + 1]); i += 2
         else:
@@ -90,7 +119,9 @@ def _one_shot(task, perms):
     log.info("one-shot start | model=%s mode=%s workspace=%s", config.display_model(), perms.mode, workspace)
     log.info("task: %s", task)
     _warn_if_empty_workspace(workspace)
-    agent = build_agent(traj, memory=_load_memory(workspace), granted_dirs=perms.extra_roots)
+    agent = build_agent(traj, memory=_load_memory(workspace), todos=_load_todos(workspace),
+                        granted_dirs=perms.extra_roots)
+    _show_todos(workspace)   # surface the backlog at startup (Phase 23; no-op when the flag is off)
 
     try:
         result = agent.run(task, ctx)
@@ -178,6 +209,7 @@ def _run_session(traj, agent, ctx):
           f"effort={config.REASONING_EFFORT or 'default'} | workspace={ctx.cwd}")
     print("Type a task and press enter. Commands: /exit  /plan  /add-dir <path>  /mode <name>")
     log.info("REPL start | model=%s mode=%s workspace=%s", config.display_model(), ctx.permissions.mode, ctx.cwd)
+    last_todos = _show_todos(ctx.cwd)   # surface the project backlog at startup (Phase 23; no-op when off)
     turns = 0
     try:
         while True:
@@ -221,6 +253,15 @@ def _run_session(traj, agent, ctx):
                 log.warning("turn %d produced no output (dropped response?)", turns)
                 print("\n(no output — the model may have dropped the response, often a cold/"
                       "flaky endpoint. Try again; the warm-up should recover it.)")
+            # Re-surface the backlog ONLY if the agent changed it this turn (Phase 23) — an item added or
+            # checked off. Change-gated so it never nags or double-prints the unchanged list.
+            if config.PROJECT_TODOS:
+                from . import todos as _todos
+                new_todos = _todos.backlog_text(ctx.cwd)
+                if new_todos != last_todos:
+                    print(f"\nProject todos updated:\n{new_todos}\n" if new_todos
+                          else "\nProject todos: all clear.\n")
+                    last_todos = new_todos
     finally:
         traj.end("completed" if traj.tool_calls else "no_action", None, terminated="session_end")
         log.info("REPL end | %d turn(s) tool_calls=%s", turns, traj.tool_calls)
@@ -237,7 +278,8 @@ def _repl(perms):
     logsetup.configure(traj.session_id)
     ctx = make_context(workspace, perms, traj.session_id,
                        depth=0, verbose=config.VERBOSE, interactive=True)
-    agent = build_agent(traj, memory=_load_memory(workspace), granted_dirs=perms.extra_roots)
+    agent = build_agent(traj, memory=_load_memory(workspace), todos=_load_todos(workspace),
+                        granted_dirs=perms.extra_roots)
     return _run_session(traj, agent, ctx)
 
 

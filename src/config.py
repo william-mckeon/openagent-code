@@ -514,6 +514,28 @@ def memory_file(workspace: str) -> str:
     return f if os.path.isabs(f) else os.path.join(workspace, f)
 
 # -----------------------------------------------------------------------------
+# Project todos (Phase 23 / specs/0023) — a persistent, per-project BACKLOG the agent maintains, the
+# structured sibling of memory. Opt-in like memory (writes a checklist file INTO the target repo; off for
+# eval so the harness stays isolated). On = the `project_todos` tool is offered and the backlog is loaded
+# into the system prompt AND shown at the start of each session.
+#
+# CODE_PROJECT_TODOS            Master switch. OFF by default.
+# CODE_PROJECT_TODOS_FILE       Per-project checklist file, resolved relative to the workspace.
+# CODE_PROJECT_TODOS_MAX_CHARS  OUTER bound on how much of the backlog is injected into the prompt (capped
+#                               by whole lines in src/todos.py, never a byte tail that would slice an item).
+# -----------------------------------------------------------------------------
+PROJECT_TODOS = _as_bool(os.environ.get("CODE_PROJECT_TODOS", "false"))
+PROJECT_TODOS_FILE = os.environ.get("CODE_PROJECT_TODOS_FILE", ".openagent/todos.md")
+PROJECT_TODOS_MAX_CHARS = int(os.environ.get("CODE_PROJECT_TODOS_MAX_CHARS", "4000"))
+
+
+def todos_file(workspace: str) -> str:
+    """Absolute path to the project todos file (relative values resolve against ws) — a clone of
+    memory_file()."""
+    f = PROJECT_TODOS_FILE
+    return f if os.path.isabs(f) else os.path.join(workspace, f)
+
+# -----------------------------------------------------------------------------
 # Training flywheel
 #
 # CODE_TRAJECTORY_DIR  Where session JSONL is written. Relative paths resolve against the

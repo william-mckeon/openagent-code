@@ -160,7 +160,7 @@ def json_tools_protocol(tools):
     return "\n".join(lines)
 
 
-def build_system_prompt(mode, tools, memory=None, granted_dirs=None):
+def build_system_prompt(mode, tools, memory=None, todos=None, granted_dirs=None):
     suffix = json_tools_protocol(tools) if mode == "json" else native_tools_note(tools)
     note = ""
     if any(t["name"].startswith("web_") for t in tools):
@@ -225,6 +225,17 @@ def build_system_prompt(mode, tools, memory=None, granted_dirs=None):
                  "broad or destructive change (many files, deletes/moves); for a one- or two-line edit, just "
                  "make it - don't add a confirmation step to trivial work.")
 
+    # Project todos (specs/0023): teach the agent to maintain the durable backlog. Gated on the tool's
+    # PRESENCE (not a mode/flag) so a flag-off prompt is byte-identical and the prompt stays a pure function
+    # of `tools`.
+    if any(t["name"] == "project_todos" for t in tools):
+        note += ("\n\nPROJECT TODOS: this repo has a durable, cross-session backlog you maintain with "
+                 "`project_todos` - the higher-level 'what's still to do', SEPARATE from update_plan (which "
+                 "tracks the steps of the CURRENT task). When you discover outstanding work, record it "
+                 "(action='add'); mark items 'done' as you finish them. When you START working a backlog "
+                 "item, pull it into this task's update_plan rather than tracking it in both places - never "
+                 "fold the two. Don't re-list the whole backlog every turn.")
+
     # Cross-session memory (Phase 4 #7): prior-session notes about THIS repo. Lands in
     # the system prompt, which is logged as the first raw turn -> self-containment holds.
     mem = ""
@@ -233,7 +244,15 @@ def build_system_prompt(mode, tools, memory=None, granted_dirs=None):
                + memory.strip()
                + "\n\nTreat the above as background context. Verify against the live code "
                  "before relying on it; save new lasting facts with remember.")
-    return BASE_PROMPT + "\n\n" + suffix + note + mem
+    # Project todos (specs/0023): the durable backlog, injected like memory. Gated on a non-empty todos
+    # string (mirrors `if memory and memory.strip():`), so a flag-off / empty-backlog run appends nothing.
+    tdo = ""
+    if todos and todos.strip():
+        tdo = ("\n\n## Project todos (the durable backlog for this repo)\n"
+               + todos.strip()
+               + "\n\nThese are cross-session backlog items, distinct from your per-task update_plan. Keep "
+                 "them current with the project_todos tool; promote an item into update_plan when you start it.")
+    return BASE_PROMPT + "\n\n" + suffix + note + mem + tdo
 
 
 # Used by the ContextManager when the live context overflows. It summarizes the

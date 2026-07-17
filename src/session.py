@@ -14,6 +14,7 @@ import json
 
 from . import config
 from . import memory
+from . import todos
 from .permissions import Permissions
 from .trajectory import Trajectory
 from .runtime import build_agent
@@ -56,7 +57,10 @@ def resume(session_id, workspace, permissions, verbose=False, interactive=False)
 
     traj = Trajectory.resume(path)
     mem = memory.load(workspace) if config.MEMORY else ""
-    agent = build_agent(traj, initial_working=working, pinned_plan=plan, memory=mem,
+    # Reload the project backlog too (Phase 23) so a resumed session sees what's still to do — the display
+    # at startup is handled by cli._run_session, which every resumed session routes through.
+    tdo = todos.backlog_text(workspace) if config.PROJECT_TODOS else ""
+    agent = build_agent(traj, initial_working=working, pinned_plan=plan, memory=mem, todos=tdo,
                         granted_dirs=permissions.extra_roots)
     ctx = make_context(workspace, permissions, traj.session_id, depth=0,
                        verbose=verbose, interactive=interactive)
