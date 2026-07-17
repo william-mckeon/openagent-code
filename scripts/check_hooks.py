@@ -48,6 +48,7 @@ class _Res:
 
 _STUBS = {
     "deny.py":    "import sys,json; sys.stdin.read(); print(json.dumps({'decision':'deny','message':'blocked by test hook'}))",
+    "ask.py":     "import sys,json; sys.stdin.read(); print(json.dumps({'decision':'ask','message':'please confirm'}))",
     "allow.py":   "import sys,json; sys.stdin.read(); print(json.dumps({'decision':'allow','message':'ok by test hook'}))",
     "proceed.py": "import sys; sys.stdin.read()",                       # no output -> no opinion
     "crash.py":   "import sys; sys.stdin.read(); sys.exit(3)",          # non-zero exit, no output
@@ -109,6 +110,16 @@ def main():
 
     set_hooks({"PreToolUse": [{"command": cmd("allow.py")}]})
     check("pretool: an 'allow' verdict is no-opinion (tighten-only) -> None", hooks.pretool("write_file", "x.py", {}, ctx) is None)
+
+    # PreToolUse ASK verdict (specs/0022): an at-risk op escalated to the approver, not hard-denied.
+    set_hooks({"PreToolUse": [{"command": cmd("ask.py")}]})
+    v = hooks.pretool("write_file", "x.py", {}, ctx)
+    check("pretool: an 'ask' verdict -> PreVerdict('ask', msg)", v is not None and v.decision == "ask" and "confirm" in v.message)
+    # DENY must win over ASK across hooks (ask first, deny second — the ask must not short-circuit).
+    set_hooks({"PreToolUse": [{"command": cmd("ask.py")}, {"command": cmd("deny.py")}]})
+    v = hooks.pretool("write_file", "x.py", {}, ctx)
+    check("pretool: DENY wins over ASK across hooks (ask is remembered, deny still short-circuits)",
+          v is not None and v.decision == "deny")
 
     # apply_patch hides its targets INSIDE the patch body — the runner parses them into `paths` so a
     # path-aware hook can gate them (the ride-3 hole where apply_patch slipped the docs/ protection).
@@ -178,6 +189,37 @@ def main():
     tgt = p_ask._target("edit_file", {"path": ".env"}, ctx)
     check("headless-only: interactive -> PermissionRequest hook NOT consulted (None)",
           p_ask._hooks_permreq("edit_file", tgt, _Ctx(ws, interactive=True)) is None)
+
+    # -- hook-ask escalation via decide() (specs/0022) --------------------------------------------------
+    # A PreToolUse 'ask' turns an otherwise-ALLOWED call into an approver decision — headless, that means
+    # the PermissionRequest hook / guardian decides (here the PermissionRequest hook), never a silent allow.
+    set_hooks({"PreToolUse": [{"command": cmd("ask.py")}], "PermissionRequest": [{"command": cmd("allow.py")}]})
+    d = Permissions("acceptEdits", {}, []).decide("write_file", {"path": "x.py"}, ctx)
+    check("decide: a PreToolUse 'ask' escalates an allowed write -> PermissionRequest APPROVES -> allowed",
+          d.allowed and d.action == "ask" and "PreToolUse hook" in d.reason)
+
+    set_hooks({"PreToolUse": [{"command": cmd("ask.py")}], "PermissionRequest": [{"command": cmd("deny.py")}]})
+    d = Permissions("acceptEdits", {}, []).decide("write_file", {"path": "x.py"}, ctx)
+    check("decide: a PreToolUse 'ask' escalates -> PermissionRequest DENIES -> blocked",
+          (not d.allowed) and d.action == "ask")
+
+    set_hooks({"PreToolUse": [{"command": cmd("ask.py")}]})   # no approver present, headless
+    d = Permissions("acceptEdits", {}, []).decide("write_file", {"path": "x.py"}, ctx)
+    check("decide: a hook-ask headless with no approver -> BLOCKED (fail-safe, never a silent allow)",
+          (not d.allowed) and d.action == "ask")
+
+    # A hook-ask can only ever DOWNGRADE an allow — it can NEVER override a deny rule / fence / plan mode.
+    set_hooks({"PreToolUse": [{"command": cmd("ask.py")}]})
+    d = Permissions("default", {"deny": ["edit_file(.env)"]}, []).decide("edit_file", {"path": ".env"}, ctx)
+    check("decide: a hook-ask can't override a deny RULE (still denied)",
+          (not d.allowed) and "deny rule" in d.reason)
+    d = Permissions("plan", {}, []).decide("write_file", {"path": "x.py"}, ctx)
+    check("decide: a hook-ask can't override plan-mode read-only (still denied)",
+          (not d.allowed) and "plan mode" in d.reason)
+    outside = os.path.join(tempfile.gettempdir(), "not-in-the-ws.py")
+    d = Permissions("acceptEdits", {}, []).decide("write_file", {"path": outside}, ctx)
+    check("decide: a hook-ask can't override the fence (path outside workspace still denied)",
+          (not d.allowed) and "outside" in d.reason)
 
     # -- flag OFF -> byte-identical ----------------------------------------------------------------------
     config.HOOKS = False

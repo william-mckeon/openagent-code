@@ -56,6 +56,9 @@ class Context:
         self.mutations = {}            # {workspace-rel path: "write"|"edit"|"delete"} applied this run
         self.goal = None               # {objective,bar,max_iterations,used} set by pursue; run by the goal gate
         self.effort = None             # a sticky per-turn reasoning-effort request set by escalate_effort (specs/0021)
+        self.manifest = None           # {items,approved} proposed change-list set by propose_changes (specs/0022)
+        self.propose_phase = None      # None | 'investigate' (read-only) | 'approved'; flips on approval, read by decide()
+        self.approved_paths = set()    # normcased workspace-rel paths the user signed off; decide() allows exactly these
         self.ask = None                # callable(question) -> answer; wired by make_context
         self.interactive = False       # True only when a human is present to answer
 
@@ -860,6 +863,129 @@ PATCH_TOOLS = [
         "parameters": {"type": "object", "properties": {
             "patch": {"type": "string", "description": "the *** Begin Patch ... *** End Patch envelope"},
         }, "required": ["patch"]},
+    },
+]
+
+
+# Opt-in propose mode (Phase 22 / specs/0022) — added to the active toolset by src/toolset.py only when
+# CODE_PROPOSE is on. propose_changes is a REGISTRATION tool like update_plan/pursue: it records a proposed
+# change-list and collects ONE plan-level approval; it never edits anything (so it must stay OUT of
+# permissions.MUTATING — it falls to decide()'s read-only allow, which is what lets it run during the
+# read-only investigate phase). The approved plan is what the permission engine then allows, per file.
+_MANIFEST_ACTIONS = {"add", "update", "delete", "move"}
+_MANIFEST_MARKS = {"add": "+", "update": "~", "delete": "-", "move": ">"}
+
+
+def _render_manifest(items):
+    """A compact, human-readable change-list for the approval prompt and the echoed result."""
+    lines = []
+    for it in items:
+        act = it.get("action", "")
+        where = (f"{it.get('from')} -> {it.get('path')}" if act == "move" and it.get("from")
+                 else it.get("path", ""))
+        why = (it.get("why") or "").strip()
+        lines.append(f"  {_MANIFEST_MARKS.get(act, '?')} {act:<6} {where}" + (f"   ({why})" if why else ""))
+    return f"Proposed changes ({len(items)}):\n" + "\n".join(lines)
+
+
+def _approved_paths(perms, cwd, items):
+    """The set of workspace-rel, case-normalized paths the user signed off — keyed EXACTLY as decide() keys
+    a target (permissions.Permissions.norm_path), so an approved edit matches no matter how the path is
+    later written (relative, absolute, different Windows casing). A move contributes BOTH endpoints."""
+    out = set()
+    for it in items:
+        out.add(perms.norm_path(it["path"], cwd))
+        if it.get("from"):
+            out.add(perms.norm_path(it["from"], cwd))
+    return out
+
+
+def _write_manifest_file(ctx, items):
+    """Headless fallback: write the proposed change-list to <workspace>/.openagent/ so a human can review it
+    later, and return its workspace-relative path (or '' on failure). Inside the fence (like memory.remember);
+    never raises."""
+    try:
+        import json as _json
+        d = os.path.join(ctx.cwd, ".openagent")
+        os.makedirs(d, exist_ok=True)
+        fp = os.path.join(d, f"manifest-{getattr(ctx, 'session_id', None) or 'proposed'}.json")
+        with open(fp, "w", encoding="utf-8", newline="") as f:
+            _json.dump({"items": items}, f, indent=2)
+        return _rel(ctx, fp)
+    except Exception:  # noqa: BLE001 - a failed convenience write must never break the tool
+        return ""
+
+
+def propose_changes(args, ctx):
+    """Propose a structured change-list (add/move/update/delete + why) for the user to approve BEFORE any
+    edit (Phase 22 / specs/0022). In propose mode this is MANDATORY before editing; in the other modes it's
+    the courtesy to extend for a broad or destructive change. A registration tool like update_plan/pursue:
+    it validates and stashes ctx.manifest, then collects ONE plan-level approval — so execution consents at
+    the plan level and never has to ask per file. It runs NOTHING itself.
+
+    On approval it flips ctx.propose_phase to 'approved' and records the approved paths, so the permission
+    engine allows exactly those edits (anything off the list is asked). Top-level only (a subagent can't
+    collect a human approval). Headless (no human present): it writes the plan to .openagent/ and STOPS,
+    leaving the phase read-only — it NEVER auto-approves an unreviewed plan.
+    """
+    if ctx.depth > 0:
+        return ToolResult(False, "propose_changes is top-level only - a subagent does its bounded task and reports.")
+    raw = args.get("manifest")
+    if not isinstance(raw, list) or not raw:
+        return ToolResult(False, "propose_changes needs a non-empty 'manifest': a list of "
+                                 "{action: add|update|delete|move, path, from (for a move), why}.")
+    items = []
+    for it in raw:
+        if not isinstance(it, dict):
+            return ToolResult(False, "each manifest item must be an object with action / path / why.")
+        action = str(it.get("action") or "").strip().lower()
+        path = str(it.get("path") or "").strip()
+        frm = str(it.get("from") or "").strip()
+        if action not in _MANIFEST_ACTIONS:
+            return ToolResult(False, f"bad action {action!r} - use one of {', '.join(sorted(_MANIFEST_ACTIONS))}.")
+        if not path:
+            return ToolResult(False, "each manifest item needs a non-empty 'path'.")
+        if action == "move" and not frm:
+            return ToolResult(False, "a 'move' item needs 'from' (the source path).")
+        items.append({"action": action, "path": path, "from": frm or None, "why": (it.get("why") or "").strip()})
+    ctx.manifest = {"items": items, "approved": False}
+    rendered = _render_manifest(items)
+
+    # Interactive: ONE plan-level approval. Non-interactive: record the plan and STOP (never auto-approve).
+    if ctx.ask is not None and ctx.interactive:
+        ans = (ctx.ask(rendered + f"\n\nApply these {len(items)} change(s)? [y/N] ") or "").strip().lower()
+        if ans in ("y", "yes", "ok", "sure", "approve", "apply"):
+            ctx.manifest["approved"] = True
+            ctx.propose_phase = "approved"
+            ctx.approved_paths = _approved_paths(ctx.permissions, ctx.cwd, items)
+            return ToolResult(True, f"Approved {len(items)} change(s). Execute exactly this plan now - edits "
+                                    "on these paths are pre-approved; anything off the list will be asked.")
+        return ToolResult(False, "The user did NOT approve this plan, so nothing was changed. Do not make "
+                                 "these edits. Revise the plan and propose again, or ask what they'd prefer.")
+    where = _write_manifest_file(ctx, items)
+    return ToolResult(False, "No human is present to approve this change-list, so nothing was changed."
+                             + (f" The proposed plan was written to {where} for review." if where else "")
+                             + " Re-run interactively to review and apply it.")
+
+
+PROPOSE_TOOLS = [
+    {
+        "name": "propose_changes", "fn": propose_changes,
+        "description": ("Propose a change-list for approval BEFORE editing: the files you will add, move, "
+                        "update, or delete, each with a one-line why. The user approves the whole plan "
+                        "ONCE, then you execute exactly it. Investigate read-only first (read_file / grep / "
+                        "glob) so the list is real and complete. In propose mode you MUST propose before "
+                        "any edit. In other modes, propose first ONLY for a BROAD or destructive change "
+                        "(many files, deletes/moves) - for a one- or two-line edit, just make it."),
+        "parameters": {"type": "object", "properties": {
+            "manifest": {"type": "array", "description": "the change-list to apply",
+                         "items": {"type": "object", "properties": {
+                             "action": {"type": "string", "enum": ["add", "move", "update", "delete"]},
+                             "path": {"type": "string", "description": "the target path (for a move, the NEW path)"},
+                             "from": {"type": "string", "description": "the source path (move only)"},
+                             "why": {"type": "string", "description": "one line: why this change"},
+                         }, "required": ["action", "path"]}},
+        }, "required": ["manifest"]},
     },
 ]
 

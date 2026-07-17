@@ -33,12 +33,16 @@ OWN budget / rate-limit against bulk destruction outside a protected path (ride-
 ## Acceptance
 - `src/config.py`: `CODE_HOOKS` (default false) + `CODE_HOOKS_CONFIG` (a path) + `load_hooks_config()`
   (mirrors `load_permission_rules` — missing/bad file -> no hooks, never raises).
-- `src/hooks.py`: `pretool(...)` -> `PreVerdict('deny', msg)` or None (tighten-only); `permission_request(...)`
-  -> `AskVerdict(approved, reason)` or None; `posttool(...)` -> None (observe-only). Each runs its event's
-  commands via a bounded-timeout subprocess, honors an optional per-entry `tools` filter, and FAILS OPEN
-  on any error. Imports only config + logsetup + stdlib.
+- `src/hooks.py`: `pretool(...)` -> `PreVerdict('deny', msg)` (tighten-only) OR `PreVerdict('ask', msg)`
+  (escalate an otherwise-allowed call to the approver — delivered by [specs/0022](0022-propose-mode.md),
+  deny still wins across hooks) OR None; `permission_request(...)` -> `AskVerdict(approved, reason)` or None;
+  `posttool(...)` -> None (observe-only). Each runs its event's commands via a bounded-timeout subprocess,
+  honors an optional per-entry `tools` filter, and FAILS OPEN on any error. Imports only config + logsetup + stdlib.
 - `src/permissions.py`: a PreToolUse `deny` at the TOP of `decide()` short-circuits every tool (fires at
-  ALL depths — a hook is an external subprocess, no re-entrancy). The ask-tier sites consult one
+  ALL depths — a hook is an external subprocess, no re-entrancy). A PreToolUse `ask` is captured and applied
+  as an allow-post-process (specs/0022): it escalates an otherwise-ALLOWED call through `_escalate` ->
+  `_ask_approver` (headless) / human prompt / block, so it can only DOWNGRADE an allow to an ask — never
+  override a deny rule / fence / plan-mode / propose block that ran first. The ask-tier sites consult one
   `_ask_approver` = PermissionRequest hook (headless-only, top-level) → guardian → human/block. Flag-off
   -> None everywhere, byte-identical.
 - `src/agent.py`: `PostToolUse` after each tool executes (observe-only, fail-open, skipped when off).
@@ -48,8 +52,10 @@ OWN budget / rate-limit against bulk destruction outside a protected path (ride-
   flag-off parity. Dep-free, no model, no network.
 
 ## Non-goals (v1 — noted for a later pass)
-- **PreToolUse "ask" escalation** (force an otherwise-allowed call through the approver) — v1 is
-  deny-or-noop.
+- ~~**PreToolUse "ask" escalation** (force an otherwise-allowed call through the approver) — v1 is
+  deny-or-noop.~~ **DELIVERED** in [specs/0022](0022-propose-mode.md): `pretool` now also returns
+  `PreVerdict('ask', msg)`, and `decide()` escalates it to the ask ladder as an allow-post-process (still
+  tighten-only — it can't override a deny rule / fence).
 - **PostToolUse veto / result-mutation** — v1 is observe-only (auto-verify 0014 already owns feed-back).
 - **Trajectory `log_hook` records** — a PreToolUse deny already rides the existing `log_permission`; a
   dedicated hook-fire record for the flywheel is a follow-up.

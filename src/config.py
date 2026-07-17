@@ -205,7 +205,7 @@ def _resolve_install_path(raw: str) -> str:
     return at_root if os.path.isfile(at_root) else raw
 
 
-_MODES = {"default", "acceptEdits", "plan", "bypass"}
+_MODES = {"default", "acceptEdits", "plan", "bypass", "propose"}
 PERMISSION_MODE = os.environ.get("CODE_PERMISSION_MODE", "").strip()
 PERMISSIONS_CONFIG = _resolve_install_path(os.environ.get("CODE_PERMISSIONS_CONFIG", ""))
 ADD_DIRS = os.environ.get("CODE_ADD_DIRS", "").strip()
@@ -377,6 +377,15 @@ except ValueError:
     EFFORT_THRESHOLD = 2
 # OPTIONAL state file for the online learner (its persisted per-signature stats). Unset = in-memory only.
 EFFORT_STATE = _resolve_install_path(os.environ.get("CODE_EFFORT_STATE", ""))
+
+# propose mode (Phase 22 / specs/0022). Before a substantive change the agent proposes a structured CHANGE
+# MANIFEST (add/move/update/delete + why) and the user approves the whole plan ONCE, then it executes just
+# that plan. `--mode propose` makes it mandatory; in the other modes the same tool is ELECTED for a broad/
+# destructive change and asks a single [y/N]. This flag is the ONE master switch toolset.active_tools()
+# reads to offer `propose_changes` and that decide()'s propose / off-plan branches are gated on. Selecting
+# propose mode (CLI / env) turns it on in cli.main(), so the mode is never a dead read-only mode. Off by
+# default -> the tool isn't offered and every new gate branch is skipped (byte-identical).
+PROPOSE = _as_bool(os.environ.get("CODE_PROPOSE", "false"))
 
 
 def resolved_permission_mode() -> str:

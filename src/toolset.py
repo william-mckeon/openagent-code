@@ -13,7 +13,7 @@ toolset varies.
 """
 from . import config
 from .tools import (TOOLS, WEB_TOOLS, MEMORY_TOOLS, SKILL_TOOLS, PATCH_TOOLS, GOAL_TOOLS, EFFORT_TOOLS,
-                    openai_schemas)
+                    PROPOSE_TOOLS, openai_schemas)
 from .mcp_client import mcp_tools
 
 
@@ -36,6 +36,12 @@ def active_tools():
     # so a flag-off run's tool_schemas are byte-identical.
     if config.ADAPTIVE_EFFORT and (config.EFFORT_POLICY or "reactive").strip().lower() not in ("off", "none"):
         tools += EFFORT_TOOLS
+    # The ONLY site that offers `propose_changes` (Phase 22). The SAME master flag governs propose mode AND
+    # auto-propose in the other modes, so both reduce to one switch — never the permission mode (active_tools
+    # can't see the --mode override, and auto-propose is needed in default/acceptEdits/bypass too). Gated
+    # here, not refused at call time, so a flag-off run's logged tool_schemas stay byte-identical.
+    if config.PROPOSE:
+        tools += PROPOSE_TOOLS
     if config.ENABLE_WEB:
         tools += WEB_TOOLS
     tools += mcp_tools()

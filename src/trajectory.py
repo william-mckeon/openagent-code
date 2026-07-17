@@ -29,6 +29,11 @@ def _ts():
 
 
 class Trajectory:
+    # 0.10.0: propose mode (Phase 22 / specs/0022). A `manifest` record captures a proposed change-list
+    #        (add/move/update/delete + why), whether the user APPROVED the whole plan, and the mode - so a
+    #        propose->approve->execute run is a first-class 'plan before acting' signal, and a DECLINED plan
+    #        (approved=False) is dropped from SFT (train/convert._unapplied_manifest_turns) so a change that
+    #        never happened can't train as completed. Logged ONCE, when the manifest resolves.
     # 0.9.0: adaptive effort (Phase 21 / specs/0021). `model_call` gains an `effort` field (the reasoning
     #        level that call ran at), and an `effort_change` record marks each escalation (old->new + the
     #        struggle that drove it) - the metacognitive signal the flywheel learns an effort policy from.
@@ -54,7 +59,7 @@ class Trajectory:
     # 0.6.0: `permission` record per gated tool call (Phase 4 #6) — the decision
     #        (allow/ask/deny + which rule/mode decided it), captured before the call.
     # Older data stays usable — the converter falls back to as-sent / reattachment.
-    SCHEMA_VERSION = "0.9.0"
+    SCHEMA_VERSION = "0.10.0"
 
     @classmethod
     def resume(cls, path):
@@ -263,13 +268,28 @@ class Trajectory:
             "met": bool(met),
         })
 
+    def log_manifest(self, items, approved, mode=None):
+        """Record a proposed change-list's resolution once (specs/0022 propose mode): the proposed items
+        (add/move/update/delete + why), whether the user APPROVED the whole plan, and the mode it was
+        proposed in. A propose->approve->execute run is a first-class 'plan before acting' signal for the
+        flywheel; a DECLINED plan (approved=False) marks a turn train/convert.py must NOT keep as a
+        completed change. Logged ONCE, when the manifest resolves — never per revision or while awaiting."""
+        self._write({
+            "type": "manifest",
+            "session_id": self.session_id,
+            "ts": _ts(),
+            "items": list(items or []),
+            "approved": bool(approved),
+            "mode": mode,
+        })
+
     def end(self, outcome, final_text=None, terminated=None):
         self._write({
             "type": "session_end",
             "session_id": self.session_id,
             "ts": _ts(),
-            # success | completed | verify_failed | no_action | protocol_stalled |
-            # max_steps | error | unverified_completion (Phase 6) | ungrounded_completion (Phase 10)
+            # success | completed | verify_failed | no_action | protocol_stalled | max_steps | error |
+            # unverified_completion (Phase 6) | ungrounded_completion (Phase 10) | manifest_declined (Phase 22)
             "outcome": outcome,
             "terminated": terminated,                 # how the loop ended (agent.RunResult)
             "steps": self.steps,

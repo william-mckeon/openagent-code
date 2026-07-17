@@ -32,21 +32,28 @@ from .logsetup import get_logger
 
 log = get_logger("hooks")
 
-PreVerdict = namedtuple("PreVerdict", "decision message")   # v1: decision is always "deny" when returned
+PreVerdict = namedtuple("PreVerdict", "decision message")   # decision is "deny" or "ask" when returned (specs/0022)
 AskVerdict = namedtuple("AskVerdict", "approved reason")    # PermissionRequest approver
 
 _TIMEOUT = 10   # default seconds per hook; a slower hook fails OPEN (never blocks the agent)
 
 
 def pretool(tool, target, args, ctx):
-    """Run PreToolUse hooks. Returns PreVerdict('deny', msg) if ANY hook explicitly denies, else None
-    (no opinion). FAIL-OPEN; tighten-only (an 'allow'/unknown verdict is treated as no opinion)."""
+    """Run PreToolUse hooks. Returns PreVerdict('deny', msg) if ANY hook denies, else PreVerdict('ask', msg)
+    if any hook asks (an at-risk op the engine escalates to the ask ladder instead of hard-denying, specs/
+    0022), else None (no opinion). FAIL-OPEN; tighten-only (an 'allow'/unknown verdict is no opinion).
+
+    DENY WINS over ask ACROSS hooks: a deny short-circuits immediately, so a permissive hook ordered before
+    a strict one can never soften a would-be deny — the ask is only remembered and returned if no hook denies."""
     payload = _payload("PreToolUse", tool, target, args, ctx)
+    ask = None
     for entry in _entries("PreToolUse", tool):
         d, msg = _decision(_run(entry, payload))
         if d in ("deny", "block"):
-            return PreVerdict("deny", msg)
-    return None
+            return PreVerdict("deny", msg)          # deny wins, immediately, across all hooks
+        if d == "ask" and ask is None:
+            ask = PreVerdict("ask", msg)            # remember the first ask; keep scanning for a later deny
+    return ask
 
 
 def permission_request(tool, target, ctx):

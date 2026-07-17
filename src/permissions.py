@@ -136,9 +136,28 @@ class Permissions:
         # so a policy can be about the EFFECT (a path / content pattern), not the tool NAME — this is what
         # closes "deny is only tool-scoped." Fail-open + flag-off -> None, a no-op (byte-identical).
         h = self._hooks_pretool(tool, t, args, ctx)
-        if h is not None:
+        if h is not None and getattr(h, "decision", "deny") in ("deny", "block"):
             return Decision(False, tool, (t.rel if t.kind == "path" else t.raw), "deny",
                             f"PreToolUse hook: {h.message or 'blocked'}", None, self.mode)
+        # A hook ASK (specs/0022) is NOT acted on here: it's captured and applied only AFTER the engine's
+        # normal decision resolves to an allow, so it can only DOWNGRADE an allow to an ask — never override
+        # a deny rule / fence / plan-mode / propose-investigate block that runs first below.
+        hook_ask = h if (h is not None and getattr(h, "decision", None) == "ask") else None
+        dec = self._decide_core(tool, t, ctx)
+        # Escalation net (specs/0022): a hook-ask, or an off-plan DESTRUCTIVE op under an approved manifest,
+        # turns an ALLOW into an ASK (guardian headless / prompt interactive / block). Only ever runs on an
+        # allow (never a deny/block), and only when a trigger is live -> flag-off + no hook-ask leaves the
+        # decision untouched (byte-identical).
+        if dec.allowed and dec.action == "allow" and (hook_ask is not None or config.PROPOSE):
+            esc = self._escalate_allow(tool, t, ctx, hook_ask)
+            if esc is not None:
+                return esc
+        return dec
+
+    def _decide_core(self, tool, t, ctx):
+        """The permission ladder itself (deny -> fence -> read-only -> propose -> plan -> ask -> allow ->
+        baseline). Split out of decide() so the PreToolUse hook-ask / off-plan escalation can post-process
+        its result uniformly, whether it came from here or the execpolicy command path."""
         # run_command gated on the PARSED command (execpolicy, Phase 16): deny/ask/allow rules match ANY
         # segment (the `rm` inside `cd x && rm y`) and a wholly read-only command is allowed like a read
         # tool. OFF (default) -> decide() never consults execpolicy and the prefix path below is unchanged.
@@ -163,6 +182,13 @@ class Permissions:
         # 3. read-only tools are allowed once past deny + fence.
         if not mutating:
             return D(True, "allow", "read-only tool")
+
+        # 3b. propose mode (specs/0022): read-only until the manifest is approved, then allow exactly the
+        # approved plan. UNDER deny + fence (an approved edit still can't touch .env / escape the fence).
+        if config.PROPOSE and self.mode == "propose":
+            pd = self._propose_gate(tool, t, ctx, D)
+            if pd is not None:
+                return pd
 
         # 4. plan mode is read-only — no mutating tools at all.
         if self.mode == "plan":
@@ -199,6 +225,80 @@ class Permissions:
             ok = self._prompt(tool, t)
             return D(ok, "ask", f"{self.mode} mode -> {'allowed' if ok else 'denied'} by user")
         return D(False, "deny", f"{self.mode} mode needs approval, but no human is present")
+
+    # -- propose mode (specs/0022) --------------------------------------------
+
+    def norm_path(self, raw, cwd):
+        """The canonical key for a path target — workspace-relative, forward-slashed, case-normalized: the
+        SAME form decide() matches an approved manifest against. propose_changes FILLS ctx.approved_paths
+        through this and decide()/decide_move() TEST it through this, so the two can never disagree (an
+        edit made via an absolute path or different Windows casing still matches its approved entry)."""
+        return os.path.normcase(_rel(_resolve(cwd, raw), cwd))
+
+    def _on_manifest(self, ctx, t):
+        approved = getattr(ctx, "approved_paths", None)
+        return bool(approved) and os.path.normcase(t.rel or "") in approved
+
+    def _on_manifest_move(self, ctx, old_path, new_path):
+        approved = getattr(ctx, "approved_paths", None)
+        if not approved:
+            return False
+        return (self.norm_path(old_path, ctx.cwd) in approved
+                and self.norm_path(new_path, ctx.cwd) in approved)
+
+    def _propose_gate(self, tool, t, ctx, D):
+        """Propose mode's read-only-until-approved gate, consulted for a MUTATING tool (called after the
+        read-only allow). Investigate phase -> DENY (nothing is edited before the user approves). Approved
+        phase -> ALLOW an op that's on the approved manifest (apply_patch is allowed at the envelope and
+        re-gated per file by patch.py); an OFF-manifest op returns None to fall through to the normal ask
+        baseline. Only called when config.PROPOSE and self.mode == 'propose'."""
+        if getattr(ctx, "propose_phase", "investigate") != "approved":
+            return D(False, "deny", "propose mode is read-only until the manifest is approved")
+        if tool == "apply_patch":
+            return D(True, "allow", "propose mode: approved (each patch op is re-gated per file)")
+        if t.kind == "path" and self._on_manifest(ctx, t):
+            return D(True, "allow", "on the approved manifest")
+        return None
+
+    def _offplan(self, tool, t, ctx):
+        """True if a manifest was APPROVED this turn AND this mutating op is NOT on it — the graduated
+        off-plan net's trigger. Live only once a plan is approved (propose mode, or auto-propose in another
+        mode), so a normal run with no manifest never reaches it. apply_patch is judged per file (its ops
+        re-enter decide()), so the envelope itself is never off-plan."""
+        if getattr(ctx, "propose_phase", None) != "approved":
+            return False
+        if tool == "apply_patch":
+            return False
+        if t.kind == "path":
+            return not self._on_manifest(ctx, t)
+        return True   # a command / pursue is never ON a file manifest -> off-plan
+
+    def _escalate(self, tool, t, reason, ctx, D):
+        """Route an allow that a hook-ask / off-plan check wants to second-guess through the SAME ask ladder
+        as an ask rule: the mass-destruction cap + PermissionRequest hook + guardian (headless), else the
+        human prompt (interactive), else a headless block. Only ever downgrades an allow to an ask."""
+        a = self._ask_approver(tool, t, reason, ctx)
+        if a is not None:
+            return D(a[0], "ask", f"{reason} -> {a[1]}")
+        if getattr(ctx, "interactive", False):
+            ok = self._prompt(tool, t)
+            return D(ok, "ask", f"{reason} -> {'allowed' if ok else 'denied'} by user")
+        return D(False, "ask", f"{reason}, but no human is present to confirm")
+
+    def _escalate_allow(self, tool, t, ctx, hook_ask):
+        """Post-process an ALLOW (specs/0022). (a) a PreToolUse hook that asked to confirm this call turns
+        ANY allow into an ask; (b) an off-plan DESTRUCTIVE op under an approved manifest turns its allow
+        into an ask (a low-risk off-plan op keeps its original, already-logged allow — only irreversible
+        deviations are second-guessed). Returns the new ask Decision, or None to leave the allow as-is."""
+        def D(allowed, action, reason, rule=None):
+            return Decision(allowed, tool, (t.rel if t.kind == "path" else t.raw), action, reason, rule, self.mode)
+        if hook_ask is not None:
+            return self._escalate(tool, t, f"PreToolUse hook: {hook_ask.message or 'ask'}", ctx, D)
+        if config.PROPOSE and tool in MUTATING and self._offplan(tool, t, ctx):
+            shown = t.rel if t.kind == "path" else (t.raw or tool)
+            if _is_destructive(tool, shown):
+                return self._escalate(tool, t, "off-plan change not on the approved manifest", ctx, D)
+        return None
 
     # -- helpers --------------------------------------------------------------
 
@@ -363,6 +463,12 @@ class Permissions:
             return D(True, "allow", "read-only command (execpolicy)")
         if self.mode == "plan":
             return D(False, "deny", "plan mode is read-only")
+        # propose mode (specs/0022): a MUTATING/dangerous command is read-only until the manifest is
+        # approved. Mirror of the main-ladder guard — decide() diverts here BEFORE that guard, so without
+        # this a mutating command would slip through the investigate phase. (A read-only command already
+        # returned above; in the approved phase a command is inherently off-manifest -> falls to ask below.)
+        if config.PROPOSE and self.mode == "propose" and getattr(ctx, "propose_phase", "investigate") != "approved":
+            return D(False, "deny", "propose mode is read-only until the manifest is approved")
         for seg in candidates:                                   # ask — matches ANY segment
             r = self._match_command_rules(self.ask, seg)
             if r:
@@ -412,6 +518,14 @@ class Permissions:
                 return D(False, "deny", f"deny rule {r!r}", r, t.rel)
             if not self._within_roots(t.abs, ctx.cwd):
                 return D(False, "deny", "a moved path is outside your allowed directories", target=t.rel)
+        # propose mode (specs/0022): the Move ladder, mirroring the main gate. Read-only until approved;
+        # then allow a move whose BOTH endpoints are on the approved manifest (an off-manifest move falls
+        # through to the default ask below). UNDER the deny + fence checks above.
+        if config.PROPOSE and self.mode == "propose":
+            if getattr(ctx, "propose_phase", "investigate") != "approved":
+                return D(False, "deny", "propose mode is read-only until the manifest is approved", target=old_path)
+            if self._on_manifest_move(ctx, old_path, new_path):
+                return D(True, "allow", "move on the approved manifest", target=old_path)
         if self.mode == "plan":
             return D(False, "deny", "plan mode is read-only", target=old_path)
         if self.mode in ("bypass", "acceptEdits"):

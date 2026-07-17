@@ -134,7 +134,7 @@ def _print_log_path():
         print(f"Run log: {p}  (hand this to a reviewer / Claude to debug the run)")
 
 
-_MODES = {"default", "acceptEdits", "plan", "bypass"}
+_MODES = {"default", "acceptEdits", "plan", "bypass", "propose"}
 
 
 def _repl_add_dir(agent, ctx, path):
@@ -165,6 +165,11 @@ def _repl_set_mode(ctx, name):
         return
     ctx.permissions.mode = name
     print(f"  mode -> {name}")
+    # propose mode needs propose_changes in the toolset, which is fixed at launch from CODE_PROPOSE. If it
+    # was off, switching now leaves the mode read-only with no way to approve a plan — say so, don't strand.
+    if name == "propose" and not config.PROPOSE:
+        print("  note: this session launched without CODE_PROPOSE, so propose_changes isn't available - "
+              "propose mode will be read-only. Restart with --mode propose (or CODE_PROPOSE=true) to use it.")
 
 
 def _run_session(traj, agent, ctx):
@@ -270,6 +275,11 @@ def main(argv=None):
     argv = list(argv if argv is not None else sys.argv[1:])
     mode_override, add_dirs, argv = _parse_flags(argv)
     perms = Permissions.from_config(mode_override=mode_override, extra_dirs=add_dirs)
+    # Selecting propose mode (--mode propose / CODE_PERMISSION_MODE=propose) turns the propose machinery on,
+    # so `propose_changes` is actually offered (toolset reads config.PROPOSE, built next in build_agent).
+    # Without this the mode would validate but stay a dead read-only mode with no way to ever approve a plan.
+    if perms.mode == "propose":
+        config.PROPOSE = True
     from .mcp_client import connect, disconnect
     from .model import warm_up
     n = connect()

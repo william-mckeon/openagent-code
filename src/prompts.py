@@ -213,6 +213,18 @@ def build_system_prompt(mode, tools, memory=None, granted_dirs=None):
                  "prefer it for a coordinated Add/Update/Delete/Move across files; a single edit is "
                  "still fine with edit_file.")
 
+    # Propose mode (specs/0022): teach the propose-then-execute protocol. Gated on the tool's PRESENCE (not
+    # a mode string — the permission mode isn't threaded here), so a flag-off prompt is byte-identical.
+    if any(t["name"] == "propose_changes" for t in tools):
+        note += ("\n\nPROPOSE CHANGES: before a SUBSTANTIVE change, investigate read-only (read_file / grep "
+                 "/ glob) to scope it, then call `propose_changes` ONCE with the full list of files you will "
+                 "add / move / update / delete and a one-line why for each. The user approves the whole plan, "
+                 "then you execute EXACTLY it - edits on the approved paths go through; anything off the list "
+                 "is asked. If a plan is NOT approved, do not make those edits - revise and propose again. In "
+                 "propose mode this is REQUIRED before any edit. In other modes, propose first ONLY for a "
+                 "broad or destructive change (many files, deletes/moves); for a one- or two-line edit, just "
+                 "make it - don't add a confirmation step to trivial work.")
+
     # Cross-session memory (Phase 4 #7): prior-session notes about THIS repo. Lands in
     # the system prompt, which is logged as the first raw turn -> self-containment holds.
     mem = ""

@@ -96,6 +96,16 @@ class Agent:
         when the turn escalated and a policy is active: the deterministic policies ignore it; the online
         learner learns from it ('a task shaped like THIS, escalated -> {succeeded|not}'). Every run() exit
         routes through here so the learner sees failures as well as successes."""
+        # Propose mode (specs/0022): log the resolved change-list ONCE, at turn end (every run() exit routes
+        # here). approved=False marks a DECLINED plan that convert.py drops so a not-applied change never
+        # trains as completed. No manifest -> nothing logged (byte-identical).
+        m = getattr(ctx, "manifest", None)
+        if m is not None:
+            try:
+                self.traj.log_manifest(m.get("items", []), bool(m.get("approved")),
+                                       mode=getattr(ctx.permissions, "mode", None))
+            except Exception:  # noqa: BLE001 - logging a manifest must never break the run
+                pass
         if self._effort_policy is not None and self._escalated:
             try:
                 self._effort_policy.update(getattr(ctx, "request", "") or "", True, terminated == "final")
@@ -131,6 +141,12 @@ class Agent:
         ctx.goal = None               # a PREVIOUS task's bar must never be pursued on this one (specs/0020)
         ctx._verified_ok = False      # did a CHECK actually confirm success this turn? (grounding's unverified-success net)
         ctx.effort = None             # a prior turn's effort request must not carry over (specs/0021)
+        # Propose mode (specs/0022): a change-list approved for one task must NEVER authorize edits on the
+        # next (the same cross-turn-leak class the plan/goal resets above fix — and worse here, because it
+        # governs WRITES). Reset the manifest + approval every task; start propose mode read-only.
+        ctx.manifest = None
+        ctx.approved_paths = set()
+        ctx.propose_phase = "investigate" if getattr(ctx.permissions, "mode", None) == "propose" else None
         self._escalated = False
         _emdl = getattr(self.planner, "model", None)
         if _emdl is not None:         # restore the AS-BUILT effort so a prior turn's escalation never leaks
