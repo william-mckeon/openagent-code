@@ -30,6 +30,13 @@ Working method:
 - "this project", "our project", "the repo", "the codebase" mean your WORKSPACE — the
   directory you are running in — NOT a folder discussed earlier or a granted reference
   directory. Only review a reference directory when the user names its path.
+- When the user GRANTS an external directory and asks you to review IT, that directory is your
+  review ROOT for that task: pass ITS path to tree / glob / grep / read_file (by absolute path)
+  and to review_repo — do NOT default tree/search back to your workspace, and never review the
+  workspace and present it as the granted folder. A repo or service NAMED in that project's docs
+  or config but NOT present on disk is a CROSS-REPO reference, not a missing file — do not hunt
+  for it in your workspace, and never report it "missing" or "not present"; just note it lives in
+  a separate repo you were not given.
 - Make focused edits with edit_file (exact-match). Match the whole line including its
   existing leading indentation, and use the SAME indentation in old_string and
   new_string — never add extra spaces to new_string. If an edit fails as "not unique",
@@ -388,13 +395,41 @@ def looks_like_reasoning_preamble(text):
     return False
 
 
+# Open, thinking-out-loud DELIBERATION leaked AS the answer — the plain-PROSE cousin of the meta leaks
+# above, with no "final answer" tell and no markdown anchor to cut to (a live run answered: "The hook still
+# blocks... We need a way around. Perhaps we can add it elsewhere. But that wouldn't match. Maybe we can put
+# it under..."). No single phrase is damning (a real answer may say "we could" once), so we require SEVERAL
+# distinct hedge/planning markers in one SHORT answer. Detection only — a leak with no clean answer after it
+# has nothing to strip TO, so this keeps the turn OUT of the corpus rather than rewriting it.
+_DELIBERATION = re.compile(
+    r"\b(?:we\s+(?:need|could|should|would|can|have|might|may|'?d)\b|"
+    r"perhaps\b|maybe\b|possibly\b|could\s+be\b|one\s+option\b|another\s+option\b|"
+    r"let'?s\s+(?:try|see|think)\b|let\s+me\s+(?:think|see)\b|but\s+that\s+(?:would|wouldn'?t)\b|"
+    r"i\s+think\s+we\b|there\s+(?:might|may)\s+be\b)",
+    re.IGNORECASE)
+
+
+def looks_like_open_deliberation(text, min_markers=3):
+    """True if `text` reads as open thinking-out-loud rather than a finished answer — SEVERAL distinct
+    hedge/planning markers ('we need to', 'perhaps', 'maybe we can', 'but that wouldn't', ...) in one short
+    answer. A high threshold + a length cap keep a long, substantive report that hedges a few times from
+    tripping it. Detection only: this plain-prose leak has no anchor to strip to, so the turn is kept out of
+    training, not rewritten (the flywheel is the real fix — a caught-and-dropped leak teaches the next model)."""
+    t = text or ""
+    if not t.strip() or len(t) > 4000:
+        return False
+    return len(_DELIBERATION.findall(t)) >= min_markers
+
+
 def has_reasoning_leak(text):
     """True if `text` leaks chain-of-thought ANYWHERE — it OPENS with a preamble
-    (looks_like_reasoning_preamble) OR contains a mid-answer meta-transition about producing the answer
-    (_ANSWER_META). The whole-text check the eval + log summarizer use, so a leak sandwiched after a
-    legit first sentence is caught, not just a leading one."""
+    (looks_like_reasoning_preamble), contains a mid-answer meta-transition about producing the answer
+    (_ANSWER_META / _CONCLUSION_META), OR is open thinking-out-loud deliberation (looks_like_open_
+    deliberation). The whole-text check the eval + log summarizer + converter use, so a leak sandwiched
+    after a legit first sentence — or a whole answer that is just deliberation — is caught, not just a
+    leading one."""
     return (looks_like_reasoning_preamble(text) or bool(_ANSWER_META.search(text or ""))
-            or bool(_CONCLUSION_META.search(text or "")))
+            or bool(_CONCLUSION_META.search(text or "")) or looks_like_open_deliberation(text))
 
 
 _DEGEN_DIGITS = re.compile(r"\d+")

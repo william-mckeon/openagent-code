@@ -1011,6 +1011,26 @@ def propose_changes(args, ctx):
         if action == "move" and not frm:
             return ToolResult(False, "a 'move' item needs 'from' (the source path).")
         items.append({"action": action, "path": path, "from": frm or None, "why": (it.get("why") or "").strip()})
+    # Pre-validate against the HARD rules (deny rules + fence + PreToolUse deny hooks) BEFORE asking for
+    # approval - an approved manifest can never override those (specs/0022), so refuse an item that would be
+    # blocked at EXECUTION rather than approve a plan the agent then loops on (a live run looped
+    # propose -> approve -> hook-deny on a docs/ write). Never raises - a pre-check error just skips it.
+    blocked = []
+    for it in items:
+        gate_tool = "delete_file" if it["action"] == "delete" else "write_file"
+        try:
+            why = ctx.permissions.hard_block(gate_tool, {"path": it["path"]}, ctx)
+            if why is None and it["action"] == "move" and it["from"]:
+                why = ctx.permissions.hard_block("delete_file", {"path": it["from"]}, ctx)
+        except Exception:  # noqa: BLE001 - a pre-check failure must never block proposing
+            why = None
+        if why:
+            blocked.append(f"{_MANIFEST_MARKS.get(it['action'], '?')} {it['action']} {it['path']} - {why}")
+    if blocked:
+        return ToolResult(False, "This plan can't be applied as-is: these items are blocked by a hard rule "
+                                 "(a deny rule, the workspace fence, or a PreToolUse hook) that approving the "
+                                 "plan cannot override:\n  " + "\n  ".join(blocked)
+                                 + "\nRevise the plan (drop or re-path those items) and propose again.")
     ctx.manifest = {"items": items, "approved": False}
     rendered = _render_manifest(items)
 

@@ -72,7 +72,7 @@ def _is_root_file(scope, root):
     return "/" not in s and os.path.isfile(os.path.join(root, s))
 
 
-def _balance_plan(units, root, focus):
+def _balance_plan(units, root, focus, ext=False):
     """Make the model's `areas` plan safe to execute without dropping the actual code.
 
     Two guardrails, because 'review the source' is a must-not-fail, not a style preference:
@@ -96,15 +96,26 @@ def _balance_plan(units, root, focus):
     covered = " ".join(u[0].lower() for u in rest)
     for d in dirs:
         if d.lower() not in covered:
-            rest.append((f"{d}/", f"Review ONLY the files under '{d}/'.", focus))
+            # When reviewing a GRANTED external dir, qualify the folder with its ABSOLUTE path so the child
+            # (which shares the workspace cwd) reads the right root, not a same-named folder in the workspace.
+            where = os.path.join(root, d) if ext else f"{d}/"
+            rest.append((f"{d}/", f"Review ONLY the files under '{where}'.", focus))
     rest.sort(key=lambda u: u[0] == "the root-level files")  # root-files bucket last
     return rest
 
 
-def _child_task(area_label, scope_line, focus):
+def _child_task(area_label, scope_line, focus, root=None):
     focus_clause = f"Focus specifically on {focus}. " if focus else ""
+    # When the review ROOT is a GRANTED external directory, the child shares the parent's cwd (the
+    # workspace), so a bare area name would resolve to the WRONG root and the child reports the area 'not
+    # present' or refuses it. Tell it the absolute root, to read there by absolute path, and that a folder
+    # is a plain directory (a live run refused a real folder as a git submodule and reviewed nothing).
+    root_clause = ("" if not root else
+                   f"All files you review live UNDER the review root {root} - read them by their ABSOLUTE "
+                   f"path there; do NOT look in your own working directory. If this area names a folder, it "
+                   f"is a plain directory under that root, NOT a git submodule to skip. ")
     return (
-        f"You are reviewing ONE part of a larger codebase, in isolation. {scope_line} "
+        f"You are reviewing ONE part of a larger codebase, in isolation. {root_clause}{scope_line} "
         f"Do NOT read anything outside that scope. {focus_clause}"
         f"In UNDER 200 words, summarize: (1) the purpose of {area_label}, (2) how it is "
         f"structured, and (3) the top 2-3 concrete issues, risks, or improvements. Ground "
@@ -142,6 +153,10 @@ def review_repo(args, ctx):
     root = rel if os.path.isabs(rel) else os.path.normpath(os.path.join(ctx.cwd, rel))
     if not os.path.isdir(root):
         return ToolResult(False, f"Not a directory: {rel}")
+    # Reviewing a GRANTED external directory (--add-dir / request_dir), not the workspace? Then children
+    # (which inherit the workspace cwd) must be told the absolute root, or they look in the wrong place and
+    # report real folders 'not present' (seen live reviewing an external umbrella repo).
+    ext = os.path.realpath(root) != os.path.realpath(ctx.cwd)
 
     cap = config.MAX_REVIEW_AREAS
     # AGENTIC PATH: the model may propose its OWN partition via `areas` — which parts to review
@@ -168,7 +183,7 @@ def review_repo(args, ctx):
                                      f"anything outside that scope.", area_focus))
         if units:
             # Balance the plan: collapse root-file spam, guarantee every folder is covered.
-            units = _balance_plan(units, root, focus)
+            units = _balance_plan(units, root, focus, ext)
             source = "your plan"
 
     if not units:
@@ -197,7 +212,7 @@ def review_repo(args, ctx):
 
     summaries = []
     for label, scope_line, area_focus in units:
-        result = ctx.spawn(_child_task(label, scope_line, area_focus))
+        result = ctx.spawn(_child_task(label, scope_line, area_focus, root if ext else None))
         summaries.append((label, (result or "").strip() or "(no summary returned)"))
 
     # Reduce: a compact digest the lead synthesizes from. Small by construction — N short

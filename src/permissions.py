@@ -235,6 +235,24 @@ class Permissions:
         edit made via an absolute path or different Windows casing still matches its approved entry)."""
         return os.path.normcase(_rel(_resolve(cwd, raw), cwd))
 
+    def hard_block(self, tool, args, ctx):
+        """The reason this op would be HARD-blocked no matter what — a deny rule, the workspace fence, or a
+        PreToolUse DENY hook — the rules an approved manifest can NEVER override (specs/0022). Returns the
+        reason string, or None if the op would clear the hard rules. propose_changes calls this per manifest
+        item so it refuses a plan that could be approved but never EXECUTED (a live run looped
+        propose -> approve -> hook-deny on a docs/ write). Does NOT consult the propose phase, ask rules, or
+        the mode baseline — only the immovable rules."""
+        t = self._target(tool, args, ctx)
+        h = self._hooks_pretool(tool, t, args, ctx)
+        if h is not None and getattr(h, "decision", "deny") in ("deny", "block"):
+            return f"a PreToolUse hook blocks it: {h.message or 'blocked'}"
+        r = self._match(self.deny, tool, t)
+        if r:
+            return f"a deny rule blocks it: {r}"
+        if t.kind == "path" and not self._within_roots(t.abs, ctx.cwd):
+            return "it is outside your workspace fence"
+        return None
+
     def _on_manifest(self, ctx, t):
         approved = getattr(ctx, "approved_paths", None)
         return bool(approved) and os.path.normcase(t.rel or "") in approved

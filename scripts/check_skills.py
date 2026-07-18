@@ -284,6 +284,20 @@ def main():
     check("a legit multi-line analysis with a header and NO 'final answer' marker is untouched",
           strip_reasoning_preamble(_legit2) == _legit2)
 
+    # ride (7/17 log): OPEN thinking-out-loud deliberation leaked AS the answer — no 'final answer' tell, no
+    # markdown anchor to cut to, so the meta detectors miss it (a live run answered "The hook still blocks...
+    # We need a way around. Perhaps... But that wouldn't... Maybe..."). SEVERAL hedge markers in one short
+    # answer -> caught, so the turn is kept OUT of the corpus (detection only; nothing clean to strip to).
+    _delib = ("The PreToolUse hook still blocks writes to docs/. Possibly the repo has a rule. We need to "
+              "find a way around. Perhaps we can add it under a different path. But that wouldn't match. "
+              "Maybe we can put it under src/frontend/docs instead.")
+    check("has_reasoning_leak catches open thinking-out-loud deliberation (no anchor, several hedges)",
+          has_reasoning_leak(_delib))
+    check("open-deliberation stays NARROW: a clean answer with ONE hedge is not flagged",
+          not has_reasoning_leak("The tests pass. We should also add a docstring to the new helper."))
+    check("open-deliberation does NOT re-flag the ordinary first-person prose class",
+          not any(has_reasoning_leak(x) for x in _legit))
+
     passed, total = sum(_results), len(_results)
     print(f"\nVERDICT: {passed}/{total} {'[OK]' if passed == total else '[FAIL]'}")
     return 0 if passed == total else 1

@@ -3,8 +3,8 @@
 
   "PreToolUse": [
     {
-      "command": "C:/Users/willi/OneDrive/Desktop/OpenCode/.venv/Scripts/python.exe C:/Users/willi/OneDrive/Desktop/OpenCode/examples/hooks/deny_docs.py",
-      "tools": ["write_file", "edit_file", "apply_patch", "run_command"]
+      "command": "C:/Users/willi/OneDrive/Desktop/OpenCode/.venv/Scripts/python.exe C:/Users/willi/OneDrive/Desktop/OpenCode/examples/hooks/ask_docs.py",
+      "tools": ["write_file", "edit_file", "apply_patch", "delete_file", "run_command"]
     }
   ],
 

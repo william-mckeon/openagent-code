@@ -165,6 +165,32 @@ def main():
           not p.decide("write_file", {"path": "src/a.py", "content": ""}, bare).allowed)
 
     # =====================================================================================================
+    # 2b. propose PRE-VALIDATES the manifest against the hard rules (ride: the propose->approve->deny loop)
+    # =====================================================================================================
+    # Permissions.hard_block: the reason an op is HARD-blocked (deny rule / fence / PreToolUse deny hook).
+    pdh = Permissions("propose", {"deny": ["write_file(secrets/**)"]}, [])
+    check("hard_block: a deny-ruled write returns a reason",
+          pdh.hard_block("write_file", {"path": "secrets/k.txt"}, _Ctx(ws, pdh)) is not None)
+    check("hard_block: a normal in-fence write returns None",
+          pdh.hard_block("write_file", {"path": "src/a.py"}, _Ctx(ws, pdh)) is None)
+    check("hard_block: a path outside the fence returns a reason",
+          pdh.hard_block("write_file", {"path": os.path.join(tempfile.gettempdir(), "hb-out.py")}, _Ctx(ws, pdh)) is not None)
+
+    def _pctx(rules):
+        c = tools_mod.Context(ws, Permissions("propose", rules, []))
+        c.depth, c.interactive, c.session_id, c.ask, c.propose_phase = 0, True, "sess", (lambda q: "y"), "investigate"
+        return c
+
+    cblk = _pctx({"deny": ["write_file(secrets/**)"]})
+    rblk = tools_mod.propose_changes({"manifest": [{"action": "update", "path": "secrets/keys.txt", "why": "x"}]}, cblk)
+    check("tool: a plan with a HARD-blocked item is REFUSED before approval (no approve->deny loop)",
+          rblk.ok is False and cblk.propose_phase == "investigate" and "hard rule" in rblk.content)
+    cok = _pctx({"deny": ["write_file(secrets/**)"]})
+    rok = tools_mod.propose_changes({"manifest": [{"action": "update", "path": "src/a.py", "why": "x"}]}, cok)
+    check("tool: a plan whose items all clear the hard rules is approved normally",
+          rok.ok is True and cok.propose_phase == "approved")
+
+    # =====================================================================================================
     # 3. approve-once is UNDER the hard rules: deny + fence still win
     # =====================================================================================================
     p_deny = Permissions("propose", {"deny": ["edit_file(.env)"]}, [])
