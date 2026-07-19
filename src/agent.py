@@ -130,6 +130,7 @@ class Agent:
         ctx.plan = None
         ctx.plan_items = []
         ctx.mutations = {}
+        ctx.fetched = {}              # web read-ledger (specs/0024): a page fetched last turn must not ground a citation on this one
         # The subagent fan-out breadth cap is a per-TASK budget too: without this reset a long REPL
         # session's earlier spawns accumulate on the reused ctx and permanently block spawn_agent on
         # later, unrelated turns (the same cross-turn-leak class as the plan/mutations reset above).

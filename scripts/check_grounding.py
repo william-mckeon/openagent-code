@@ -34,6 +34,11 @@ def _ctx(cwd, mutations=None, depth=0, spawn=None):
 
 
 def main():
+    # Pin CODE_ENABLE_WEB OFF for the existing cases so they're byte-identical regardless of the local .env
+    # (the web-source section below flips it on explicitly). specs/0024's web-citation branch is gated on it.
+    _saved_web = config.ENABLE_WEB
+    config.ENABLE_WEB = False
+
     # -- cited_paths: BROAD (verifier) vs STRICT (deterministic) --------------
     cp = grounding.cited_paths("See `docker/README.md` and `src/auth/init.sql`; `config` is not a path.")
     check("cited_paths pulls quoted local paths, ignores a non-path word",
@@ -211,6 +216,36 @@ def main():
     check("problems() clears it once a check confirmed success (ctx._verified_ok True)",
           not any("PASSES" in m for m in grounding.problems(_RIDE, _c2)))
 
+    # -- web sources (specs/0024): a cited URL is grounded by the ctx.fetched read-ledger ----------------
+    config.ENABLE_WEB = True
+    wf = _ctx(tmp)
+    wf.fetched = {"https://docs.python.org/3/x": "print() writes to the text stream."}
+    check("problems() does NOT flag a cited URL that WAS fetched",
+          not any("never fetched" in m
+                  for m in grounding.problems("Per https://docs.python.org/3/x, print writes to stdout.", wf)))
+    wu = _ctx(tmp)
+    check("problems() flags a cited URL that was NEVER fetched (phantom web citation)",
+          any("never fetched" in m
+              for m in grounding.problems("Per https://made-up.example/api it works.", wu)))
+    config.ENABLE_WEB = False
+    wo = _ctx(tmp)
+    check("with CODE_ENABLE_WEB off, a cited URL produces NO web-citation problem (byte-identical)",
+          not any("never fetched" in m
+                  for m in grounding.problems("Per https://made-up.example/api it works.", wo)))
+
+    # the Tier-2 verifier task carries the fetched content (it has no on-disk copy) under the untrusted fence
+    task = grounding._verifier_task("see https://a.com/p", set(), {"https://a.com/p": "print writes to stdout"})
+    check("verifier task embeds fetched web content under the untrusted boundary",
+          "FETCHED WEB SOURCES" in task and "https://a.com/p" in task
+          and "print writes to stdout" in task and "untrusted data" in task.lower())
+    check("verifier task with no fetched sources is unchanged (no web block)",
+          "FETCHED WEB SOURCES" not in grounding._verifier_task("x", {"a.py"}))
+    cf = grounding._cited_fetched("cites https://a.com/p only",
+                                  {"https://a.com/p": "Y" * 9000, "https://b.com/q": "Z" * 9000})
+    check("_cited_fetched keeps only cited+fetched URLs, each per-source bounded",
+          set(cf) == {"https://a.com/p"} and len(cf["https://a.com/p"]) == grounding._WEB_SRC_CAP)
+
+    config.ENABLE_WEB = _saved_web
     passed, total = sum(_results), len(_results)
     print(f"\nVERDICT: {passed}/{total} {'[OK]' if passed == total else '[FAIL]'}")
     return 0 if passed == total else 1

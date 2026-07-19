@@ -479,13 +479,28 @@ MAX_REVIEW_AREAS = int(os.environ.get("CODE_MAX_REVIEW_AREAS", "16"))
 #
 # CODE_ENABLE_WEB   Master switch for web_fetch / web_search. Default off — when
 #                   off, the web tools aren't even offered to the model.
-# CODE_SEARCH_URL   BYO search endpoint web_search POSTs {"query": ...} to. Unset
-#                   = web_search reports "not configured".
-# CODE_SEARCH_KEY   Optional bearer token for CODE_SEARCH_URL.
+# CODE_SEARCH_PROVIDER  Which web_search adapter to use (Phase 24 / specs/0024):
+#                   generic (BYO CODE_SEARCH_URL, the DEFAULT — unchanged behavior) |
+#                   tavily (hosted, LLM-optimized; CODE_SEARCH_KEY is the tvly-... key) |
+#                   searxng (self-hosted, data-sovereign; CODE_SEARCH_URL) | brave
+#                   (CODE_SEARCH_KEY) | a dotted "module:func" you wrote.
+# CODE_SEARCH_URL   Endpoint for the generic / searxng providers. Unset = that provider
+#                   reports "not configured" (tavily/brave don't use it).
+# CODE_SEARCH_KEY   The provider credential: tavily API key / brave token, or an optional
+#                   Bearer token for the generic endpoint.
+# CODE_SEARCH_MAX_RESULTS  How many results web_search returns (default 5).
 # -----------------------------------------------------------------------------
 ENABLE_WEB = _as_bool(os.environ.get("CODE_ENABLE_WEB", "false"))
+# 'generic' by default (NOT 'tavily'): defaulting to the flagship would silently break every existing
+# CODE_SEARCH_URL-only setup the moment web is enabled (its URL ignored, "not configured" for a missing key).
+SEARCH_PROVIDER = os.environ.get("CODE_SEARCH_PROVIDER", "generic").strip()
 SEARCH_URL = os.environ.get("CODE_SEARCH_URL", "")
 SEARCH_KEY = os.environ.get("CODE_SEARCH_KEY", "")
+# Defensive int (config.py is imported on EVERY run, flag-off included): a bad value must not raise at import.
+try:
+    SEARCH_MAX_RESULTS = max(1, int(os.environ.get("CODE_SEARCH_MAX_RESULTS", "5")))
+except ValueError:
+    SEARCH_MAX_RESULTS = 5
 
 # CODE_MCP_CONFIG — path to a JSON file listing MCP servers to connect (stdio):
 #   { "mcpServers": { "<name>": { "command": "...", "args": [...], "env": {...} } } }
