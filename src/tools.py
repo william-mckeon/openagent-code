@@ -780,7 +780,7 @@ def project_todos(args, ctx):
     action = str(args.get("action") or "list").strip().lower()
     items = todos.load(ctx.cwd)
     if action == "list":
-        return ToolResult(True, "Project todos:\n" + todos.render(items))
+        return ToolResult(True, "Project todos:\n" + (todos.display(items) or "(no todos yet)"))
     if action == "add":
         content = (args.get("content") or "").strip()
         if not content:
@@ -1041,13 +1041,27 @@ def propose_changes(args, ctx):
     # propose -> approve -> hook-deny on a docs/ write). Never raises - a pre-check error just skips it.
     blocked = []
     for it in items:
-        gate_tool = "delete_file" if it["action"] == "delete" else "write_file"
-        try:
-            why = ctx.permissions.hard_block(gate_tool, {"path": it["path"]}, ctx)
-            if why is None and it["action"] == "move" and it["from"]:
-                why = ctx.permissions.hard_block("delete_file", {"path": it["from"]}, ctx)
-        except Exception:  # noqa: BLE001 - a pre-check failure must never block proposing
-            why = None
+        # Probe EVERY tool the op could execute through, so a deny rule / PreToolUse hook scoped to any of
+        # them is caught at propose time. An 'update' runs via edit_file (not write_file), and a move is
+        # gated on edit_file at BOTH endpoints by decide_move - so a write_file-only pre-check would miss an
+        # edit_file-scoped rule and reopen the propose->approve->deny loop this pre-check exists to close.
+        if it["action"] == "delete":
+            probes = [("delete_file", it["path"])]
+        elif it["action"] == "move":
+            probes = [("write_file", it["path"]), ("edit_file", it["path"]),
+                      ("delete_file", it["from"]), ("edit_file", it["from"])]
+        else:  # add / update
+            probes = [("write_file", it["path"]), ("edit_file", it["path"])]
+        why = None
+        for gate_tool, path in probes:
+            if not path:
+                continue
+            try:
+                why = ctx.permissions.hard_block(gate_tool, {"path": path}, ctx)
+            except Exception:  # noqa: BLE001 - a pre-check failure must never block proposing
+                why = None
+            if why:
+                break
         if why:
             blocked.append(f"{_MANIFEST_MARKS.get(it['action'], '?')} {it['action']} {it['path']} - {why}")
     if blocked:

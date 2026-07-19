@@ -46,7 +46,10 @@ _DATE = re.compile(r"^\d{1,4}([/-]\d{1,4}){2}$")                   # 2024/01/15
 # An http(s) URL the answer cites as a WEB source (specs/0024). Separate from _QUOTED (whose char class has
 # no ':' so it can't hold a URL) and from cited_paths (which deliberately SKIPS URLs) — a web citation is a
 # different kind of evidence, checked against the ctx.fetched read-ledger, not the workspace.
-_URL = re.compile(r"https?://[^\s`'\"()<>\]]+", re.I)
+# Note: '(' ')' are NOT excluded - a real URL can contain them (e.g. a Wikipedia
+# ..._(programming_language) page); _norm_url below strips a TRAILING ')' so a prose-wrapped "(see URL)"
+# still normalizes cleanly, and it does so on BOTH the citation and the ctx.fetched key so they still match.
+_URL = re.compile(r"https?://[^\s`'\"<>\]]+", re.I)
 
 # Language that ASSERTS a file / directory / body of code is MISSING, EMPTY, or ABSENT - the
 # honest-but-wrong "the auth service has no Go source / the directory is empty / it can't be built"

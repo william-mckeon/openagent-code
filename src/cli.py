@@ -200,7 +200,8 @@ def _repl_set_mode(ctx, name):
     # was off, switching now leaves the mode read-only with no way to approve a plan — say so, don't strand.
     if name == "propose" and not config.PROPOSE:
         print("  note: this session launched without CODE_PROPOSE, so propose_changes isn't available - "
-              "propose mode will be read-only. Restart with --mode propose (or CODE_PROPOSE=true) to use it.")
+              "edits fall back to per-edit [y/N] approval (default-mode behavior), NOT read-only. Restart "
+              "with --mode propose (or CODE_PROPOSE=true) to use propose mode.")
 
 
 def _run_session(traj, agent, ctx):

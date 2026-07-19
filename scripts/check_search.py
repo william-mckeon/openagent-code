@@ -68,6 +68,9 @@ def main():
         results=[{"title": f"r{i}", "url": f"u{i}", "snippet": "s"} for i in range(10)], answer="A")
     search.BUILTINS["_boom"] = lambda q, n: (_ for _ in ()).throw(RuntimeError("provider blew up"))
     search.BUILTINS["_none"] = lambda q, n: None
+    # audit #7: a custom provider returning a NON-LIST 'results' must not make run() raise (the clamp runs
+    # outside the provider try/except, so it has to coerce).
+    search.BUILTINS["_badlist"] = lambda q, n: {"results": 5, "answer": "", "error": ""}
     try:
         config.SEARCH_PROVIDER = "_stub"
         p = search.run("how to use print in python", max_results=3)
@@ -81,9 +84,25 @@ def main():
               search.run("q").get("error"))
         check("run() on an empty query -> error payload (no provider call)",
               search.run("   ").get("error"))
+        config.SEARCH_PROVIDER = "_badlist"
+        check("run() coerces a NON-LIST 'results' to [] and does not raise (audit #7)",
+              search.run("q")["results"] == [])
     finally:
-        for k in ("_stub", "_boom", "_none"):
+        for k in ("_stub", "_boom", "_none", "_badlist"):
             search.BUILTINS.pop(k, None)
+
+    # audit #8: a dotted module:Func provider preserves case - the whole choice must NOT be lowercased, or
+    # an uppercase function/module name fails to import.
+    import types as _types, sys as _sys
+    _fake = _types.ModuleType("faketestprovider")
+    _fake.Func = lambda q, n: search._payload(answer="from a custom provider")
+    _sys.modules["faketestprovider"] = _fake
+    try:
+        prov = search.load_provider("faketestprovider:Func")
+        check("load_provider preserves case in a dotted module:Func (uppercase resolves)",
+              prov("q", 5).get("answer") == "from a custom provider")
+    finally:
+        _sys.modules.pop("faketestprovider", None)
 
     # -- render(): numbered list; an error renders as its message ----------------------------------------
     r = search.render({"answer": "A", "results": [{"title": "T", "url": "U", "snippet": "S"}], "error": ""})

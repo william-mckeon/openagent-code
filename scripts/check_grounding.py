@@ -227,6 +227,14 @@ def main():
     check("problems() flags a cited URL that was NEVER fetched (phantom web citation)",
           any("never fetched" in m
               for m in grounding.problems("Per https://made-up.example/api it works.", wu)))
+    # audit #6: a URL that legitimately contains parens (a Wikipedia _(programming_language) page) must not
+    # be truncated on the citation side and then false-flagged against the full URL stored in ctx.fetched.
+    _paren = "https://en.wikipedia.org/wiki/Python_(programming_language)"
+    wp = _ctx(tmp)
+    wp.fetched = {_paren: "Python is a programming language."}
+    check("a cited+fetched PARENTHESIZED URL is grounded, not a false phantom",
+          not any("never fetched" in m
+                  for m in grounding.problems(f"Per {_paren}, Python is a language.", wp)))
     config.ENABLE_WEB = False
     wo = _ctx(tmp)
     check("with CODE_ENABLE_WEB off, a cited URL produces NO web-citation problem (byte-identical)",

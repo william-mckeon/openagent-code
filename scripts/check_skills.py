@@ -297,6 +297,16 @@ def main():
           not has_reasoning_leak("The tests pass. We should also add a docstring to the new helper."))
     check("open-deliberation does NOT re-flag the ordinary first-person prose class",
           not any(has_reasoning_leak(x) for x in _legit))
+    # audit #9: a finished RECOMMENDATION with 3+ bare 'we should/could/can' but NO strong marker must NOT
+    # be flagged a leak - the bare-modal false-positive the strong-marker requirement fixes.
+    check("open-deliberation does NOT flag a recommendation with 3 bare modals (no strong marker)",
+          not has_reasoning_leak("The refactor is solid. We should add tests. We could split the module. "
+                                 "We can also document the new API."))
+    # audit #10: _META_STRIP must not BARE-strip its first alternative with no answer anchor (the unwrapped-
+    # alternation precedence bug) - a legit sentence that merely says 'provide the final answer' stays whole.
+    _legit3 = "We will provide the final answer to your question in the summary below."
+    check("_META_STRIP no longer deletes a legit first-alternative match with no anchor (keeps the text)",
+          strip_reasoning_preamble(_legit3) == _legit3)
 
     passed, total = sum(_results), len(_results)
     print(f"\nVERDICT: {passed}/{total} {'[OK]' if passed == total else '[FAIL]'}")

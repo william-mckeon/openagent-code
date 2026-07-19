@@ -546,7 +546,13 @@ class Permissions:
                 return D(True, "allow", "move on the approved manifest", target=old_path)
         if self.mode == "plan":
             return D(False, "deny", "plan mode is read-only", target=old_path)
-        if self.mode in ("bypass", "acceptEdits"):
+        # Off-plan net (specs/0022): under an APPROVED manifest, an OFF-manifest move is a deviation - don't
+        # auto-allow it in a permissive mode; let it fall to the ask ladder below, mirroring decide()'s
+        # off-plan escalation for a delete (an ON-manifest move already returned above). Off by default:
+        # with no approved manifest, off_plan is False and the permissive-mode allow is byte-identical.
+        off_plan = (config.PROPOSE and getattr(ctx, "propose_phase", None) == "approved"
+                    and not self._on_manifest_move(ctx, old_path, new_path))
+        if self.mode in ("bypass", "acceptEdits") and not off_plan:
             return D(True, "allow", f"{self.mode} mode (a rename is edit-level)", target=old_path)
         _wt = self._target("write_file", {"path": new_path}, ctx)
         a = self._ask_approver("apply_patch move", _wt, "a Move in default mode", ctx)

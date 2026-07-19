@@ -146,19 +146,20 @@ def load_provider(name=None):
     dotted 'module:func' an operator wrote (their own SearXNG client, ...). Unknown / unimportable -> a
     fail-safe provider that reports 'not configured' and NEVER raises — the mirror of effort.load_policy
     falling back to the reactive default."""
-    choice = (name or config.SEARCH_PROVIDER or "generic").strip().lower()
+    raw = (name or config.SEARCH_PROVIDER or "generic").strip()
+    choice = raw.lower()                       # only the builtin-NAME test is case-insensitive
     if choice in BUILTINS:
         return BUILTINS[choice]
-    if ":" in choice:
-        mod_name, _, fn = choice.partition(":")
+    if ":" in raw:                             # partition the ORIGINAL: a module path / function name is case-sensitive
+        mod_name, _, fn = raw.partition(":")
         try:
             return getattr(importlib.import_module(mod_name.strip()), fn.strip())
         except Exception as e:  # noqa: BLE001 - a bad custom provider must not crash the run
             msg = str(e)   # bind now: `e` is unbound outside the except block, so the lambda can't close over it
-            log.warning("search provider %r failed to load (%s) - reporting not-configured", choice, msg)
-            return lambda q, n: _payload(error=f"search provider {choice!r} could not be loaded: {msg}")
+            log.warning("search provider %r failed to load (%s) - reporting not-configured", raw, msg)
+            return lambda q, n: _payload(error=f"search provider {raw!r} could not be loaded: {msg}")
     return lambda q, n: _payload(
-        error=f"unknown CODE_SEARCH_PROVIDER {choice!r} - use tavily | generic | searxng | brave | module:func.")
+        error=f"unknown CODE_SEARCH_PROVIDER {raw!r} - use tavily | generic | searxng | brave | module:func.")
 
 
 def run(query, max_results=None):
@@ -177,7 +178,8 @@ def run(query, max_results=None):
     except Exception as e:  # noqa: BLE001 - a provider (esp. a custom one) must never raise into the tool
         log.warning("web_search failed (%s)", e)
         return _payload(error=f"search error: {type(e).__name__}: {e}")
-    payload["results"] = (payload.get("results") or [])[:n]   # hard clamp regardless of what the adapter did
+    _r = payload.get("results")   # coerce before slicing: a custom provider returning a non-list must not raise here
+    payload["results"] = (_r if isinstance(_r, list) else [])[:n]   # hard clamp regardless of what the adapter did
     payload.setdefault("answer", "")
     payload.setdefault("error", "")
     return payload

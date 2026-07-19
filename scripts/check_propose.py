@@ -189,6 +189,16 @@ def main():
     rok = tools_mod.propose_changes({"manifest": [{"action": "update", "path": "src/a.py", "why": "x"}]}, cok)
     check("tool: a plan whose items all clear the hard rules is approved normally",
           rok.ok is True and cok.propose_phase == "approved")
+    # audit #1: the pre-check must probe edit_file too - an 'update' EXECUTES via edit_file, so an
+    # edit_file-scoped deny rule has to be caught at propose time (not just write_file), or the loop reopens.
+    cedit = _pctx({"deny": ["edit_file(secrets/**)"]})
+    redit = tools_mod.propose_changes({"manifest": [{"action": "update", "path": "secrets/keys.txt", "why": "x"}]}, cedit)
+    check("tool: an edit_file-scoped deny rule is caught by the pre-check (an update runs via edit_file)",
+          redit.ok is False and "hard rule" in redit.content)
+    cmv = _pctx({"deny": ["edit_file(secrets/**)"]})
+    rmv = tools_mod.propose_changes({"manifest": [{"action": "move", "path": "secrets/new.txt", "from": "src/a.py", "why": "x"}]}, cmv)
+    check("tool: a move is pre-checked on edit_file at BOTH endpoints (decide_move gates both)",
+          rmv.ok is False and "hard rule" in rmv.content)
 
     # =====================================================================================================
     # 3. approve-once is UNDER the hard rules: deny + fence still win
@@ -239,6 +249,16 @@ def main():
     d = pb.decide("delete_file", {"path": "src/b.py"}, off)
     check("off-plan net: bypass - an OFF-manifest DESTRUCTIVE delete is ESCALATED (headless -> not a silent allow)",
           (not d.allowed) and d.action == "ask")
+    # audit #2: an OFF-manifest MOVE under an approved manifest is escalated too (not silently allowed), and
+    # an ON-manifest move stays allowed; with NO approved manifest, bypass still auto-allows (byte-identical).
+    check("off-plan net: bypass - an OFF-manifest move under an approved manifest is NOT silently allowed",
+          not pb.decide_move("src/x.py", "src/y.py", off).allowed)
+    on_mv = _Ctx(ws, pb, propose_phase="approved",
+                 approved={pb.norm_path("src/x.py", ws), pb.norm_path("src/y.py", ws)})
+    check("off-plan net: bypass - an ON-manifest move under an approved manifest IS allowed",
+          pb.decide_move("src/x.py", "src/y.py", on_mv).allowed)
+    check("decide_move: bypass with NO approved manifest auto-allows a move (byte-identical)",
+          pb.decide_move("src/x.py", "src/y.py", _Ctx(ws, pb)).allowed)
 
     # =====================================================================================================
     # 7. flag OFF -> byte-identical

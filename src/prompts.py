@@ -357,7 +357,10 @@ _ANSWER_META = re.compile(
 # the SAME line ("...output final answer: list changed file(s).**Changed files**" -> "**Changed
 # files**"). REQUIRES the anchor (no bare end-of-line cut): without one we can't tell where the meta
 # ends and content begins, so we DON'T strip — never eat real answer text (detection still flags it).
-_META_STRIP = re.compile(_ANSWER_META.pattern + r".*?(?=\*\*\S|#{1,6}\s)",
+# NB: wrap _ANSWER_META.pattern in (?:...) - it is a top-level `A|B` alternation, so without the group the
+# trailing `.*?(?=anchor)` would bind ONLY to alternative B, letting alternative A strip BARE (no anchor)
+# and delete real answer text. _CONCLUSION_STRIP below already groups its pattern the same way.
+_META_STRIP = re.compile(r"(?:" + _ANSWER_META.pattern + r").*?(?=\*\*\S|#{1,6}\s)",
                          re.IGNORECASE | re.MULTILINE)
 # A CONCLUSION-marker transition to THE FINAL ANSWER ("Thus the final answer:", "therefore the final
 # response is", "so, the final answer:") — the "However... but maybe... thus the final answer:"
@@ -412,18 +415,27 @@ _DELIBERATION = re.compile(
     r"let'?s\s+(?:try|see|think)\b|let\s+me\s+(?:think|see)\b|but\s+that\s+(?:would|wouldn'?t)\b|"
     r"i\s+think\s+we\b|there\s+(?:might|may)\s+be\b)",
     re.IGNORECASE)
+# The STRONG deliberative markers — _DELIBERATION minus the bare `we <modal>` alternation, which ordinary
+# RECOMMENDATION prose uses freely ("we should add tests, we could split this, we can document X"). A leak
+# must contain at least one of THESE, so a finished recommendation with three bare modals isn't mislabelled.
+_STRONG_DELIB = re.compile(
+    r"\b(?:perhaps|maybe|possibly|could\s+be|one\s+option|another\s+option|"
+    r"let'?s\s+(?:try|see|think)|let\s+me\s+(?:think|see)|but\s+that\s+(?:would|wouldn'?t)|"
+    r"i\s+think\s+we|there\s+(?:might|may)\s+be)\b",
+    re.IGNORECASE)
 
 
 def looks_like_open_deliberation(text, min_markers=3):
     """True if `text` reads as open thinking-out-loud rather than a finished answer — SEVERAL distinct
-    hedge/planning markers ('we need to', 'perhaps', 'maybe we can', 'but that wouldn't', ...) in one short
-    answer. A high threshold + a length cap keep a long, substantive report that hedges a few times from
-    tripping it. Detection only: this plain-prose leak has no anchor to strip to, so the turn is kept out of
-    training, not rewritten (the flywheel is the real fix — a caught-and-dropped leak teaches the next model)."""
+    hedge/planning markers ('we need to', 'perhaps', 'maybe we can', 'but that wouldn't', ...) AND at least
+    one STRONG one (a bare 'we should/could/can' recommendation is not enough) in one short answer. The
+    high threshold + strong-marker requirement + length cap keep a finished recommendation from tripping it.
+    Detection only: this plain-prose leak has no anchor to strip to, so the turn is kept out of training,
+    not rewritten (the flywheel is the real fix — a caught-and-dropped leak teaches the next model)."""
     t = text or ""
     if not t.strip() or len(t) > 4000:
         return False
-    return len(_DELIBERATION.findall(t)) >= min_markers
+    return len(_DELIBERATION.findall(t)) >= min_markers and bool(_STRONG_DELIB.search(t))
 
 
 def has_reasoning_leak(text):

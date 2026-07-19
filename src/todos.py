@@ -52,12 +52,28 @@ def parse(text):
 
 
 def render(items):
-    """[{content, status}] -> the human-editable checklist markdown (header + one line per item)."""
+    """[{content, status}] -> the human-editable checklist markdown for the FILE (header + one line per
+    item). Number-LESS on purpose: a number prefix isn't a valid `- [ ]` checklist line and would break
+    parse()'s round-trip. The model/user-facing NUMBERED view is display() below."""
     lines = [_HEADER, ""]
     for it in items:
         mark = _MARKS.get(it.get("status", "pending"), _MARKS["pending"])
         lines.append(f"- {mark} {(it.get('content') or '').strip()}")
     return "\n".join(lines) + "\n"
+
+
+def display(items, outstanding_only=False):
+    """A NUMBERED, model/user-facing view of the backlog. The number is the item's 1-based position in the
+    FULL list, so a number shown here is EXACTLY what _find/set_status resolves (they index the full list),
+    whether or not done items are shown. `outstanding_only` hides done items (the prompt/startup backlog)
+    while keeping their full-list numbers stable. '' when nothing to show."""
+    lines = []
+    for i, it in enumerate(items):
+        if outstanding_only and it.get("status") == "done":
+            continue
+        mark = _MARKS.get(it.get("status", "pending"), _MARKS["pending"])
+        lines.append(f"{i + 1}. {mark} {(it.get('content') or '').strip()}")
+    return "\n".join(lines)
 
 
 def load(workspace):
@@ -88,10 +104,10 @@ def backlog_text(workspace, max_chars=None):
     + in_progress items only (done items are history, not backlog), bounded to max_chars by WHOLE LINES — a
     byte tail (as memory uses) would slice a `- [ ]` line and corrupt the checklist. '' when nothing is
     outstanding."""
-    items = outstanding(load(workspace))
-    if not items:
+    items = load(workspace)
+    if not outstanding(items):
         return ""
-    text = render(items)
+    text = display(items, outstanding_only=True)   # NUMBERED (full-list index) so a number matches _find
     cap = config.PROJECT_TODOS_MAX_CHARS if max_chars is None else max_chars
     if cap and len(text) > cap:
         kept, total = [], 0

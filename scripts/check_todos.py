@@ -95,6 +95,22 @@ def main():
     check("add de-dupes on content (re-add updates status, no duplicate)",
           len(todos.add(todos.add([], "x"), "x", "done")) == 1)
 
+    # audit #5: the NUMBER shown in display() equals the index set_status/_find resolves (full-list 1-based),
+    # and outstanding_only hides done items while KEEPING their full-list numbers - so a number the model
+    # counts from the shown backlog can't resolve to the wrong item.
+    trio = [{"content": "a", "status": "done"}, {"content": "b", "status": "pending"}, {"content": "c", "status": "pending"}]
+    dlines = todos.display(trio).splitlines()
+    check("display() numbers items 1-based by full-list position",
+          dlines[0].startswith("1. ") and dlines[1].startswith("2. ") and dlines[2].startswith("3. "))
+    olines = todos.display(trio, outstanding_only=True).splitlines()
+    check("display(outstanding_only) hides done but keeps full-list numbers (b=2, c=3)",
+          olines[0].startswith("2. ") and olines[1].startswith("3. "))
+    it3, e3 = todos.set_status(trio, "3", "done")
+    check("the number shown in display resolves via set_status to the SAME item (3 -> c)",
+          e3 is None and it3[2]["status"] == "done" and it3[1]["status"] == "pending")
+    check("todos.render() (the FILE format) stays number-less so it still round-trips (numbers are display-only)",
+          todos.parse(todos.render(trio)) == trio)
+
     # -- backlog_text: outstanding-only, whole-line cap, empty -> '' -------------------------------------
     d = ws()
     todos.save(d, [{"content": "outstanding one", "status": "pending"},
