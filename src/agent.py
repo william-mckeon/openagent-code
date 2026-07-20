@@ -69,6 +69,28 @@ def _completion_challenge(problems):
             "then re-verify. Only mark a step completed AFTER its tool call succeeds.")
 
 
+def _unapplied_manifest(ctx):
+    """Approved propose-mode manifest items (specs/0022) whose target shows NO real change this run - the
+    manifest mirror of _unverified_items (which sees only update_plan steps). An item counts as APPLIED if its
+    target `path` OR (for a move) its `from` appears in the mutation ledger; err toward applied so a correct
+    apply is never spuriously challenged. [] when there is no APPROVED manifest or every item landed (specs/0026)."""
+    m = getattr(ctx, "manifest", None)
+    if not (m and m.get("approved")):
+        return []
+    muts = getattr(ctx, "mutations", None) or {}
+    muts_ci = {os.path.normcase(k) for k in muts}
+
+    def _applied(p):
+        return bool(p) and os.path.normcase(_rel(ctx, _abs(ctx, p))) in muts_ci
+
+    out = []
+    for it in (m.get("items") or []):
+        if _applied(it.get("path")) or _applied(it.get("from")):
+            continue
+        out.append(f"{it.get('action', 'change')} {it.get('path', '?')} - approved but never applied this run")
+    return out
+
+
 def _unmet_acceptance(ctx):
     """Acceptance items on the approved spec (specs/0025) NOT yet marked done - the deterministic, mark-based
     mirror of the completion gate (_unverified_items): the agent marks each item with write_spec(action=
@@ -120,8 +142,15 @@ class Agent:
         m = getattr(ctx, "manifest", None)
         if m is not None:
             try:
+                # specs/0026: when CODE_VERIFY_MANIFEST is on and the plan was approved, record whether
+                # every item actually LANDED in the mutation ledger, so convert.py can drop a partial apply
+                # instead of training it as a completed change. applied=None (flag off / unapproved) keeps
+                # the record byte-identical.
+                applied = None
+                if config.VERIFY_MANIFEST and m.get("approved"):
+                    applied = not _unapplied_manifest(ctx)
                 self.traj.log_manifest(m.get("items", []), bool(m.get("approved")),
-                                       mode=getattr(ctx.permissions, "mode", None))
+                                       mode=getattr(ctx.permissions, "mode", None), applied=applied)
             except Exception:  # noqa: BLE001 - logging a manifest must never break the run
                 pass
         # Spec-first (specs/0025): log the resolved design contract ONCE at turn end - the acceptance items,
@@ -266,10 +295,23 @@ class Agent:
                     continue
 
                 if not decision.calls:
+                    # Dropped tool call (specs/0026): a native turn that came back EMPTY (no content, no
+                    # tool calls) is an infra glitch model.py already retried - not a deliberate finish.
+                    # Label it honestly so it isn't washed to 'completed' and can't stamp a manifest
+                    # approved off a glitch. Gated so flag-off returns 'final' as before (byte-identical).
+                    if config.VERIFY_MANIFEST and getattr(decision, "dropped", False):
+                        return self._finish(ctx, decision.final or "", "no_output", tool_calls)
+
                     # Verified completion (Phase 6 / specs/0007): don't accept "done" when the
                     # agent marked plan steps complete that its actual file changes don't back up.
                     # Re-prompt with the discrepancy (bounded), else return an HONEST outcome.
                     unmet = _unverified_items(ctx) if config.VERIFY_COMPLETION else []
+                    # Manifest reconciliation (specs/0026): an APPROVED manifest whose items didn't all land
+                    # is an unbacked completion too - the manifest mirror of the plan-step check. Merged so
+                    # the same bounded re-prompt / honest 'unverified_completion' handles it. Gated so
+                    # flag-off adds nothing (byte-identical).
+                    if config.VERIFY_MANIFEST:
+                        unmet = unmet + _unapplied_manifest(ctx)
                     if unmet and verify_retries < config.VERIFY_COMPLETION_RETRIES:
                         verify_retries += 1
                         if ctx.verbose:

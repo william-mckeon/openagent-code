@@ -387,6 +387,18 @@ EFFORT_STATE = _resolve_install_path(os.environ.get("CODE_EFFORT_STATE", ""))
 # default -> the tool isn't offered and every new gate branch is skipped (byte-identical).
 PROPOSE = _as_bool(os.environ.get("CODE_PROPOSE", "false"))
 
+# Completion & manifest honesty (Phase 26 / specs/0026). Two independent, default-OFF nets that close
+# seams where a "done" claim wasn't backed by a real change:
+#   CODE_VERIFY_MANIFEST         - reconcile an APPROVED propose-mode manifest against the mutation ledger:
+#                                  challenge an unapplied item, log an `applied` flag, and label a dropped
+#                                  (empty) native finish `no_output` instead of a clean completion.
+#   CODE_VERIFY_MUTATION_CLAIMS  - a deterministic grounding net that flags a completed file-mutation claim
+#                                  ("I copied the folder") when the mutation ledger is EMPTY (zero writes).
+# Both OFF by default -> byte-identical: no reconciliation, no `applied` field, the dropped finish still
+# returns `final`, and the grounding net never runs.
+VERIFY_MANIFEST = _as_bool(os.environ.get("CODE_VERIFY_MANIFEST", "false"))
+VERIFY_MUTATION_CLAIMS = _as_bool(os.environ.get("CODE_VERIFY_MUTATION_CLAIMS", "false"))
+
 
 def resolved_permission_mode() -> str:
     """The effective mode: explicit CODE_PERMISSION_MODE, else derived from

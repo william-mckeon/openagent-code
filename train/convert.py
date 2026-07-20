@@ -124,15 +124,18 @@ def _contested_turns(records):
 
 
 def _unapplied_manifest_turns(records):
-    """Turn indices whose proposed change-list was NOT approved (specs/0022 propose mode). A DECLINED (or
-    headless-unapproved) manifest means the change did NOT happen, so the turn must not be kept as a
-    completed change — but the good turns beside it survive. Keyed on the `manifest` record (approved is
-    not True), NOT on _contested_turns: a decline writes no permission record, so reusing the denial helper
-    would miss it. Empty when there are no turn_outcome records (one-shot / legacy)."""
+    """Turn indices whose proposed change-list did NOT ship. TWO cases (both mean the change didn't happen, so
+    the turn must not train as a completed change - but the good turns beside it survive):
+      - DECLINED / headless-unapproved (specs/0022): the manifest's `approved` is not True.
+      - APPROVED but PARTIALLY APPLIED (specs/0026): `applied is False` - an approved item never landed in
+        the mutation ledger (e.g. a dropped/failed apply_patch). `applied` is ABSENT on a flag-off / legacy
+        record, so this never matches those (byte-identical).
+    Keyed on the `manifest` record, NOT on _contested_turns: a decline/partial-apply writes no permission
+    record, so reusing the denial helper would miss it. Empty when there are no turn_outcome records."""
     out, unapplied, seg = set(), False, 1
     for r in records:
         t = r.get("type")
-        if t == "manifest" and r.get("approved") is not True:
+        if t == "manifest" and (r.get("approved") is not True or r.get("applied") is False):
             unapplied = True
         elif t == "turn_outcome":
             idx = r.get("turn", seg)
@@ -225,10 +228,15 @@ def is_trainable(records):
     if any(r.get("type") == "model_call" and looks_degenerate((r.get("response") or {}).get("content") or "")
            for r in records):
         return False, "degenerate_content"
-    # Propose mode (specs/0022): a one-shot run whose proposed change-list was NOT approved didn't make the
-    # change — never train it as a completed edit (the multi-turn path drops such turns per-turn above).
-    if any(r.get("type") == "manifest" and r.get("approved") is not True for r in records):
-        return False, "manifest_declined"
+    # Propose mode (specs/0022 + specs/0026): a one-shot run whose proposed change-list didn't ship must not
+    # train as a completed edit - a DECLINED plan (approved is not True) or an APPROVED-but-PARTIAL apply
+    # (applied is False, an item never landed). `applied` is absent on flag-off/legacy records (byte-identical).
+    for r in records:
+        if r.get("type") == "manifest":
+            if r.get("approved") is not True:
+                return False, "manifest_declined"
+            if r.get("applied") is False:
+                return False, "manifest_unapplied"
     # Spec-first (specs/0025): a one-shot run whose design contract was declined, or approved-but-unmet, did
     # not ship - never train it as a completed change (the multi-turn path drops such turns per-turn above).
     for r in records:

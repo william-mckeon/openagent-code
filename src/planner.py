@@ -21,12 +21,13 @@ from .prompts import strip_reasoning_preamble
 
 
 class Decision:
-    def __init__(self, assistant, calls, final, nudge=None, gave_up=False):
+    def __init__(self, assistant, calls, final, nudge=None, gave_up=False, dropped=False):
         self.assistant = assistant   # message dict to append to the conversation
         self.calls = calls           # list of {"id", "name", "args"}
         self.final = final           # str when the model is done, else None
         self.nudge = nudge           # corrective user message when the model broke protocol
         self.gave_up = gave_up       # True when the model never produced a usable action
+        self.dropped = dropped       # True when a native turn came back empty (dropped tool call, specs/0026)
 
 
 class NativePlanner:
@@ -63,7 +64,12 @@ class NativePlanner:
         # The final answer (calls empty) is user-facing — strip any leaked chain-of-thought
         # preamble gpt-oss dumped before it (a no-op when there's no clear leak). The logged
         # assistant message keeps the raw content; the converter cleans it for training.
-        return Decision(assistant, calls, None if calls else strip_reasoning_preamble(msg.content))
+        # Dropped tool call (specs/0026): the SAME condition model.py retries on — native mode, empty
+        # content, no tool calls. On the final exhausted attempt it reaches here as an empty finish; flag
+        # it so the agent labels the turn `no_output` instead of washing a glitch to a clean `final`.
+        dropped = bool(self.schemas) and not (msg.content or "").strip() and not msg.tool_calls
+        return Decision(assistant, calls, None if calls else strip_reasoning_preamble(msg.content),
+                        dropped=dropped)
 
     def format_result(self, call, result):
         return {"role": "tool", "tool_call_id": call["id"], "content": result.content}

@@ -15,7 +15,8 @@ exist to reject became SFT targets (corpus poison).
 # and the label MUST survive to train/convert.py. They take precedence over any success relabel a caller
 # applies (a verify command that happens to pass must never mask an ungrounded/unverified answer).
 GATE_OUTCOMES = ("unverified_completion", "ungrounded_completion", "degenerate", "verify_failed_edits",
-                 "goal_unmet", "manifest_declined", "spec_declined", "acceptance_unmet")
+                 "goal_unmet", "manifest_declined", "spec_declined", "acceptance_unmet",
+                 "manifest_unapplied", "no_output")
 
 
 def classify(terminated, tool_calls):

@@ -29,6 +29,11 @@ def _ts():
 
 
 class Trajectory:
+    # 0.12.0: completion & manifest honesty (Phase 26 / specs/0026). The `manifest` record gains an OPTIONAL
+    #        `applied` field - whether every APPROVED item actually landed in the mutation ledger - written
+    #        only when CODE_VERIFY_MANIFEST is on and the plan was approved. A partial apply (applied=False)
+    #        is dropped from SFT (train/convert) so it can't train as a completed change; the field is ABSENT
+    #        on a flag-off / legacy record, keeping those byte-identical.
     # 0.11.0: spec-first (Phase 25 / specs/0025). A `spec` record captures an AUTHORED design+acceptance
     #        spec (title/goal/acceptance/non_goals), whether the user APPROVED it, and whether its ACCEPTANCE
     #        items were all met - so a spec->build->met run is a first-class 'contract before acting' signal,
@@ -64,7 +69,7 @@ class Trajectory:
     # 0.6.0: `permission` record per gated tool call (Phase 4 #6) — the decision
     #        (allow/ask/deny + which rule/mode decided it), captured before the call.
     # Older data stays usable — the converter falls back to as-sent / reattachment.
-    SCHEMA_VERSION = "0.11.0"
+    SCHEMA_VERSION = "0.12.0"
 
     @classmethod
     def resume(cls, path):
@@ -273,20 +278,26 @@ class Trajectory:
             "met": bool(met),
         })
 
-    def log_manifest(self, items, approved, mode=None):
+    def log_manifest(self, items, approved, mode=None, applied=None):
         """Record a proposed change-list's resolution once (specs/0022 propose mode): the proposed items
         (add/move/update/delete + why), whether the user APPROVED the whole plan, and the mode it was
         proposed in. A propose->approve->execute run is a first-class 'plan before acting' signal for the
         flywheel; a DECLINED plan (approved=False) marks a turn train/convert.py must NOT keep as a
         completed change. Logged ONCE, when the manifest resolves — never per revision or while awaiting."""
-        self._write({
+        # specs/0026: `applied` (whether every APPROVED item landed in the mutation ledger) is written ONLY
+        # when computed (CODE_VERIFY_MANIFEST on + approved), so a flag-off / legacy record is byte-identical
+        # and convert.py's `applied is False` partial-apply drop never matches it.
+        rec = {
             "type": "manifest",
             "session_id": self.session_id,
             "ts": _ts(),
             "items": list(items or []),
             "approved": bool(approved),
             "mode": mode,
-        })
+        }
+        if applied is not None:
+            rec["applied"] = bool(applied)
+        self._write(rec)
 
     def log_spec(self, title, goal, acceptance, non_goals, approved, acceptance_met):
         """Record a spec-first design contract's resolution once (specs/0025 spec-first): the authored spec

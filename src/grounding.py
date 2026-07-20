@@ -127,6 +127,37 @@ def unverified_success_claim(final_text, verified):
     return []
 
 
+# A completed FILE MUTATION the AGENT claims it performed - "I created foo.py", "the folder was copied",
+# "wrote the config". Past-tense/result verbs ONLY, so a present-tense description of what code DOES ("the
+# Dockerfile creates the image") is not a completion claim. Paired with a file/folder/dir reference (or a
+# quoted path) below so a bare "I saved you some time" in prose isn't caught.
+_MUTATION_DONE = re.compile(
+    r"\b(?:created|wrote|written|copied|moved|renamed|deleted|saved|generated|scaffolded)\b", re.I)
+_FILE_REF = re.compile(
+    r"\b(?:files?|folders?|director(?:y|ies)|scripts?|modules?|packages?|repos?|repositor(?:y|ies)|"
+    r"the\s+(?:working\s+)?directory)\b"
+    r"|[`'\"][^`'\"\n]*\.[A-Za-z0-9]{1,8}[`'\"]",   # a quoted path with an extension
+    re.I)
+
+
+def unbacked_mutation_claim(final_text, mutations):
+    """DETERMINISTIC, model-free: flag a claim that the agent COMPLETED a file mutation (created/copied/wrote/
+    moved/deleted a file or folder) when the mutation ledger is EMPTY - nothing was written/edited/deleted this
+    run. Catches the false-completion class: 'Frontend folder copied to the working directory' emitted in
+    propose-investigate with zero writes. Per-sentence, HEDGE-guarded (a future/conditional 'I will create',
+    'you can copy' is not a completed action) and paired with a file/folder/path reference (a bare completion
+    boast in prose is not caught). Returns [] the moment ANY real mutation happened - a partial apply is the
+    manifest gate's job (per-item), so this never second-guesses a run that DID change files."""
+    if not final_text or (mutations or {}):
+        return []
+    for sent in re.split(r"(?<=[.!?])\s+|\n+", final_text):
+        if _MUTATION_DONE.search(sent) and _FILE_REF.search(sent) and not _HEDGED.search(sent):
+            return ["you state you created/copied/wrote/changed a file or folder this run, but NOTHING was "
+                    "written, edited, or deleted this turn (the mutation ledger is empty) - actually make the "
+                    "change with write_file / edit_file / apply_patch, or say plainly that nothing changed."]
+    return []
+
+
 def absence_contradictions(final_text, cwd):
     """DETERMINISTIC, model-free: flag a claim that a cited path is empty / missing / absent when that
     path actually EXISTS on disk (a present file, or a NON-EMPTY directory). os.path is authoritative for
@@ -427,6 +458,10 @@ def problems(final_text, ctx):
     # config.ENABLE_WEB so a web-off run is byte-identical (ctx.fetched is empty and would flag every URL).
     if config.ENABLE_WEB:
         det += web_citation_problems(final_text, getattr(ctx, "fetched", None) or {})
+    # Unbacked mutation claim (specs/0026): a "done, I copied/created X" with an EMPTY mutation ledger.
+    # Model-free, gated on its own flag so a flag-off run is byte-identical (the net never runs).
+    if config.VERIFY_MUTATION_CLAIMS:
+        det += unbacked_mutation_claim(final_text, getattr(ctx, "mutations", None) or {})
     if config.VERIFY_GROUNDING_SEMANTIC and getattr(ctx, "spawn", None) is not None:
         paths = cited_paths(final_text, strict=False)   # BROAD: the verifier judges, so include dirs
         # The bounded cited+fetched web sources to hand the verifier (empty unless web is on and used).
