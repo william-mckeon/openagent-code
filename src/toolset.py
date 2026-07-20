@@ -13,7 +13,7 @@ toolset varies.
 """
 from . import config
 from .tools import (TOOLS, WEB_TOOLS, MEMORY_TOOLS, SKILL_TOOLS, PATCH_TOOLS, GOAL_TOOLS, EFFORT_TOOLS,
-                    PROPOSE_TOOLS, TODO_TOOLS, openai_schemas)
+                    PROPOSE_TOOLS, TODO_TOOLS, SPEC_TOOLS, openai_schemas)
 from .mcp_client import mcp_tools
 
 
@@ -46,6 +46,10 @@ def active_tools():
     # here, not refused at call time, so a flag-off run's logged tool_schemas stay byte-identical.
     if config.PROPOSE:
         tools += PROPOSE_TOOLS
+    # The ONLY site that offers write_spec (Phase 25) - gated here, not refused at call time, so a flag-off
+    # run's logged tool_schemas stay byte-identical.
+    if config.SPEC_FIRST:
+        tools += SPEC_TOOLS
     if config.ENABLE_WEB:
         tools += WEB_TOOLS
     tools += mcp_tools()

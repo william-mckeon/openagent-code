@@ -70,6 +70,29 @@ def _show_todos(workspace):
     return text
 
 
+def _load_spec(workspace):
+    """Load the ACTIVE spec (Phase 25 / specs/0025) as markdown for the SYSTEM PROMPT. Silent (display is
+    _show_spec's job, so the REPL doesn't print it twice). '' when off / no spec."""
+    if not config.SPEC_FIRST:
+        return ""
+    from . import specstore
+    return specstore.active_text(workspace)
+
+
+def _show_spec(workspace):
+    """Print the active spec's title + outstanding-acceptance count at startup for the user (Phase 25).
+    Shows only when a spec exists; no-op when off."""
+    if not config.SPEC_FIRST:
+        return None
+    from . import specstore
+    spec = specstore.load_active(workspace)
+    if spec and (spec.get("goal") or spec.get("acceptance")):
+        left = len(specstore.outstanding(spec.get("acceptance") or []))
+        print(f"\nActive spec: {spec.get('title') or '(untitled)'} "
+              f"({left} acceptance item(s) outstanding) - see .openagent/specs/\n")
+    return spec
+
+
 def _parse_flags(argv):
     """Pull launcher flags out of argv so the common knobs are FLAGS, not CODE_* env
     vars (the env-juggling that makes local use painful). Applies the config-level
@@ -100,6 +123,10 @@ def _parse_flags(argv):
             config.PROJECT_TODOS = True; i += 1
         elif a == "--no-todos":
             config.PROJECT_TODOS = False; i += 1
+        elif a == "--spec-first":
+            config.SPEC_FIRST = True; i += 1
+        elif a == "--no-spec-first":
+            config.SPEC_FIRST = False; i += 1
         elif a == "--warmup" and i + 1 < len(argv):
             config.WARMUP_BUDGET = float(argv[i + 1]); i += 2
         else:
@@ -120,8 +147,9 @@ def _one_shot(task, perms):
     log.info("task: %s", task)
     _warn_if_empty_workspace(workspace)
     agent = build_agent(traj, memory=_load_memory(workspace), todos=_load_todos(workspace),
-                        granted_dirs=perms.extra_roots)
+                        spec=_load_spec(workspace), granted_dirs=perms.extra_roots)
     _show_todos(workspace)   # surface the backlog at startup (Phase 23; no-op when the flag is off)
+    _show_spec(workspace)    # surface the active spec at startup (Phase 25; no-op when the flag is off)
 
     try:
         result = agent.run(task, ctx)
@@ -211,6 +239,7 @@ def _run_session(traj, agent, ctx):
     print("Type a task and press enter. Commands: /exit  /plan  /add-dir <path>  /mode <name>")
     log.info("REPL start | model=%s mode=%s workspace=%s", config.display_model(), ctx.permissions.mode, ctx.cwd)
     last_todos = _show_todos(ctx.cwd)   # surface the project backlog at startup (Phase 23; no-op when off)
+    _show_spec(ctx.cwd)                 # surface the active spec at startup (Phase 25; no-op when off)
     turns = 0
     try:
         while True:
@@ -280,7 +309,7 @@ def _repl(perms):
     ctx = make_context(workspace, perms, traj.session_id,
                        depth=0, verbose=config.VERBOSE, interactive=True)
     agent = build_agent(traj, memory=_load_memory(workspace), todos=_load_todos(workspace),
-                        granted_dirs=perms.extra_roots)
+                        spec=_load_spec(workspace), granted_dirs=perms.extra_roots)
     return _run_session(traj, agent, ctx)
 
 

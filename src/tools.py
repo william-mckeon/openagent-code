@@ -60,6 +60,7 @@ class Context:
         self.manifest = None           # {items,approved} proposed change-list set by propose_changes (specs/0022)
         self.propose_phase = None      # None | 'investigate' (read-only) | 'approved'; flips on approval, read by decide()
         self.approved_paths = set()    # normcased workspace-rel paths the user signed off; decide() allows exactly these
+        self.spec = None               # {title,goal,acceptance:[{content,done}],non_goals,path,number,approved} set by write_spec (specs/0025); read by the acceptance gate
         self.ask = None                # callable(question) -> answer; wired by make_context
         self.interactive = False       # True only when a human is present to answer
 
@@ -1107,6 +1108,94 @@ PROPOSE_TOOLS = [
                              "why": {"type": "string", "description": "one line: why this change"},
                          }, "required": ["action", "path"]}},
         }, "required": ["manifest"]},
+    },
+]
+
+
+# Opt-in spec-first tool (Phase 25 / specs/0025) - added to the active toolset by src/toolset.py only when
+# CODE_SPEC_FIRST is on. Like propose_changes it is NON-mutating for permission gating: it writes
+# .openagent/specs/ via src/specstore.py directly (never write_file / _record_mutation), so it runs in plan /
+# read-only phases and the completion gate doesn't treat the spec doc as a code change. Stays OUT of
+# permissions.MUTATING.
+def write_spec(args, ctx):
+    """Author (or update) a persistent design+acceptance SPEC before a substantive change (Phase 25 / specs/
+    0025). action='propose' (default): write the spec + collect ONE approval - after that you build against
+    it and cannot report done until every acceptance item is met. action='done': mark an acceptance item met
+    (by its number or exact text) as you satisfy it. Top-level only; the spec is written to disk BEFORE
+    approval (so a declined draft survives for review); headless -> the draft is written and you STOP."""
+    if ctx.depth > 0:
+        return ToolResult(False, "write_spec is top-level only - a subagent does its bounded task and reports.")
+    from . import specstore
+    action = str(args.get("action") or "propose").strip().lower()
+
+    if action in ("done", "met", "mark"):
+        if not (ctx.spec and ctx.spec.get("approved")):
+            return ToolResult(False, "No approved spec to mark against - propose a spec first with write_spec.")
+        acc, err = specstore.set_acceptance(ctx.spec["acceptance"], args.get("item") or args.get("content"), True)
+        if err:
+            return ToolResult(False, f"write_spec done: {err}. The acceptance items are numbered in the spec.")
+        ctx.spec["acceptance"] = acc
+        try:
+            specstore.save(ctx.cwd, ctx.spec)   # rewrite the file with the flipped item
+        except Exception:  # noqa: BLE001 - a re-save failure must not break the tool
+            pass
+        left = len(specstore.outstanding(acc))
+        return ToolResult(True, f"Marked done - {left} acceptance item(s) still outstanding:\n" + specstore.render(ctx.spec))
+
+    title = str(args.get("title") or "").strip()
+    goal = str(args.get("goal") or "").strip()
+    raw_acc = args.get("acceptance")
+    if not title:
+        return ToolResult(False, "write_spec needs a 'title'.")
+    if not goal:
+        return ToolResult(False, "write_spec needs a 'goal' (what the change is and why, in a few lines).")
+    if not isinstance(raw_acc, list) or not raw_acc:
+        return ToolResult(False, "write_spec needs a non-empty 'acceptance' list - the checklist that defines "
+                                 "DONE (you cannot report done until every item is met).")
+    acceptance = [{"content": str(a).strip(), "done": False} for a in raw_acc if str(a).strip()]
+    if not acceptance:
+        return ToolResult(False, "every acceptance item must be a non-empty string.")
+    non_goals = [str(n).strip() for n in (args.get("non_goals") or []) if str(n).strip()]
+    spec = {"title": title, "goal": goal, "acceptance": acceptance, "non_goals": non_goals, "approved": False}
+    try:
+        spec["path"] = specstore.save(ctx.cwd, spec)   # persist FIRST - a declined draft survives for review
+    except Exception as e:  # noqa: BLE001 - a write failure must not crash the tool
+        return ToolResult(False, f"could not write the spec file: {type(e).__name__}: {e}")
+    ctx.spec = spec
+    rendered = specstore.render(spec)
+
+    if ctx.ask is not None and ctx.interactive:
+        ans = (ctx.ask(rendered + "\n\nApprove this spec and build against it? [y/N] ") or "").strip().lower()
+        if ans in ("y", "yes", "ok", "sure", "approve", "apply"):
+            ctx.spec["approved"] = True
+            return ToolResult(True, f"Spec approved ({spec['path']}). Build against it now and mark each "
+                                    "acceptance item with write_spec(action='done', item=N) as you meet it - "
+                                    "you cannot report the task done until every item is met.")
+        return ToolResult(False, "The user did NOT approve this spec. Do not start implementing. Revise the "
+                                 "goal/acceptance and propose again, or ask what they'd change.")
+    return ToolResult(False, "No human is present to approve this spec, so implementation should not begin. "
+                             f"The draft was written to {spec['path']} for review. Re-run interactively to approve it.")
+
+
+SPEC_TOOLS = [
+    {
+        "name": "write_spec", "fn": write_spec,
+        "description": ("Author a persistent design+acceptance SPEC before a substantive change, then build "
+                        "against it. action='propose' (default): give a 'title', a 'goal' (what + why), and "
+                        "an 'acceptance' checklist (the items that define DONE) + optional 'non_goals'; the "
+                        "user approves it ONCE, and you cannot report the task done until every acceptance "
+                        "item is met. action='done': mark an acceptance item met (by its number or exact "
+                        "text) as you satisfy it. Use it for a real feature/change - not a trivial edit."),
+        "parameters": {"type": "object", "properties": {
+            "action": {"type": "string", "enum": ["propose", "done"]},
+            "title": {"type": "string", "description": "short name of the change (propose)"},
+            "goal": {"type": "string", "description": "what the change is and why, in a few lines (propose)"},
+            "acceptance": {"type": "array", "items": {"type": "string"},
+                           "description": "the checklist that defines DONE (propose)"},
+            "non_goals": {"type": "array", "items": {"type": "string"},
+                          "description": "explicitly out of scope (propose, optional)"},
+            "item": {"type": "string", "description": "which acceptance item to mark done: its number or exact text (done)"},
+        }, "required": []},
     },
 ]
 

@@ -69,6 +69,24 @@ def _completion_challenge(problems):
             "then re-verify. Only mark a step completed AFTER its tool call succeeds.")
 
 
+def _unmet_acceptance(ctx):
+    """Acceptance items on the approved spec (specs/0025) NOT yet marked done - the deterministic, mark-based
+    mirror of the completion gate (_unverified_items): the agent marks each item with write_spec(action=
+    'done') as it satisfies it, and this returns the ones still outstanding. [] means acceptance is met (or
+    there is no spec / no acceptance items - nothing to hold)."""
+    spec = getattr(ctx, "spec", None)
+    if not spec:
+        return []
+    return [it.get("content", "") for it in (spec.get("acceptance") or []) if not it.get("done")]
+
+
+def _acceptance_challenge(unmet):
+    return ("Do NOT report the task done yet - these ACCEPTANCE items from the approved spec are not met:\n"
+            + "\n".join(f"- {p}" for p in unmet)
+            + "\nFinish each one, then mark it with write_spec(action='done', item=<its number>). Only report "
+            "the task done once EVERY acceptance item is checked off.")
+
+
 class RunResult:
     def __init__(self, final, terminated, tool_calls):
         self.final = final              # the model's closing text (may be empty)
@@ -105,6 +123,17 @@ class Agent:
                 self.traj.log_manifest(m.get("items", []), bool(m.get("approved")),
                                        mode=getattr(ctx.permissions, "mode", None))
             except Exception:  # noqa: BLE001 - logging a manifest must never break the run
+                pass
+        # Spec-first (specs/0025): log the resolved design contract ONCE at turn end - the acceptance items,
+        # whether approved, and whether they were all met. A declined/unmet spec -> dropped from SFT by
+        # convert. No spec (flag-off or a spec-less turn) -> nothing logged (byte-identical).
+        s = getattr(ctx, "spec", None)
+        if s is not None:
+            try:
+                self.traj.log_spec(s.get("title", ""), s.get("goal", ""), s.get("acceptance", []),
+                                   s.get("non_goals", []), bool(s.get("approved")),
+                                   not _unmet_acceptance(ctx))
+            except Exception:  # noqa: BLE001 - logging a spec must never break the run
                 pass
         if self._effort_policy is not None and self._escalated:
             try:
@@ -148,6 +177,9 @@ class Agent:
         ctx.manifest = None
         ctx.approved_paths = set()
         ctx.propose_phase = "investigate" if getattr(ctx.permissions, "mode", None) == "propose" else None
+        # Spec-first (specs/0025): a spec approved-but-unfinished on a prior task must never keep the
+        # acceptance gate armed on an unrelated later turn (the stale-plan hijack class). Reset per task.
+        ctx.spec = None
         self._escalated = False
         _emdl = getattr(self.planner, "model", None)
         if _emdl is not None:         # restore the AS-BUILT effort so a prior turn's escalation never leaks
@@ -168,6 +200,7 @@ class Agent:
         verify_retries = 0     # completion-gate re-prompts used this run (Phase 6)
         edit_verify_retries = 0  # auto-verify-gate re-prompts used this run (Phase 14)
         ground_retries = 0     # grounding-gate re-prompts used this run (Phase 10)
+        accept_retries = 0     # acceptance-gate re-prompts used this run (Phase 25)
 
         try:
             for step in range(self.max_steps):
@@ -313,6 +346,25 @@ class Agent:
                             print(f"  [goal] bar {'PASSED' if bar_ok else 'NOT met'}: {goal.render(g['bar'])}")
                         if not bar_ok:
                             return self._finish(ctx, decision.final, "goal_unmet", tool_calls)
+
+                    # Acceptance gate (Phase 25 / specs/0025): when an APPROVED spec is active, every
+                    # acceptance item must be marked done — the deterministic, mark-based mirror of the
+                    # completion gate — before 'done' is accepted. Re-prompt with the unmet items (bounded),
+                    # else record an honest 'acceptance_unmet'. TRIPLE-gated (flag + a spec + approved) so a
+                    # spec-less / flag-off run never reaches it (byte-identical), and reads ctx.spec (reset
+                    # per task) NOT the on-disk file, so it can't hijack an unrelated turn.
+                    if config.SPEC_FIRST and getattr(ctx, "spec", None) and ctx.spec.get("approved"):
+                        unmet_acc = _unmet_acceptance(ctx)
+                        if unmet_acc and accept_retries < config.SPEC_FIRST_RETRIES:
+                            accept_retries += 1
+                            if ctx.verbose:
+                                print(f"  [spec] {len(unmet_acc)} acceptance item(s) not yet met")
+                            log.info("acceptance challenge (retry %d): %s", accept_retries,
+                                     "; ".join(unmet_acc))
+                            self.cm.add({"role": "user", "content": _acceptance_challenge(unmet_acc)})
+                            continue
+                        if unmet_acc:
+                            return self._finish(ctx, decision.final, "acceptance_unmet", tool_calls)
 
                     # Grounding gate (Phase 10 / specs/0010): completion is verified — the plan's
                     # changes are real. Now check the closing answer's CLAIMS are grounded in the

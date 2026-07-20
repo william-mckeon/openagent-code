@@ -142,6 +142,25 @@ def _unapplied_manifest_turns(records):
     return out
 
 
+def _unmet_spec_turns(records):
+    """Turn indices whose spec-first design contract was NOT delivered (specs/0025): a DECLINED spec
+    (approved is not True) or an APPROVED-but-UNMET one (acceptance_met is not True). Either way the change
+    didn't ship, so the turn must not train as a completed change - but the good turns beside it survive.
+    Keyed on the `spec` record (not a permission record - a decline/unmet writes none, and the turn may still
+    end 'completed'), mirroring _unapplied_manifest_turns. Empty when there are no turn_outcome records."""
+    out, undelivered, seg = set(), False, 1
+    for r in records:
+        t = r.get("type")
+        if t == "spec" and (r.get("approved") is not True or r.get("acceptance_met") is not True):
+            undelivered = True
+        elif t == "turn_outcome":
+            idx = r.get("turn", seg)
+            if undelivered:
+                out.add(idx)
+            undelivered, seg = False, idx + 1
+    return out
+
+
 def trainable_turns(records):
     """{turn -> bool}: which REPL turns are trainable — an honest keeper outcome, that turn's OWN
     verifications all passed, AND no blocked (guardian-denied) call in it. Empty dict when the trajectory
@@ -151,6 +170,7 @@ def trainable_turns(records):
     contested = _contested_turns(records)
     degenerate = _degenerate_turns(records)
     unapplied = _unapplied_manifest_turns(records)   # specs/0022: a declined change-list didn't happen
+    unmet_spec = _unmet_spec_turns(records)          # specs/0025: a declined/unmet spec didn't ship
     turns, verif_ok, seg = {}, True, 1
     for r in records:
         t = r.get("type")
@@ -160,7 +180,7 @@ def trainable_turns(records):
             idx = r.get("turn", seg)
             turns[idx] = ((r.get("outcome") in KEEP_OUTCOMES) and verif_ok
                           and (idx not in contested) and (idx not in degenerate)
-                          and (idx not in unapplied))
+                          and (idx not in unapplied) and (idx not in unmet_spec))
             verif_ok, seg = True, idx + 1
     return turns
 
@@ -209,6 +229,14 @@ def is_trainable(records):
     # change — never train it as a completed edit (the multi-turn path drops such turns per-turn above).
     if any(r.get("type") == "manifest" and r.get("approved") is not True for r in records):
         return False, "manifest_declined"
+    # Spec-first (specs/0025): a one-shot run whose design contract was declined, or approved-but-unmet, did
+    # not ship - never train it as a completed change (the multi-turn path drops such turns per-turn above).
+    for r in records:
+        if r.get("type") == "spec":
+            if r.get("approved") is not True:
+                return False, "spec_declined"
+            if r.get("acceptance_met") is not True:
+                return False, "acceptance_unmet"
     # Behavior gate (specs/0004): even a verify-passing run is bad training data if the
     # agent REFUSED (a "narrow the scope" deflection) — we don't want to teach that.
     if rubric.is_refusal(records):
@@ -351,6 +379,7 @@ def main():
     kept_sessions = 0
     contested_turns_total = 0   # ride-5: turns excluded from KEPT sessions because they held a denied call
     unapplied_manifest_total = 0  # specs/0022: turns excluded from KEPT sessions for a declined change-list
+    unmet_spec_total = 0          # specs/0025: turns excluded from KEPT sessions for a declined/unmet spec
 
     for path in files:
         records = load_session(path)
@@ -372,6 +401,7 @@ def main():
         kept_sessions += 1
         contested_turns_total += len(_contested_turns(records))
         unapplied_manifest_total += len(_unapplied_manifest_turns(records))
+        unmet_spec_total += len(_unmet_spec_turns(records))
         schema_src[session_rows[0]["meta"]["tool_schema_source"]] += 1
 
     os.makedirs(OUT_DIR, exist_ok=True)
@@ -390,6 +420,7 @@ def main():
         "rows_written": len(rows),
         "contested_turns_excluded": contested_turns_total,   # ride-5: denied-call turns dropped from kept sessions
         "unapplied_manifest_turns_excluded": unapplied_manifest_total,  # specs/0022: declined-plan turns dropped
+        "unmet_spec_turns_excluded": unmet_spec_total,  # specs/0025: declined/unmet-spec turns dropped
         "dropped": dropped,
         "tool_schema_source": schema_src,
         "output": os.path.relpath(OUT_FILE, ROOT).replace(os.sep, "/"),

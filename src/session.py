@@ -15,6 +15,7 @@ import json
 from . import config
 from . import memory
 from . import todos
+from . import specstore
 from .permissions import Permissions
 from .trajectory import Trajectory
 from .runtime import build_agent
@@ -60,7 +61,11 @@ def resume(session_id, workspace, permissions, verbose=False, interactive=False)
     # Reload the project backlog too (Phase 23) so a resumed session sees what's still to do — the display
     # at startup is handled by cli._run_session, which every resumed session routes through.
     tdo = todos.backlog_text(workspace) if config.PROJECT_TODOS else ""
-    agent = build_agent(traj, initial_working=working, pinned_plan=plan, memory=mem, todos=tdo,
+    # Reload the active spec into the prompt (Phase 25). This is the PROMPT text only; the acceptance gate's
+    # in-memory ctx.spec stays None until the agent re-registers/re-approves a spec this task (like the
+    # manifest - the disk artifact feeds context; the approval is per-task so a resumed unrelated turn isn't gated).
+    spc = specstore.active_text(workspace) if config.SPEC_FIRST else ""
+    agent = build_agent(traj, initial_working=working, pinned_plan=plan, memory=mem, todos=tdo, spec=spc,
                         granted_dirs=permissions.extra_roots)
     ctx = make_context(workspace, permissions, traj.session_id, depth=0,
                        verbose=verbose, interactive=interactive)

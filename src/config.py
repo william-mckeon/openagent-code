@@ -551,6 +551,34 @@ def todos_file(workspace: str) -> str:
     return f if os.path.isabs(f) else os.path.join(workspace, f)
 
 # -----------------------------------------------------------------------------
+# Spec-first (Phase 25 / specs/0025) — the agent authors a persistent design+acceptance spec before a
+# substantive change, gets it approved, and can't report done until the acceptance items are met. Opt-in
+# like memory/todos (writes spec files INTO the repo; off for eval). On = the `write_spec` tool is offered,
+# the ACTIVE spec is loaded into the system prompt + shown at startup, and the acceptance gate is armed.
+#
+# CODE_SPEC_FIRST            Master switch. OFF by default.
+# CODE_SPECS_DIR             Per-project directory of NNNN-slug.md specs, resolved relative to the workspace
+#                            (co-located with memory.md / todos.md), NOT the install root.
+# CODE_SPECS_MAX_CHARS       Outer bound on how much of the active spec is injected into the prompt (capped
+#                            by whole lines in src/specstore.py, never a byte tail that would slice an item).
+# CODE_SPEC_FIRST_RETRIES    How many times the acceptance gate re-prompts before recording 'acceptance_unmet'.
+# -----------------------------------------------------------------------------
+SPEC_FIRST = _as_bool(os.environ.get("CODE_SPEC_FIRST", "false"))
+SPECS_DIR = os.environ.get("CODE_SPECS_DIR", ".openagent/specs")
+SPECS_MAX_CHARS = int(os.environ.get("CODE_SPECS_MAX_CHARS", "8000"))
+try:
+    SPEC_FIRST_RETRIES = max(1, int(os.environ.get("CODE_SPEC_FIRST_RETRIES", "2")))
+except ValueError:
+    SPEC_FIRST_RETRIES = 2
+
+
+def specs_dir(workspace: str) -> str:
+    """Absolute path to the project SPECS DIRECTORY (relative values resolve against ws, per-repo — like
+    memory_file()/todos_file(), NOT install-root like skills_dir())."""
+    f = SPECS_DIR
+    return f if os.path.isabs(f) else os.path.join(workspace, f)
+
+# -----------------------------------------------------------------------------
 # Training flywheel
 #
 # CODE_TRAJECTORY_DIR  Where session JSONL is written. Relative paths resolve against the

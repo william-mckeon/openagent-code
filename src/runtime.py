@@ -14,7 +14,7 @@ from .context import ContextManager
 from .agent import Agent
 
 
-def build_agent(trajectory, initial_working=None, pinned_plan=None, memory=None, todos=None,
+def build_agent(trajectory, initial_working=None, pinned_plan=None, memory=None, todos=None, spec=None,
                 granted_dirs=None, effort=None):
     """Build an agent. For resume, pass `initial_working` (the rehydrated history)
     and `pinned_plan` (restored from the trajectory) — see src/session.py. `memory`
@@ -27,7 +27,7 @@ def build_agent(trajectory, initial_working=None, pinned_plan=None, memory=None,
     model = Model(trajectory, effort=effort)
     tools = active_tools()   # base + memory + todos + web (+ MCP) — the dynamic toolset for this run
     planner = make_planner(config.TOOL_MODE, model, openai_schemas(tools))
-    system_prompt = build_system_prompt(config.TOOL_MODE, tools, memory=memory, todos=todos,
+    system_prompt = build_system_prompt(config.TOOL_MODE, tools, memory=memory, todos=todos, spec=spec,
                                         granted_dirs=granted_dirs)
     cm = ContextManager(system_prompt, model, trajectory, verbose=config.VERBOSE,
                         initial_working=initial_working)

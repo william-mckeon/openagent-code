@@ -29,6 +29,11 @@ def _ts():
 
 
 class Trajectory:
+    # 0.11.0: spec-first (Phase 25 / specs/0025). A `spec` record captures an AUTHORED design+acceptance
+    #        spec (title/goal/acceptance/non_goals), whether the user APPROVED it, and whether its ACCEPTANCE
+    #        items were all met - so a spec->build->met run is a first-class 'contract before acting' signal,
+    #        and a DECLINED or UNMET spec is dropped from SFT (train/convert._unmet_spec_turns) so an
+    #        undelivered change can't train as completed. Logged ONCE, when the spec resolves.
     # 0.10.0: propose mode (Phase 22 / specs/0022). A `manifest` record captures a proposed change-list
     #        (add/move/update/delete + why), whether the user APPROVED the whole plan, and the mode - so a
     #        propose->approve->execute run is a first-class 'plan before acting' signal, and a DECLINED plan
@@ -59,7 +64,7 @@ class Trajectory:
     # 0.6.0: `permission` record per gated tool call (Phase 4 #6) — the decision
     #        (allow/ask/deny + which rule/mode decided it), captured before the call.
     # Older data stays usable — the converter falls back to as-sent / reattachment.
-    SCHEMA_VERSION = "0.10.0"
+    SCHEMA_VERSION = "0.11.0"
 
     @classmethod
     def resume(cls, path):
@@ -281,6 +286,24 @@ class Trajectory:
             "items": list(items or []),
             "approved": bool(approved),
             "mode": mode,
+        })
+
+    def log_spec(self, title, goal, acceptance, non_goals, approved, acceptance_met):
+        """Record a spec-first design contract's resolution once (specs/0025 spec-first): the authored spec
+        (title/goal/acceptance/non_goals), whether the user APPROVED it, and whether every ACCEPTANCE item
+        was met. A spec->build->met run is a first-class 'contract before acting' signal for the flywheel; a
+        DECLINED (approved=False) or UNMET (acceptance_met=False) spec marks a turn train/convert.py must NOT
+        keep as a completed change. Logged ONCE, at resolution - never per revision or while awaiting."""
+        self._write({
+            "type": "spec",
+            "session_id": self.session_id,
+            "ts": _ts(),
+            "title": title,
+            "goal": goal,
+            "acceptance": list(acceptance or []),
+            "non_goals": list(non_goals or []),
+            "approved": bool(approved),
+            "acceptance_met": bool(acceptance_met),
         })
 
     def end(self, outcome, final_text=None, terminated=None):

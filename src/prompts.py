@@ -167,7 +167,7 @@ def json_tools_protocol(tools):
     return "\n".join(lines)
 
 
-def build_system_prompt(mode, tools, memory=None, todos=None, granted_dirs=None):
+def build_system_prompt(mode, tools, memory=None, todos=None, spec=None, granted_dirs=None):
     suffix = json_tools_protocol(tools) if mode == "json" else native_tools_note(tools)
     note = ""
     if any(t["name"].startswith("web_") for t in tools):
@@ -248,6 +248,16 @@ def build_system_prompt(mode, tools, memory=None, todos=None, granted_dirs=None)
                  "item, pull it into this task's update_plan rather than tracking it in both places - never "
                  "fold the two. Don't re-list the whole backlog every turn.")
 
+    # Spec-first (specs/0025): teach the design-contract discipline. Gated on the tool's PRESENCE (not a
+    # mode/flag) so a flag-off prompt is byte-identical.
+    if any(t["name"] == "write_spec" for t in tools):
+        note += ("\n\nSPEC-FIRST: for a SUBSTANTIVE change (a real feature or reshape, not a one-line edit), "
+                 "author a design+acceptance SPEC first with `write_spec` - a Goal, an ACCEPTANCE checklist "
+                 "(the concrete items that define DONE), and Non-goals. The user approves it ONCE; then you "
+                 "implement AGAINST it and mark each acceptance item with write_spec(action='done', item=N) "
+                 "as you satisfy it. You CANNOT report the task done until every acceptance item is met - so "
+                 "make the acceptance items specific and checkable. For a trivial change, skip the spec.")
+
     # Cross-session memory (Phase 4 #7): prior-session notes about THIS repo. Lands in
     # the system prompt, which is logged as the first raw turn -> self-containment holds.
     mem = ""
@@ -264,7 +274,16 @@ def build_system_prompt(mode, tools, memory=None, todos=None, granted_dirs=None)
                + todos.strip()
                + "\n\nThese are cross-session backlog items, distinct from your per-task update_plan. Keep "
                  "them current with the project_todos tool; promote an item into update_plan when you start it.")
-    return BASE_PROMPT + "\n\n" + suffix + note + mem + tdo
+    # Active spec (specs/0025): the approved design+acceptance contract for this task. Distinct from memory
+    # (background facts) and todos (a backlog): a SINGLE active contract the agent builds toward and is gated
+    # on. Gated on a non-empty string (mirrors the memory/todos guards) so flag-off/no-spec is byte-identical.
+    spc = ""
+    if spec and spec.strip():
+        spc = ("\n\n## Active spec (the approved design+acceptance contract for this task)\n"
+               + spec.strip()
+               + "\n\nBuild AGAINST this spec. Mark each Acceptance item done with write_spec(action='done', "
+                 "item=N) as you satisfy it; you may NOT report the task done until every Acceptance item is met.")
+    return BASE_PROMPT + "\n\n" + suffix + note + mem + tdo + spc
 
 
 # Used by the ContextManager when the live context overflows. It summarizes the
