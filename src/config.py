@@ -408,8 +408,13 @@ PROPOSE = _as_bool(os.environ.get("CODE_PROPOSE", "false"))
 #   CODE_VERIFY_MANIFEST         - reconcile an APPROVED propose-mode manifest against the mutation ledger:
 #                                  challenge an unapplied item, log an `applied` flag, and label a dropped
 #                                  (empty) native finish `no_output` instead of a clean completion.
-#   CODE_VERIFY_MUTATION_CLAIMS  - a deterministic grounding net that flags a completed file-mutation claim
-#                                  ("I copied the folder") when the mutation ledger is EMPTY (zero writes).
+#   CODE_VERIFY_MUTATION_CLAIMS  - DEPRECATED (specs/0032): a deterministic grounding net that flags a
+#                                  completed file-mutation claim ("I copied the folder") when the mutation
+#                                  ledger is EMPTY. It is the ONE check anchored on free-text PROSE, not a
+#                                  declared structured artifact (the brittle NL parsing specs/0007 rejected;
+#                                  a live smoke test caught it false-flagging descriptive prose). Superseded
+#                                  by the structured declared-done family (completion/manifest/acceptance/
+#                                  goal); kept as an opt-in backstop. Prefer CODE_VERIFY_MANIFEST.
 # Both OFF by default -> byte-identical: no reconciliation, no `applied` field, the dropped finish still
 # returns `final`, and the grounding net never runs.
 VERIFY_MANIFEST = _as_bool(os.environ.get("CODE_VERIFY_MANIFEST", "false"))

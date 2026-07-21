@@ -162,7 +162,12 @@ _MUT_DIRECTIONAL = re.compile(r"\b(?:to|into|onto|in|under|at)\s+(?:the\s+)?(?:w
 
 
 def unbacked_mutation_claim(final_text, mutations):
-    """DETERMINISTIC, model-free: flag a claim that the agent COMPLETED a file mutation (created/copied/wrote/
+    """DEPRECATED (specs/0032): the ONE verification check anchored on free-text PROSE, not a declared
+    structured artifact - the brittle NL parsing specs/0007 rejected, which a live smoke test caught
+    false-flagging descriptive prose. Superseded by the structured declared-done family (completion/manifest/
+    acceptance/goal gates). Default OFF; kept as an opt-in backstop only.
+
+    DETERMINISTIC, model-free: flag a claim that the agent COMPLETED a file mutation (created/copied/wrote/
     moved/deleted a file or folder) when the mutation ledger is EMPTY - nothing was written/edited/deleted this
     run. Catches the false-completion class: 'Frontend folder copied to the working directory' emitted in
     propose-investigate with zero writes. Per-sentence, HEDGE-guarded (a future/conditional 'I will create',
