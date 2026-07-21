@@ -250,8 +250,8 @@ def main():
           "FETCHED WEB SOURCES" not in grounding._verifier_task("x", {"a.py"}))
     cf = grounding._cited_fetched("cites https://a.com/p only",
                                   {"https://a.com/p": "Y" * 9000, "https://b.com/q": "Z" * 9000})
-    check("_cited_fetched keeps only cited+fetched URLs, each per-source bounded",
-          set(cf) == {"https://a.com/p"} and len(cf["https://a.com/p"]) == grounding._WEB_SRC_CAP)
+    check("_cited_fetched keeps only cited+fetched URLs, each per-source bounded (tiered value)",
+          set(cf) == {"https://a.com/p"} and len(cf["https://a.com/p"]["content"]) == grounding._WEB_SRC_CAP)
 
     config.ENABLE_WEB = _saved_web
     passed, total = sum(_results), len(_results)

@@ -123,8 +123,8 @@ def main():
           _WEB_UNTRUSTED_OPEN in wrapped and _WEB_UNTRUSTED_CLOSE in wrapped and "hello from the web" in wrapped)
     c = _Ctx()
     _record_fetch(c, "https://x.com/p", "page text")
-    check("_record_fetch records the fetched page on ctx.fetched (the grounding ledger)",
-          c.fetched == {"https://x.com/p": "page text"})
+    check("_record_fetch records the fetched page on ctx.fetched (STRONG tier: {content, tier})",
+          c.fetched == {"https://x.com/p": {"content": "page text", "tier": "fetched"}})
 
     class _Bare:  # a ctx without .fetched (older/test) must not crash the recorder
         pass

@@ -185,6 +185,21 @@ def run(query, max_results=None):
     return payload
 
 
+def surfaced_sources(payload):
+    """The (url, snippet) pairs a search payload surfaced - what web_search records on the read-ledger as WEAK
+    (snippet-only) sources (specs/0028), so a cited result URL grounds without a redundant web_fetch. PURE
+    (network-free, exercised offline); skips empty URLs. Snippets are already clamped to _SNIPPET_CAP by
+    _norm_result, so the recorded content is pre-bounded."""
+    out = []
+    for r in (payload.get("results") or []):
+        if not isinstance(r, dict):
+            continue
+        url = (r.get("url") or "").strip()
+        if url:
+            out.append((url, r.get("snippet") or ""))
+    return out
+
+
 def render(payload):
     """A compact, NUMBERED markdown rendering of a search payload for the model (replaces the raw-text
     dump). An error payload renders as its message."""
