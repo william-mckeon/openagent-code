@@ -13,6 +13,8 @@ planner depending on CODE_TOOL_MODE (native tool-calling vs prompt-based JSON).
 """
 import re
 
+from . import config
+
 BASE_PROMPT = """You are openagent-code, a coding agent that edits real files in a real repository.
 
 Working method:
@@ -167,9 +169,17 @@ def json_tools_protocol(tools):
     return "\n".join(lines)
 
 
-def build_system_prompt(mode, tools, memory=None, todos=None, spec=None, granted_dirs=None):
+def build_system_prompt(mode, tools, memory=None, todos=None, spec=None, granted_dirs=None, cwd=None):
     suffix = json_tools_protocol(tools) if mode == "json" else native_tools_note(tools)
     note = ""
+    # Working directory (specs/0030): pin the ABSOLUTE workspace path in the DURABLE system prompt (which is
+    # NEVER compacted), so the agent always knows where "here" is - not only in the off-by-default per-turn
+    # env block that compaction can erode. Gated on CODE_WORKDIR_PROMPT so a flag-off prompt is byte-identical.
+    if config.WORKDIR_PROMPT and cwd:
+        note += (f"\n\nWORKING DIRECTORY: your workspace is {cwd}. Relative paths, and any file you CREATE, "
+                 "COPY, or WRITE, resolve HERE unless the user gives an absolute destination. A granted "
+                 "reference directory (listed below, if any) is a READ SOURCE - when you copy or create FROM "
+                 "one, the OUTPUT goes in this workspace, never back into the source, unless told otherwise.")
     # Fire for native web_ tools OR a web-marked MCP server (specs/0029) - both put untrusted web content
     # into context and record citeable URLs on the read-ledger.
     if any(t["name"].startswith("web_") or t.get("web") for t in tools):
@@ -209,6 +219,11 @@ def build_system_prompt(mode, tools, memory=None, todos=None, spec=None, granted
                  + listed + "\nTo look in one, pass its ABSOLUTE path to read_file / grep / "
                  "glob. If the user names one of these, review THAT directory — do not "
                  "default to the workspace.")
+        # specs/0030: distinguish a READ SOURCE from a WRITE DESTINATION. Gated so flag-off keeps the old
+        # text (byte-identical); on, it closes the read-source-treated-as-destination slip.
+        if config.WORKDIR_PROMPT:
+            note += (" These are READ SOURCES, not write destinations: when you copy or create FROM one, "
+                     "write the output into your WORKSPACE unless the user gives an explicit destination path.")
     # Skills (specs/0008): advertise the reusable workflows the model can invoke via run_skill —
     # only the ENTRY-POINT skills (an orchestrator's concern sub-skills stay internal).
     if any(t["name"] == "run_skill" for t in tools):

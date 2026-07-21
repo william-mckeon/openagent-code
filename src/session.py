@@ -66,7 +66,7 @@ def resume(session_id, workspace, permissions, verbose=False, interactive=False)
     # manifest - the disk artifact feeds context; the approval is per-task so a resumed unrelated turn isn't gated).
     spc = specstore.active_text(workspace) if config.SPEC_FIRST else ""
     agent = build_agent(traj, initial_working=working, pinned_plan=plan, memory=mem, todos=tdo, spec=spc,
-                        granted_dirs=permissions.extra_roots)
+                        granted_dirs=permissions.extra_roots, cwd=workspace)
     ctx = make_context(workspace, permissions, traj.session_id, depth=0,
                        verbose=verbose, interactive=interactive)
     ctx.plan = plan   # keep the loop pinning it going forward

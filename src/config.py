@@ -259,6 +259,13 @@ if CURATE_MODE not in ("flag", "exclude"):
 SITUATIONAL_CONTEXT = _as_bool(os.environ.get("CODE_SITUATIONAL_CONTEXT", "false"))
 SITUATIONAL_GIT = _as_bool(os.environ.get("CODE_SITUATIONAL_GIT", "false"))
 
+# Working-directory prompt (Phase 30 / specs/0030). Pin the ABSOLUTE workspace path in the DURABLE system
+# prompt (never compacted), and teach that a granted reference dir is a READ SOURCE while a copy/create
+# DESTINATION is the workspace. Fixes the log-observed slip where, after compaction, a "copy the .env" write
+# was proposed into the granted SOURCE tree instead of the working dir. OFF by default -> the workspace path
+# isn't rendered and the granted-dirs note keeps its old text (byte-identical).
+WORKDIR_PROMPT = _as_bool(os.environ.get("CODE_WORKDIR_PROMPT", "false"))
+
 # Edit-layer (Phase 13 / specs/0013). CODE_EDIT_FUZZY: a SAFE fuzzy fallback UNDER exact-match edit_file
 # - when the exact old_string isn't found, editmatch.resolve locates it (whitespace-insensitive, then
 # most-similar chunk) and applies ONLY a UNIQUE, above-threshold match; any ambiguity refuses, so
