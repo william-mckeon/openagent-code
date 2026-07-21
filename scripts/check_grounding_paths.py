@@ -104,8 +104,8 @@ def main():
     check("semantic OFF + flag ON: the phantom Dockerfile IS now flagged",
           grounding.problems("see `svc/Dockerfile`", off) != [])
 
-    check("config: CODE_VERIFY_GROUNDING_PATHS exists and defaults false",
-          hasattr(config, "VERIFY_GROUNDING_PATHS") and _saved["VERIFY_GROUNDING_PATHS"] is False)
+    check("config: CODE_VERIFY_GROUNDING_PATHS exists as a bool flag (hermetic - not asserting the .env value)",
+          hasattr(config, "VERIFY_GROUNDING_PATHS") and isinstance(_saved["VERIFY_GROUNDING_PATHS"], bool))
 
     for k, v in _saved.items():
         setattr(config, k, v)

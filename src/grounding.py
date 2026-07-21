@@ -137,13 +137,28 @@ def unverified_success_claim(final_text, verified):
 # "wrote the config". Past-tense/result verbs ONLY, so a present-tense description of what code DOES ("the
 # Dockerfile creates the image") is not a completion claim. Paired with a file/folder/dir reference (or a
 # quoted path) below so a bare "I saved you some time" in prose isn't caught.
-_MUTATION_DONE = re.compile(
-    r"\b(?:created|wrote|written|copied|moved|renamed|deleted|saved|generated|scaffolded)\b", re.I)
+_MUTATION_DONE = re.compile(   # past-tense agent-action verbs (NOT 'saved'/'generated' - too often adjectives)
+    r"\b(?:created|wrote|written|copied|moved|renamed|deleted|scaffolded)\b", re.I)
 _FILE_REF = re.compile(
     r"\b(?:files?|folders?|director(?:y|ies)|scripts?|modules?|packages?|repos?|repositor(?:y|ies)|"
     r"the\s+(?:working\s+)?directory)\b"
-    r"|[`'\"][^`'\"\n]*\.[A-Za-z0-9]{1,8}[`'\"]",   # a quoted path with an extension
+    r"|[`'\"][^`'\"\n\s]*\.[A-Za-z0-9]{1,8}[`'\"]",   # a quoted FILENAME (no spaces - a command like `python main.py` is NOT one)
     re.I)
+# NEGATION guard: an honest read-only answer says "No files were created, edited, or deleted" / "I did not
+# write anything" / "nothing was changed" - the OPPOSITE of a completion claim, and TRUE on an empty ledger.
+# A mutation verb inside a negated sentence must NOT flag (the false positive a live smoke test caught: a
+# correct read-only answer looped into ungrounded_completion). Err toward NOT flagging - a missed positive
+# claim is far cheaper than false-flagging every "I changed nothing".
+_MUT_NEGATED = re.compile(
+    r"\b(?:no|not|never|none|nothing|without|didn'?t|doesn'?t|don'?t|hasn'?t|haven'?t|hadn'?t|"
+    r"wasn'?t|weren'?t|isn'?t|aren'?t|cannot|can'?t)\b", re.I)
+# ATTRIBUTION guard: only fire on a real COMPLETION CLAIM the agent makes about ITSELF this run - either
+# FIRST-PERSON ("I copied ...", "we created ...") or a DIRECTIONAL result ("... copied TO the working
+# directory"). Descriptive prose about what code does ("prints all saved notes", "the file created on first
+# run") is neither, and must not flag - the brittle-NL-parsing failure a live smoke test caught.
+_MUT_FIRST_PERSON = re.compile(r"\b(?:I|we)\b", re.I)
+_MUT_DIRECTIONAL = re.compile(r"\b(?:to|into|onto|in|under|at)\s+(?:the\s+)?(?:working\s+)?"
+                              r"(?:director|workspace|repo|folder|cwd|root|here\b)", re.I)
 
 
 def unbacked_mutation_claim(final_text, mutations):
@@ -151,16 +166,22 @@ def unbacked_mutation_claim(final_text, mutations):
     moved/deleted a file or folder) when the mutation ledger is EMPTY - nothing was written/edited/deleted this
     run. Catches the false-completion class: 'Frontend folder copied to the working directory' emitted in
     propose-investigate with zero writes. Per-sentence, HEDGE-guarded (a future/conditional 'I will create',
-    'you can copy' is not a completed action) and paired with a file/folder/path reference (a bare completion
-    boast in prose is not caught). Returns [] the moment ANY real mutation happened - a partial apply is the
+    'you can copy'), NEGATION-guarded (an honest 'No files were created' / 'I did not write anything' is the
+    OPPOSITE of a claim and TRUE on an empty ledger), and paired with a file/folder/path reference (a bare
+    completion boast in prose is not caught). Returns [] the moment ANY real mutation happened - a partial apply is the
     manifest gate's job (per-item), so this never second-guesses a run that DID change files."""
     if not final_text or (mutations or {}):
         return []
     for sent in re.split(r"(?<=[.!?])\s+|\n+", final_text):
-        if _MUTATION_DONE.search(sent) and _FILE_REF.search(sent) and not _HEDGED.search(sent):
-            return ["you state you created/copied/wrote/changed a file or folder this run, but NOTHING was "
-                    "written, edited, or deleted this turn (the mutation ledger is empty) - actually make the "
-                    "change with write_file / edit_file / apply_patch, or say plainly that nothing changed."]
+        if not (_MUTATION_DONE.search(sent) and _FILE_REF.search(sent)):
+            continue
+        if _HEDGED.search(sent) or _MUT_NEGATED.search(sent):
+            continue   # future/conditional or negated - not a completed claim
+        if not (_MUT_FIRST_PERSON.search(sent) or _MUT_DIRECTIONAL.search(sent)):
+            continue   # descriptive prose about what code does, not the agent claiming IT did it
+        return ["you state you created/copied/wrote/changed a file or folder this run, but NOTHING was "
+                "written, edited, or deleted this turn (the mutation ledger is empty) - actually make the "
+                "change with write_file / edit_file / apply_patch, or say plainly that nothing changed."]
     return []
 
 

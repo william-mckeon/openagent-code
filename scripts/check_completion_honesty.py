@@ -133,6 +133,18 @@ def main():
           umc("The Dockerfile creates the image on build.", {}) == [])
     check("net: a completion boast with NO file/folder reference is not flagged",
           umc("I saved you some time.", {}) == [])
+    check("net: a NEGATED read-only statement is not flagged (regression: live-smoke-test false positive)",
+          umc("No files were created, edited, or deleted during this run.", {}) == []
+          and umc("I did not create any files.", {}) == []
+          and umc("Nothing was written to the folder.", {}) == []
+          and umc("The task completed without creating a file.", {}) == [])
+    check("net: DESCRIPTIVE prose (no first-person, no directional) is not flagged - the smoke-test class",
+          umc("Running `python main.py list` prints all saved notes.", {}) == []       # 'saved' + `python main.py`
+          and umc("The file created earlier is closed automatically.", {}) == []       # 'created'+'file', descriptive
+          and umc("The config copied at build time is cached.", {}) == [])
+    check("net: a real completion claim STILL flags (first-person OR directional survive the tightening)",
+          umc("I created `src/app.js` for the UI.", {}) != []                           # first-person
+          and umc("Frontend folder copied to the working directory as requested.", {}) != [])  # directional
 
     # =====================================================================================================
     # 2. problems() wiring + byte-identical flag-off

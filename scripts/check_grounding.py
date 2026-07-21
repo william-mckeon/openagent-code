@@ -37,7 +37,13 @@ def main():
     # Pin CODE_ENABLE_WEB OFF for the existing cases so they're byte-identical regardless of the local .env
     # (the web-source section below flips it on explicitly). specs/0024's web-citation branch is gated on it.
     _saved_web = config.ENABLE_WEB
+    # specs/0026 + 0027 add flag-gated nets; pin them OFF so these baseline cases are hermetic against a local
+    # .env that ENABLES them (each phase's own harness exercises the ON behavior). Without this, a .env with
+    # CODE_VERIFY_GROUNDING_PATHS=true makes the deterministic present-path check also fire in semantic mode.
+    _saved_gp, _saved_mc = config.VERIFY_GROUNDING_PATHS, config.VERIFY_MUTATION_CLAIMS
     config.ENABLE_WEB = False
+    config.VERIFY_GROUNDING_PATHS = False
+    config.VERIFY_MUTATION_CLAIMS = False
 
     # -- cited_paths: BROAD (verifier) vs STRICT (deterministic) --------------
     cp = grounding.cited_paths("See `docker/README.md` and `src/auth/init.sql`; `config` is not a path.")
@@ -254,6 +260,7 @@ def main():
           set(cf) == {"https://a.com/p"} and len(cf["https://a.com/p"]["content"]) == grounding._WEB_SRC_CAP)
 
     config.ENABLE_WEB = _saved_web
+    config.VERIFY_GROUNDING_PATHS, config.VERIFY_MUTATION_CLAIMS = _saved_gp, _saved_mc
     passed, total = sum(_results), len(_results)
     print(f"\nVERDICT: {passed}/{total} {'[OK]' if passed == total else '[FAIL]'}")
     return 0 if passed == total else 1

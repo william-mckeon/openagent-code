@@ -61,8 +61,8 @@ def main():
     check("flag OFF: the granted-dirs note keeps its old text (no destination clause)",
           "Reference directories you may READ" in g_off and "not write destinations" not in g_off)
 
-    check("config: CODE_WORKDIR_PROMPT exists and defaults false",
-          hasattr(config, "WORKDIR_PROMPT") and _saved["WORKDIR_PROMPT"] is False)
+    check("config: CODE_WORKDIR_PROMPT exists as a bool flag (hermetic - not asserting the local .env value)",
+          hasattr(config, "WORKDIR_PROMPT") and isinstance(_saved["WORKDIR_PROMPT"], bool))
 
     for k, v in _saved.items():
         setattr(config, k, v)
