@@ -183,6 +183,7 @@ Full reference in the README and `.env.example`. Contract-relevant values:
 | `CODE_WARMUP` | `true` | Reference — probe-until-warm before the first task (off for Bedrock) |
 | `CODE_WARMUP_BUDGET` | `120` | Reference — max seconds to wait for a cold worker to warm |
 | `CODE_COMPACT_AT_TOKENS` | `12000` | Reference — live-context compaction budget (0 = off) |
+| `CODE_MODEL_MAX_TOKENS` | `131072` | Reference — model HARD context window; sent context compacted under it (specs/0034) |
 | `CODE_MAX_SUBAGENT_DEPTH` | `1` | Reference — spawn_agent nesting cap (0 = off) |
 | `CODE_ENABLE_WEB` | `false` | Yes — master switch for web_fetch/web_search (off = no egress, tools hidden) |
 | `CODE_SEARCH_PROVIDER` | `generic` | Yes — `generic` \| `tavily` \| `searxng` (data-sovereign) \| `brave` \| `module:func` |

@@ -20,6 +20,7 @@ from .permissions import Permissions
 from .trajectory import Trajectory
 from .runtime import build_agent
 from .subagent import make_context
+from .context import sanitize_tail
 
 
 def find_session(session_id):
@@ -54,6 +55,11 @@ def resume(session_id, workspace, permissions, verbose=False, interactive=False)
     # turn is the system prompt, which the ContextManager owns separately.
     turns = [r["message"] for r in records if r.get("type") == "turn"]
     working = turns[1:] if turns and turns[0].get("role") == "system" else list(turns)
+    # specs/0034: snap the rehydrated tail to a clean tool-pairing boundary. The raw turn stream can end on a
+    # DANGLING assistant tool_call (a prior turn that died mid-flight logged the assistant-with-tool_calls but
+    # not its results; agent rollback trims only the LIVE view, never the file), which Bedrock rejects on the
+    # next step. (The oversized-history OVERFLOW is handled by the ContextManager's hard-cap compaction.)
+    working = sanitize_tail(working)
     plan = _restore_plan(records)
 
     traj = Trajectory.resume(path)

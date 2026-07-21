@@ -489,6 +489,21 @@ COMPACT_KEEP_RECENT = int(os.environ.get("CODE_COMPACT_KEEP_RECENT", "8"))
 # 0 disables the cap.
 MAX_MESSAGE_CHARS = int(os.environ.get("CODE_MAX_MESSAGE_CHARS", "48000"))
 
+# CODE_MODEL_MAX_TOKENS — the model's HARD context window (Phase 34 / specs/0034). Unlike CODE_COMPACT_AT_TOKENS
+# above (a SOFT compaction TRIGGER), this is the true ceiling the SENT context must never exceed. gpt-oss-120b
+# is 131072. Env-first with this hardcoded default (NOT a litellm lookup at import — keeps startup fast and
+# offline). Two internal budgets are DERIVED from it (not separate flags): the harness compacts UNDER
+# COMPACT_HARD_AT_TOKENS (window minus output + estimate headroom), and a single summarize() call never renders
+# more than SUMMARIZE_INPUT_MAX_TOKENS — so a resumed session's whole history is summarized in chunks instead of
+# overflowing the window in one shot. Headroom matters: estimate_tokens undercounts, and the window must also
+# hold the model's OUTPUT.
+try:
+    MODEL_MAX_TOKENS = max(8000, int(os.environ.get("CODE_MODEL_MAX_TOKENS", "131072")))
+except ValueError:
+    MODEL_MAX_TOKENS = 131072
+COMPACT_HARD_AT_TOKENS = max(8000, MODEL_MAX_TOKENS - 12000)      # ~120k for a 131k window (output/estimate headroom)
+SUMMARIZE_INPUT_MAX_TOKENS = max(8000, MODEL_MAX_TOKENS - 35000)  # ~96k (minus SUMMARIZE_PROMPT + output reserve)
+
 # CODE_MAX_SUBAGENT_DEPTH — how deep spawn_agent can nest (Phase 4).
 #   0 = subagents disabled, 1 = one level (top-level agent may spawn, children
 #   may not), 2 = children may spawn too, etc. Enforced at the spawn_agent tool.

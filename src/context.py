@@ -33,6 +33,69 @@ def estimate_tokens(messages):
     return sum(len(json.dumps(m, ensure_ascii=False)) for m in messages) // 4
 
 
+# -- bounded summarize (specs/0034): a single summarize call must never exceed the model window ------------
+# These are PURE (no model, no litellm) so model.py delegates to them and the harness tests them offline.
+
+def _msg_render_len(m):
+    return len(f"[{m.get('role')}] {m.get('content') or ''}") + 2
+
+
+def chunk_messages(messages, max_chars):
+    """Greedily group messages so each group's rendered length stays <= max_chars (specs/0034) - bounds the
+    input to one summarize call. A per-message cap (MAX_MESSAGE_CHARS) keeps any single message well under
+    max_chars, so no group ever holds a lone oversized message."""
+    chunks, cur, size = [], [], 0
+    for m in messages:
+        s = _msg_render_len(m)
+        if cur and size + s > max_chars:
+            chunks.append(cur)
+            cur, size = [], 0
+        cur.append(m)
+        size += s
+    if cur:
+        chunks.append(cur)
+    return chunks
+
+
+def chunk_text(text, max_chars):
+    """Split text into <= max_chars slices (for folding partial summaries)."""
+    return [text[i:i + max_chars] for i in range(0, len(text), max_chars)] or [""]
+
+
+def bounded_summary(messages, budget_chars, summarize_once, render):
+    """Map-reduce summarize that never hands `summarize_once` more than budget_chars (specs/0034) - so a
+    resumed session's whole history can be summarized without a single call overflowing the model window.
+    PURE: `summarize_once(text)->str` and `render(messages)->str` are injected, so this is unit-testable with
+    NO model. The FAST PATH (input already fits) calls summarize_once ONCE on the full render - byte-identical
+    to the old single-shot summarize."""
+    rendered = render(messages)
+    if len(rendered) <= budget_chars:
+        return summarize_once(rendered)
+    parts = [summarize_once(render(c)) for c in chunk_messages(messages, budget_chars)]
+    if len(parts) == 1:
+        return parts[0]
+    text = "\n\n".join(parts)
+    guard = 0
+    while len(text) > budget_chars and guard < 20:
+        guard += 1
+        text = "\n\n".join(summarize_once(t) for t in chunk_text(text, budget_chars))
+    return summarize_once(text)
+
+
+def sanitize_tail(working):
+    """Snap a rehydrated history to a clean tool-pairing boundary (specs/0034): drop a TRAILING assistant
+    message with tool_calls that has no following tool result (a prior turn that died mid-flight logged the
+    assistant-with-tool_calls but not its results; agent rollback trims only the LIVE view, never the file),
+    and a LEADING orphan tool result. Bedrock's Converse API rejects an unpaired tool_use / tool_result on the
+    next step. A strict no-op on an already-clean tail."""
+    w = list(working)
+    while w and w[-1].get("role") == "assistant" and w[-1].get("tool_calls"):
+        w.pop()
+    while w and w[0].get("role") == "tool":
+        w.pop(0)
+    return w
+
+
 class ContextManager:
     def __init__(self, system_prompt, model, trajectory,
                  compact_at_tokens=None, keep_recent=None, verbose=False,
@@ -41,6 +104,7 @@ class ContextManager:
         self.traj = trajectory
         self.compact_at = config.COMPACT_AT_TOKENS if compact_at_tokens is None else compact_at_tokens
         self.keep_recent = config.COMPACT_KEEP_RECENT if keep_recent is None else keep_recent
+        self.hard_cap = config.COMPACT_HARD_AT_TOKENS   # specs/0034: the SENT context must never exceed this
         self.verbose = verbose
 
         self.system = {"role": "system", "content": system_prompt}
@@ -228,7 +292,35 @@ class ContextManager:
         """The message list to send the model this step — compacting first if needed."""
         if self.compact_at and estimate_tokens(self._base() + self.working) > self.compact_at:
             self._compact()
+        # Hard model-window ceiling (specs/0034): the soft pass above can still leave the context over the
+        # model's TRUE window — the worst case is a resumed session's ENTIRE raw history, or a keep_recent
+        # tail that alone exceeds the budget. Guarantee the SENT context fits so a turn can never overflow.
+        # A NO-OP for a normal session already under the ceiling (byte-identical).
+        self._enforce_hard_cap()
         return self._base() + self.working
+
+    def _enforce_hard_cap(self):
+        """Compact/trim in a LOOP until the sent context is under the hard model-window ceiling (specs/0034).
+        When compaction can no longer shrink it (the summary isn't smaller, or the kept tail alone exceeds the
+        cap), fall back to dropping the OLDEST working message — so this always converges and the context
+        provably fits the window. Does nothing when already under the cap."""
+        if not self.hard_cap:
+            return
+        guard = 0
+        while self.working and estimate_tokens(self._base() + self.working) > self.hard_cap and guard < 500:
+            guard += 1
+            if self._compact():
+                continue                 # a summarization shrank it; re-measure
+            self._trim_oldest()          # no shrink possible -> drop the oldest message and retry
+
+    def _trim_oldest(self):
+        """Last-resort hard-cap trim (specs/0034): drop the OLDEST working message, then snap off a now-leading
+        orphan 'tool' result so the kept head never begins with a tool result the model would reject."""
+        if not self.working:
+            return
+        del self.working[0]
+        while self.working and self.working[0].get("role") == "tool":
+            del self.working[0]
 
     def _safe_cut(self):
         """Largest cut index such that working[cut:] starts at a clean group boundary.
@@ -249,7 +341,7 @@ class ContextManager:
     def _compact(self):
         cut = self._safe_cut()
         if cut <= 0:
-            return  # nothing safe to summarize yet
+            return False  # nothing safe to summarize yet (the hard-cap loop falls back to trimming)
         old, keep = self.working[:cut], self.working[cut:]
         before = estimate_tokens(self._base() + self.working)
 
@@ -263,16 +355,17 @@ class ContextManager:
 
         # Only apply if it actually SHRINKS the context. Summarizing a few small
         # messages can yield a summary longer than what it replaced — applying that
-        # would make things worse, so keep the raw turns instead. (Skipping the
-        # wasted summarize() attempt when the kept tail alone already exceeds the
-        # budget is a deeper tuning step — see ROADMAP Phase-4 follow-ups.)
+        # would make things worse, so keep the raw turns instead. When even this can't
+        # help (the kept tail alone exceeds the ceiling), _enforce_hard_cap (specs/0034)
+        # falls back to trimming the oldest message; return False to signal no progress.
         if after >= before:
             if self.verbose:
                 print(f"  [compact skipped] summary not smaller (~{before} -> ~{after})")
-            return
+            return False
 
         self.working = candidate
         self.traj.log_compaction(len(old), summary, before, after)
         log.info("compacted %d msgs  ~%d->%d tok", len(old), before, after)
         if self.verbose:
             print(f"  [compact] summarized {len(old)} msgs  ~{before}->{after} tok")
+        return True

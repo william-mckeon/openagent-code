@@ -98,10 +98,22 @@ class Model:
 
         Deliberately does NOT call log_model_call — a compaction summary is not an
         agent step. The ContextManager logs a `compaction` record instead. No tools.
+
+        specs/0034: the input is BOUNDED — a single litellm call never renders more than
+        config.SUMMARIZE_INPUT_MAX_TOKENS, so a huge `messages` block (a resumed session's whole history,
+        larger than the model window) is summarized in chunks and folded instead of overflowing in one shot.
+        The fast path (input already fits) is byte-identical to the old single-shot render + call.
         """
-        rendered = "\n\n".join(
-            f"[{m.get('role')}] {m.get('content') or ''}" for m in messages
-        )
+        from .context import bounded_summary   # lazy: keeps model.py free of a context import cycle
+        return bounded_summary(messages, config.SUMMARIZE_INPUT_MAX_TOKENS * 4,
+                               self._summarize_once, self._render)
+
+    @staticmethod
+    def _render(messages):
+        return "\n\n".join(f"[{m.get('role')}] {m.get('content') or ''}" for m in messages)
+
+    def _summarize_once(self, rendered):
+        """One bounded summarize call (input guaranteed under the window by bounded_summary)."""
         resp = litellm.completion(
             messages=[
                 {"role": "system", "content": SUMMARIZE_PROMPT},
