@@ -43,6 +43,12 @@ _EXT = re.compile(  # known code/doc extensions — the NARROW (deterministic) t
 _ANYEXT = re.compile(r"\.[A-Za-z0-9]{1,8}$")                       # any file-ish extension — BROAD tier
 _DOMAIN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]*\.[A-Za-z]{2,}$")  # github.com, example.io, ...
 _DATE = re.compile(r"^\d{1,4}([/-]\d{1,4}){2}$")                   # 2024/01/15
+# Well-known files with NO extension (specs/0027): a citation like `careeragent-frontend/docker/Dockerfile`
+# has a slash but no dotted extension, so the strict _EXT extractor drops it and the present-path existence
+# check never runs on it (a described-but-nonexistent Dockerfile slips through). Recognize these by basename.
+_NOEXT_FILES = re.compile(
+    r"(?:^|/)(?:Dockerfile|Containerfile|Makefile|GNUmakefile|Rakefile|Gemfile|Procfile|Justfile|"
+    r"Vagrantfile|Jenkinsfile|Caddyfile|Pipfile|Brewfile)$", re.I)
 # An http(s) URL the answer cites as a WEB source (specs/0024). Separate from _QUOTED (whose char class has
 # no ':' so it can't hold a URL) and from cited_paths (which deliberately SKIPS URLs) — a web citation is a
 # different kind of evidence, checked against the ctx.fetched read-ledger, not the workspace.
@@ -428,6 +434,40 @@ def challenge(problems):
               "- just the fixed, user-facing answer, keeping the rest as-is.")
 
 
+def _strict_paths(final_text, noext=False):
+    """cited_paths(strict=True), OPTIONALLY (specs/0027, noext=True) plus quoted tokens that are well-known
+    EXTENSION-LESS files (Dockerfile / Makefile / ...) the strict _EXT extractor drops. noext=False is the
+    plain strict set, so the default (flag-off) path is byte-identical."""
+    out = set(cited_paths(final_text, strict=True))
+    if not noext:
+        return out
+    for m in _QUOTED.finditer(final_text or ""):
+        raw = m.group(1)
+        if "://" in raw or raw.startswith("@") or raw.replace("\\", "/").strip().startswith("/"):
+            continue
+        p = _norm(raw)
+        if p and _NOEXT_FILES.search(p):
+            out.add(p)
+    return out
+
+
+def _present_path_problems(final_text, ctx, noext=False):
+    """DETERMINISTIC present-path existence check: each cited path (with a slash) must exist on disk or be a
+    real change target this run, else it's a phantom PRESENT-path citation. The semantic-off fallback used to
+    inline this; specs/0027 also runs it IN semantic mode (the Tier-2 verifier is fail-open on a phantom
+    present path). A bare basename is never hard-flagged (a subdir file we can't cheaply locate)."""
+    paths = _strict_paths(final_text, noext=noext)
+    if not paths:
+        return []
+    muts = getattr(ctx, "mutations", None) or {}
+    muts_ci = {os.path.normcase(k) for k in muts}
+    cwd = getattr(ctx, "cwd", "") or ""
+
+    def _exists(p):
+        return "/" not in p or (os.path.normcase(p) in muts_ci) or os.path.exists(os.path.join(cwd, p))
+    return deterministic_problems(paths, _exists)
+
+
 def problems(final_text, ctx):
     """Runtime entry (Feature B): the live-ctx adapter. Grounding checks ONLY the top-level, user-facing
     answer (ctx.depth == 0). A subagent's answer is intermediate and a Tier-2 verifier must never
@@ -466,20 +506,16 @@ def problems(final_text, ctx):
         paths = cited_paths(final_text, strict=False)   # BROAD: the verifier judges, so include dirs
         # The bounded cited+fetched web sources to hand the verifier (empty unless web is on and used).
         web_srcs = _cited_fetched(final_text, getattr(ctx, "fetched", None) or {}) if config.ENABLE_WEB else {}
+        # Phantom PRESENT-path (specs/0027): the Tier-2 verifier is fail-open on a cited path that doesn't
+        # exist (the described-but-never-written Dockerfile), so run the deterministic os.path existence
+        # check HERE too. Gated -> flag-off keeps the check semantic-off-only (byte-identical).
+        if config.VERIFY_GROUNDING_PATHS:
+            det += _present_path_problems(final_text, ctx, noext=True)
         # Spawn the verifier when the answer cites a path, makes an ABSENCE claim (which names its target
         # only in prose, so it cites no path), OR cites a fetched web source to check against.
         if paths or absence_claim(final_text) or web_srcs:
             return det + semantic_problems(final_text, paths, ctx.spawn, config.GROUNDING_EFFORT, fetched=web_srcs)
         return det
-    paths = cited_paths(final_text, strict=True)         # NARROW: a hard existence check must not misfire
-    if not paths:
-        return det
-    muts = getattr(ctx, "mutations", None) or {}
-    muts_ci = {os.path.normcase(k) for k in muts}   # case-insensitive on Windows, exact on POSIX
-
-    def _exists(p):
-        # A bare basename ('config.py') is often a subdir file (src/config.py) we can't cheaply locate,
-        # so NEVER hard-flag it — only a SPECIFIC path (with a slash) missing from disk AND the mutation
-        # ledger is a clear phantom (mirrors the offline curator's grounded_by basename leniency).
-        return "/" not in p or (os.path.normcase(p) in muts_ci) or os.path.exists(os.path.join(ctx.cwd, p))
-    return det + deterministic_problems(paths, _exists)
+    # Semantic OFF (or no spawn): the deterministic present-path existence check is the only path check.
+    # noext rides the flag, so flag-off reproduces the old NARROW strict-only behavior exactly.
+    return det + _present_path_problems(final_text, ctx, noext=config.VERIFY_GROUNDING_PATHS)

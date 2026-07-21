@@ -93,7 +93,12 @@ def run_subagent(task, parent_ctx, effort=None, label=None):
     if parent_ctx.verbose:
         print(f"  [subagent depth={child_depth}] {(label or task[:70])[:80]}")
 
-    agent = build_agent(traj, effort=effort)
+    # specs/0027: advertise the granted reference dirs (--add-dir / request_dir) to the child's prompt so a
+    # grounding verifier / reviewer can read a cited granted-dir file by ABSOLUTE path (its inherited fence
+    # already permits it). run_subagent was the sole build_agent caller omitting granted_dirs. Gated on
+    # CODE_VERIFY_GROUNDING_PATHS so flag-off is byte-identical (the child's prompt is unchanged).
+    granted = getattr(parent_ctx.permissions, "extra_roots", None) if config.VERIFY_GROUNDING_PATHS else None
+    agent = build_agent(traj, effort=effort, granted_dirs=granted)
     try:
         result = agent.run(task, child_ctx)
         traj.end(_classify(result, traj.tool_calls), result.final, terminated=result.terminated)

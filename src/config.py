@@ -231,6 +231,15 @@ VERIFY_GROUNDING_SEMANTIC = _as_bool(os.environ.get("CODE_VERIFY_GROUNDING_SEMAN
 # high (calibrate with scripts/calibrate_grounding.py). Empty = inherit the global; else low|medium|high.
 _g_effort = os.environ.get("CODE_GROUNDING_EFFORT", "").strip().lower()
 GROUNDING_EFFORT = _g_effort if _g_effort in _EFFORTS else ""
+# Grounding path accuracy (Phase 27 / specs/0027). Two default-OFF improvements to how cited PATHS are
+# checked: (1) the deterministic present-path existence check ALSO runs in semantic mode (the Tier-2
+# verifier is fail-open and waves through a phantom PRESENT-path citation - a described file that doesn't
+# exist, e.g. a Dockerfile the answer detailed but never wrote); (2) extension-less well-known filenames
+# (Dockerfile / Makefile / ...) are recognized by the strict extractor so they get existence-checked; and
+# the grounding VERIFIER subagent is told the granted reference dirs so it can read a cited granted-dir file
+# by absolute path. OFF -> byte-identical (the existence check stays semantic-off-only, no extra names,
+# the verifier isn't handed granted dirs).
+VERIFY_GROUNDING_PATHS = _as_bool(os.environ.get("CODE_VERIFY_GROUNDING_PATHS", "false"))
 
 # Corpus curation (Phase 11 / specs/0011). An OFFLINE batch pass (train/curate.py) over captured
 # trajectories that flags PHANTOM CITATIONS — a closing answer referencing a file the run never opened.
