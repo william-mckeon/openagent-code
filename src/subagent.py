@@ -82,6 +82,7 @@ def run_subagent(task, parent_ctx, effort=None, label=None):
         traj_dir, task, config.MODEL, parent_ctx.cwd,
         parent_session_id=parent_ctx.session_id,
         depth=child_depth,   # tool_schemas defaults to the active toolset
+        safety=config.safety_fingerprint(parent_ctx.permissions),   # specs/0033: same guards as the parent
     )
     # Children are ALWAYS non-interactive, even from a REPL: a spawned worker reviewing one
     # folder must never prompt the human (ask_user degrades to "no human - proceed"). Inheriting

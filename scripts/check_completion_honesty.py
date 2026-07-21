@@ -65,7 +65,7 @@ class _FakeModel:
 
 # -- grounding-record builders (mirror check_propose) ------------------------------------------------------
 def _ss():
-    return {"type": "session_start", "session_id": "s", "schema_version": "0.12.0", "tool_schemas": []}
+    return {"type": "session_start", "session_id": "s", "schema_version": "0.13.0", "tool_schemas": []}
 
 
 def _user(t):
@@ -200,7 +200,7 @@ def main():
     check("log_manifest: applied=None -> the field is ABSENT (byte-identical)", "applied" not in cap.records[-1])
     Trajectory.log_manifest(cap, [{"action": "add", "path": "a.py"}], True, mode="propose", applied=False)
     check("log_manifest: applied=False -> the field is written", cap.records[-1].get("applied") is False)
-    check("schema: SCHEMA_VERSION bumped to 0.12.0", Trajectory.SCHEMA_VERSION == "0.12.0")
+    check("schema: SCHEMA_VERSION bumped to 0.13.0", Trajectory.SCHEMA_VERSION == "0.13.0")
 
     # =====================================================================================================
     # 6. corpus: an approved-but-partially-applied manifest is dropped; a legacy/full one is kept

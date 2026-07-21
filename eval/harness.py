@@ -54,11 +54,13 @@ def run_task(task_path, traj_dir=EVAL_TRAJ_DIR):
             with open(fp, "w", encoding="utf-8") as f:
                 f.write(content)
 
-        # Trajectory persists outside the sandbox so the batch survives.
-        traj = Trajectory(traj_dir, spec["prompt"], config.MODEL, sandbox)
         # Force bypass: eval runs headless and must auto-approve to exercise the agent.
+        perms = Permissions.from_config(mode_override="bypass")
+        # Trajectory persists outside the sandbox so the batch survives.
+        traj = Trajectory(traj_dir, spec["prompt"], config.MODEL, sandbox,
+                          safety=config.safety_fingerprint(perms))   # specs/0033: the eval run's active guards
         # traj_dir keeps any spawned child (e.g. a grounding verifier) under the eval firewall.
-        ctx = make_context(sandbox, Permissions.from_config(mode_override="bypass"),
+        ctx = make_context(sandbox, perms,
                            traj.session_id, depth=0, verbose=False, traj_dir=traj_dir)
         agent = build_agent(traj)
 
@@ -111,9 +113,11 @@ def run_agentic_task(task_path):
             with open(fp, "w", encoding="utf-8") as f:
                 f.write(content)
 
-        traj = Trajectory(EVAL_TRAJ_DIR, spec["prompt"], config.MODEL, sandbox)
+        perms = Permissions.from_config(mode_override="bypass")
+        traj = Trajectory(EVAL_TRAJ_DIR, spec["prompt"], config.MODEL, sandbox,
+                          safety=config.safety_fingerprint(perms))   # specs/0033
         # traj_dir keeps any spawned child (e.g. the grounding verifier) under the eval firewall.
-        ctx = make_context(sandbox, Permissions.from_config(mode_override="bypass"),
+        ctx = make_context(sandbox, perms,
                            traj.session_id, depth=0, verbose=False, traj_dir=EVAL_TRAJ_DIR)
         result = build_agent(traj).run(spec["prompt"], ctx)
         # Honor the completion (Phase 6) and grounding (Phase 10) gates via the shared mapping: a run

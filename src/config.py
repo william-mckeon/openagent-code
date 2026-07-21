@@ -555,6 +555,55 @@ def web_grounding_active():
     (byte-identical)."""
     return ENABLE_WEB or MCP_WEB_ACTIVE
 
+
+def safety_fingerprint(perms=None):
+    """A snapshot of the SAFETY + VERIFICATION config active when a run STARTED (Phase 33 / specs/0033),
+    recorded in the trajectory's session_start so a clean guardian-ON run is never indistinguishable from a
+    guardian-OFF one. A human-READABLE dict of flag -> value (not an opaque hash), so it directly answers
+    "which guards were on". Reads EXISTING flags only - no new CODE_* var.
+
+    `perms` (a Permissions) supplies the EFFECTIVE permission mode + fence width, which the config globals
+    alone can't: Permissions.from_config resolves --mode / --add-dir ONTO the Permissions object and never
+    writes back to config, so a `--mode acceptEdits` run leaves config.resolved_permission_mode() showing
+    'bypass'. So permission_mode/extra_roots come from perms; everything else from module globals + the rule
+    counts. Captured at session_start time -> it observes runtime-mutated flags (PROPOSE, MCP_WEB_ACTIVE) too.
+
+    Snapshot scope (specs/0033 non-goal): this is the LAUNCH-time config. A --resume, or a mid-session REPL
+    /mode or /add-dir, does NOT re-stamp it - a follow-up would add a resume/mode-change fingerprint."""
+    return {
+        # permission / fence gate - counts come from the EFFECTIVE Permissions object (perms.deny/ask/allow),
+        # not a re-read of the file, so --mode / --add-dir and any programmatic rules are reflected.
+        "permission_mode": getattr(perms, "mode", None) or resolved_permission_mode(),
+        "permission_rules": {k: len(getattr(perms, k, None) or []) for k in ("deny", "ask", "allow")},
+        "extra_roots": len(getattr(perms, "extra_roots", None) or []),
+        "execpolicy": EXECPOLICY,
+        "sandbox": SANDBOX,
+        "guardian": GUARDIAN,
+        "guardian_max_destructive": GUARDIAN_MAX_DESTRUCTIVE,
+        "hooks": HOOKS,
+        "hooks_config": bool(HOOKS_CONFIG and os.path.isfile(HOOKS_CONFIG)),
+        # verification / done-honesty gates (the declared-done family, specs/0032)
+        "verify_completion": VERIFY_COMPLETION,
+        "verify_grounding": VERIFY_GROUNDING,
+        "verify_grounding_semantic": VERIFY_GROUNDING_SEMANTIC,
+        "verify_grounding_paths": VERIFY_GROUNDING_PATHS,
+        "verify_touched": VERIFY_TOUCHED,
+        "verify_manifest": VERIFY_MANIFEST,
+        "verify_mutation_claims": VERIFY_MUTATION_CLAIMS,
+        # plan / spec discipline
+        "propose": PROPOSE,
+        "spec_first": SPEC_FIRST,
+        "goal_loop": GOAL_LOOP,
+        # behavioral policy
+        "adaptive_effort": ADAPTIVE_EFFORT,
+        "effort_policy": EFFORT_POLICY,
+        # external reach / untrusted-content boundary
+        "enable_web": ENABLE_WEB,
+        "mcp_web_active": MCP_WEB_ACTIVE,
+        "web_grounding_active": web_grounding_active(),
+        "workdir_prompt": WORKDIR_PROMPT,
+    }
+
 # -----------------------------------------------------------------------------
 # Cross-session memory (Phase 4 #7) — see specs/0002-memory.md.
 #

@@ -150,7 +150,7 @@ One session == one JSONL file at `CODE_TRAJECTORY_DIR/<session_id>.jsonl`
 
 | `type` | Emitted | Key fields |
 |---|---|---|
-| `session_start` | once, first | `schema_version`, `session_id`, `task`, `model`, `cwd`, `tool_schemas` (added in 0.2.0), `parent_session_id` + `depth` (links subagent runs; added in 0.4.0) |
+| `session_start` | once, first | `schema_version`, `session_id`, `task`, `model`, `cwd`, `tool_schemas` (added in 0.2.0), `parent_session_id` + `depth` (links subagent runs; added in 0.4.0), `safety` (which safety/verification guards were active at launch; added in 0.13.0, specs/0033) |
 | `session_resume` | on each resume | `session_id`, `ts` — marks where a stopped session was reopened (added in 0.5.0) |
 | `turn` | per message added | `message` — the raw message, **never compacted**. The full history is the `turn` stream (added in 0.3.0) |
 | `model_call` | per model step | `request.messages` (the **as-sent** view — possibly compacted), `request.as_sent`, `response.content/reasoning/tool_calls`, `usage`, `latency_ms` |

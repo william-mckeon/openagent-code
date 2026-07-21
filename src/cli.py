@@ -137,7 +137,8 @@ def _parse_flags(argv):
 def _one_shot(task, perms):
     """Autonomous single-task run: one agent loop, mandated verify, honest outcome."""
     workspace = config.WORKSPACE
-    traj = Trajectory(config.trajectory_dir(), task, config.MODEL, workspace)
+    traj = Trajectory(config.trajectory_dir(), task, config.MODEL, workspace,
+                      safety=config.safety_fingerprint(perms))   # specs/0033: which guards were on this run
     logsetup.configure(traj.session_id)
     ctx = make_context(workspace, perms, traj.session_id,
                        depth=0, verbose=config.VERBOSE, interactive=False)
@@ -304,7 +305,8 @@ def _run_session(traj, agent, ctx):
 def _repl(perms):
     """Fresh interactive session."""
     workspace = config.WORKSPACE
-    traj = Trajectory(config.trajectory_dir(), "(interactive session)", config.MODEL, workspace)
+    traj = Trajectory(config.trajectory_dir(), "(interactive session)", config.MODEL, workspace,
+                      safety=config.safety_fingerprint(perms))   # specs/0033: launch-time safety snapshot
     logsetup.configure(traj.session_id)
     ctx = make_context(workspace, perms, traj.session_id,
                        depth=0, verbose=config.VERBOSE, interactive=True)

@@ -29,6 +29,13 @@ def _ts():
 
 
 class Trajectory:
+    # 0.13.0: safety-config provenance (Phase 33 / specs/0033). session_start gains an OPTIONAL `safety` block -
+    #        a human-readable snapshot of which safety/verification guards were ACTIVE at launch (permission
+    #        mode/rules/fence, guardian/sandbox/execpolicy/hooks, the verify family, propose/spec/goal, web/MCP
+    #        reach) - so a clean guardian-ON run is never indistinguishable from a guardian-OFF one. Written
+    #        only when the construction site supplies it (it holds the Permissions); ABSENT on legacy/test
+    #        records, keeping those byte-identical. It is a LAUNCH-time snapshot (a --resume or a mid-session
+    #        /mode / /add-dir does not re-stamp it).
     # 0.12.0: completion & manifest honesty (Phase 26 / specs/0026). The `manifest` record gains an OPTIONAL
     #        `applied` field - whether every APPROVED item actually landed in the mutation ledger - written
     #        only when CODE_VERIFY_MANIFEST is on and the plan was approved. A partial apply (applied=False)
@@ -69,7 +76,7 @@ class Trajectory:
     # 0.6.0: `permission` record per gated tool call (Phase 4 #6) — the decision
     #        (allow/ask/deny + which rule/mode decided it), captured before the call.
     # Older data stays usable — the converter falls back to as-sent / reattachment.
-    SCHEMA_VERSION = "0.12.0"
+    SCHEMA_VERSION = "0.13.0"
 
     @classmethod
     def resume(cls, path):
@@ -94,7 +101,7 @@ class Trajectory:
         return self
 
     def __init__(self, traj_dir, task, model, cwd, tool_schemas=None,
-                 parent_session_id=None, depth=0):
+                 parent_session_id=None, depth=0, safety=None):
         os.makedirs(traj_dir, exist_ok=True)
         self.session_id = uuid.uuid4().hex[:12]
         self.path = os.path.join(traj_dir, f"{self.session_id}.jsonl")
@@ -105,7 +112,7 @@ class Trajectory:
         # Default to the ACTIVE toolset (base + web + MCP) so EVERY trajectory is
         # self-contained and records exactly what was offered this run.
         self.tool_schemas = tool_schemas if tool_schemas is not None else active_schemas()
-        self._write({
+        rec = {
             "type": "session_start",
             "schema_version": self.SCHEMA_VERSION,
             "session_id": self.session_id,
@@ -116,7 +123,13 @@ class Trajectory:
             "tool_schemas": self.tool_schemas,
             "parent_session_id": parent_session_id,   # None for a top-level run
             "depth": depth,                            # 0 top-level, 1+ subagent
-        })
+        }
+        # specs/0033: the safety/verification config fingerprint (which guards were on at launch), written
+        # ONLY when the construction site supplies it (it holds the Permissions -> config.safety_fingerprint).
+        # Omitted when None, so a legacy / test construction stays byte-identical and old trajectories convert.
+        if safety is not None:
+            rec["safety"] = safety
+        self._write(rec)
 
     def _write(self, rec):
         self.f.write(json.dumps(rec, ensure_ascii=False) + "\n")
