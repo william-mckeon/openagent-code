@@ -146,6 +146,22 @@ def main():
     check("write_spec done: one acceptance item still outstanding",
           len(specstore.outstanding(ca.spec["acceptance"])) == 1)
 
+    # -- amendment (specs/0031): a re-propose after a DECLINE amends in place, not a new number -----------
+    camd = make_ctx(True, answer="n")
+    tools_mod.write_spec({"title": "Feature A", "goal": "g", "acceptance": ["one"]}, camd)
+    n1 = camd.spec["number"]
+    tools_mod.write_spec({"title": "Feature A revised", "goal": "g2", "acceptance": ["one", "two"]}, camd)
+    check("re-propose after a DECLINE AMENDS the same spec (reuses the number + revises acceptance)",
+          camd.spec["number"] == n1 and len(camd.spec["acceptance"]) == 2)
+    check("amendment does NOT mint a second spec file (number is identity)",
+          len([f for f in os.listdir(specstore.specs_dir(camd.cwd)) if f.endswith(".md")]) == 1)
+    capp = make_ctx(True, answer="y")
+    tools_mod.write_spec({"title": "Feat X", "goal": "g", "acceptance": ["a"]}, capp)
+    n_appr = capp.spec["number"]
+    tools_mod.write_spec({"title": "Feat Y", "goal": "g", "acceptance": ["b"]}, capp)
+    check("a re-propose after an APPROVED spec mints a NEW number (a genuinely new spec, not an amendment)",
+          capp.spec["number"] == n_appr + 1)
+
     # -- the acceptance gate logic (agent._unmet_acceptance) ---------------------------------------------
     class _G:
         pass

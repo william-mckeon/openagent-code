@@ -275,7 +275,9 @@ def build_system_prompt(mode, tools, memory=None, todos=None, spec=None, granted
                  "(the concrete items that define DONE), and Non-goals. The user approves it ONCE; then you "
                  "implement AGAINST it and mark each acceptance item with write_spec(action='done', item=N) "
                  "as you satisfy it. You CANNOT report the task done until every acceptance item is met - so "
-                 "make the acceptance items specific and checkable. For a trivial change, skip the spec.")
+                 "make the acceptance items specific and checkable. If the user DECLINES or asks to change "
+                 "the spec, fold their feedback in and call write_spec(action='propose') AGAIN - it amends "
+                 "the SAME spec; don't abandon it and act ad hoc. For a trivial change, skip the spec.")
 
     # Cross-session memory (Phase 4 #7): prior-session notes about THIS repo. Lands in
     # the system prompt, which is logged as the first raw turn -> self-containment holds.

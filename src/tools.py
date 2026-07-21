@@ -1209,6 +1209,15 @@ def write_spec(args, ctx):
         return ToolResult(False, "every acceptance item must be a non-empty string.")
     non_goals = [str(n).strip() for n in (args.get("non_goals") or []) if str(n).strip()]
     spec = {"title": title, "goal": goal, "acceptance": acceptance, "non_goals": non_goals, "approved": False}
+    # Amendment (specs/0031): a re-propose after a DECLINE AMENDS the same spec in place - carry the declined
+    # draft's number (and slug: number = identity, slug = derived once) so specstore.save rewrites its file
+    # instead of minting a NEW number (0002). A brand-new spec (no prior draft this task, or the prior one was
+    # already APPROVED/built) mints a fresh number as before.
+    prior = getattr(ctx, "spec", None)
+    if prior and not prior.get("approved") and prior.get("number"):
+        spec["number"] = prior["number"]
+        if prior.get("slug"):
+            spec["slug"] = prior["slug"]
     try:
         spec["path"] = specstore.save(ctx.cwd, spec)   # persist FIRST - a declined draft survives for review
     except Exception as e:  # noqa: BLE001 - a write failure must not crash the tool
@@ -1223,8 +1232,11 @@ def write_spec(args, ctx):
             return ToolResult(True, f"Spec approved ({spec['path']}). Build against it now and mark each "
                                     "acceptance item with write_spec(action='done', item=N) as you meet it - "
                                     "you cannot report the task done until every item is met.")
-        return ToolResult(False, "The user did NOT approve this spec. Do not start implementing. Revise the "
-                                 "goal/acceptance and propose again, or ask what they'd change.")
+        return ToolResult(False, "The user did NOT approve this spec. Do NOT start implementing. If they told "
+                                 "you what to change, FOLD that into the spec and call write_spec(action="
+                                 "'propose') again - it AMENDS this same spec (same number) with your "
+                                 "revision, not a new one. Otherwise ask what they'd change. Never proceed "
+                                 "without an approved spec.")
     return ToolResult(False, "No human is present to approve this spec, so implementation should not begin. "
                              f"The draft was written to {spec['path']} for review. Re-run interactively to approve it.")
 
