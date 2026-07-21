@@ -528,9 +528,10 @@ def problems(final_text, ctx):
     # model that asserts success from reading code instead of running the check). Model-free, so it runs
     # alongside the semantic verifier — which mis-clears it, since "the tests pass" cites no file.
     det += unverified_success_claim(final_text, bool(getattr(ctx, "_verified_ok", False)))
-    # Web citations (specs/0024): a cited URL the run never fetched is a phantom web source. Gated on
-    # config.ENABLE_WEB so a web-off run is byte-identical (ctx.fetched is empty and would flag every URL).
-    if config.ENABLE_WEB:
+    # Web citations (specs/0024): a cited URL the run never put on the read-ledger is a phantom web source.
+    # Gated on web_grounding_active() (native CODE_ENABLE_WEB OR a web-marked MCP server, specs/0029) so a
+    # web-off run is byte-identical (ctx.fetched is empty and would flag every URL).
+    if config.web_grounding_active():
         det += web_citation_problems(final_text, getattr(ctx, "fetched", None) or {})
     # Unbacked mutation claim (specs/0026): a "done, I copied/created X" with an EMPTY mutation ledger.
     # Model-free, gated on its own flag so a flag-off run is byte-identical (the net never runs).
@@ -539,7 +540,7 @@ def problems(final_text, ctx):
     if config.VERIFY_GROUNDING_SEMANTIC and getattr(ctx, "spawn", None) is not None:
         paths = cited_paths(final_text, strict=False)   # BROAD: the verifier judges, so include dirs
         # The bounded cited+fetched web sources to hand the verifier (empty unless web is on and used).
-        web_srcs = _cited_fetched(final_text, getattr(ctx, "fetched", None) or {}) if config.ENABLE_WEB else {}
+        web_srcs = _cited_fetched(final_text, getattr(ctx, "fetched", None) or {}) if config.web_grounding_active() else {}
         # Phantom PRESENT-path (specs/0027): the Tier-2 verifier is fail-open on a cited path that doesn't
         # exist (the described-but-never-written Dockerfile), so run the deterministic os.path existence
         # check HERE too. Gated -> flag-off keeps the check semantic-off-only (byte-identical).

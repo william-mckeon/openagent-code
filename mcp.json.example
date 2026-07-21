@@ -1,5 +1,5 @@
 {
-  "_comment": "Copy to mcp.json and point CODE_MCP_CONFIG at it. Each server is launched over stdio; its tools appear to the agent as mcp__<server>__<tool>. The server's runtime (node/npx, python, ...) must be installed wherever openagent-code runs — the default Docker image has only python + git, so npx-based servers need a custom image or a local (non-Docker) run.",
+  "_comment": "Copy to mcp.json and point CODE_MCP_CONFIG at it. Each server is launched over stdio; its tools appear to the agent as mcp__<server>__<tool>. The server's runtime (node/npx, python, ...) must be installed wherever openagent-code runs - the default Docker image has only python + git, so npx-based servers (filesystem, tavily) need a custom image or a local (non-Docker) run. A server marked \"web\": true (specs/0029) has its tool output routed through the SAME untrusted-content fence + grounding read-ledger as web_fetch/web_search - so external web content it returns can't inject and a URL it surfaces grounds a citation. Mark ONLY servers that return third-party web content (Tavily); leave git/filesystem unmarked.",
   "mcpServers": {
     "git": {
       "command": "python",
@@ -8,6 +8,12 @@
     "filesystem": {
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-filesystem", "/workspace"]
+    },
+    "tavily": {
+      "command": "npx",
+      "args": ["-y", "tavily-mcp@0.2.21"],
+      "env": { "TAVILY_API_KEY": "tvly-YOUR_API_KEY" },
+      "web": true
     }
   }
 }

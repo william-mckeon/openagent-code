@@ -12,6 +12,9 @@
 *.pem
 *.key
 secrets/
+# Runtime MCP server config (specs/0029): a copy of mcp.json.example may carry a provider key
+# (e.g. TAVILY_API_KEY). The tracked template is mcp.json.example; the real mcp.json is not committed.
+mcp.json
 
 
 # --- Captured training data ------------------------------------------------

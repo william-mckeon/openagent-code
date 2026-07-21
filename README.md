@@ -238,6 +238,13 @@ by editing `.env` only. `.gitignore` keeps `.env` and captured trajectories out
 of git by default — but trajectories can contain source from the repos you work
 on, so treat `trajectories/` and `train/` data with the same care as secrets.
 
+**Web search** is the same choice at the tool layer. `CODE_SEARCH_PROVIDER=searxng`
+against a self-hosted SearXNG is the data-sovereign path — the query leaves only
+your infra. `tavily` is the convenience path (hosted, a synthesized answer + ranked
+sources) at the cost of hosted egress; Tavily's MCP server (`mcp.json.example`, marked
+`"web": true`) adds `extract`/`crawl`/`research` on top, routed through the same
+untrusted-content fence + grounding ledger as the native tools (specs/0029).
+
 ---
 
 ## Status & honest gaps

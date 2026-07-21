@@ -170,7 +170,9 @@ def json_tools_protocol(tools):
 def build_system_prompt(mode, tools, memory=None, todos=None, spec=None, granted_dirs=None):
     suffix = json_tools_protocol(tools) if mode == "json" else native_tools_note(tools)
     note = ""
-    if any(t["name"].startswith("web_") for t in tools):
+    # Fire for native web_ tools OR a web-marked MCP server (specs/0029) - both put untrusted web content
+    # into context and record citeable URLs on the read-ledger.
+    if any(t["name"].startswith("web_") or t.get("web") for t in tools):
         note = ("\n\nWEB: web_fetch / web_search send data OFF this machine - read local code first; use "
                 "them only when you genuinely need external information. web_search returns a numbered list "
                 "of results; web_fetch opens one URL for its full text. CITE the URL for any fact you take "

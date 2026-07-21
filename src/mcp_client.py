@@ -54,27 +54,47 @@ def _call_sync(coro):
     return asyncio.run_coroutine_threadsafe(coro, _LOOP).result()
 
 
-def _wrap(server, session, tool):
-    """Turn a discovered MCP tool into one of our tool-dicts."""
+def _result_to_toolresult(result, is_web, ctx, args):
+    """Turn a raw MCP call result into a ToolResult. For a WEB-marked server (specs/0029) the output is routed
+    through the SAME choke point native web tools use: fenced as untrusted external content AND its URLs
+    recorded on the read-ledger - so MCP web content can't inject and a cited MCP URL grounds. An error result
+    is NEVER fenced. A non-web server is byte-identical to before. Order mirrors web_fetch: truncate the body,
+    record the RAW text, THEN wrap (so the closing fence is never sliced)."""
     from .tools import ToolResult
+    parts = [getattr(c, "text", None) or str(c) for c in (getattr(result, "content", None) or [])]
+    text = "\n".join(p for p in parts if p) or "(no content)"
+    ok = not getattr(result, "isError", False)
+    body = text[:8000]
+    if is_web and ok:
+        from .tools import _wrap_external, record_external
+        record_external(ctx, body, args)
+        return ToolResult(True, _wrap_external(body))
+    return ToolResult(ok, body)
+
+
+def _wrap(server, session, tool, is_web=False):
+    """Turn a discovered MCP tool into one of our tool-dicts. A WEB-marked server's output is fenced +
+    ledger-recorded (specs/0029) and the dict carries `web: True`; a non-web server is byte-identical."""
     full_name = f"mcp__{server}__{tool.name}"
     schema = tool.inputSchema or {"type": "object", "properties": {}}
 
     def _fn(args, ctx):
+        from .tools import ToolResult
         try:
             result = _call_sync(session.call_tool(tool.name, args))
         except Exception as e:
             return ToolResult(False, f"mcp error: {type(e).__name__}: {e}")
-        parts = [getattr(c, "text", None) or str(c) for c in (getattr(result, "content", None) or [])]
-        text = "\n".join(p for p in parts if p) or "(no content)"
-        return ToolResult(not getattr(result, "isError", False), text[:8000])
+        return _result_to_toolresult(result, is_web, ctx, args)
 
-    return {
+    d = {
         "name": full_name,
         "fn": _fn,
         "description": (tool.description or f"MCP tool {tool.name} from {server}")[:400],
         "parameters": schema,
     }
+    if is_web:
+        d["web"] = True   # prompts.py teaches the untrusted-web note; connect() flips config.MCP_WEB_ACTIVE
+    return d
 
 
 def connect():
@@ -109,13 +129,17 @@ def connect():
                 session = await stack.enter_async_context(ClientSession(read, write))
                 await session.initialize()
                 listed = await session.list_tools()
+                is_web = bool(spec.get("web"))   # specs/0029: route this server's output through the web fence + ledger
                 for t in listed.tools:
-                    tools.append(_wrap(name, session, t))
+                    tools.append(_wrap(name, session, t, is_web))
             except Exception as e:
                 print(f"WARNING: MCP server {name!r} failed to start: {type(e).__name__}: {e}")
         return stack, tools
 
     _STACK, _TOOLS = _call_sync(_setup())
+    # specs/0029: flip the runtime web flag so the grounding gate (web_grounding_active) treats a cited
+    # MCP-surfaced URL like a native one, even with CODE_ENABLE_WEB off.
+    config.MCP_WEB_ACTIVE = any(t.get("web") for t in _TOOLS)
     return len(_TOOLS)
 
 
@@ -129,4 +153,5 @@ def disconnect():
             pass
     if _LOOP is not None:
         _LOOP.call_soon_threadsafe(_LOOP.stop)
+    config.MCP_WEB_ACTIVE = False   # specs/0029: no web-marked MCP server is connected anymore
     _TOOLS, _STACK, _LOOP, _THREAD = [], None, None, None

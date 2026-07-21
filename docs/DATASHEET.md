@@ -102,8 +102,8 @@ docker run --rm --env-file .env -v /path/to/repo:/workspace \
 | `request_dir` | no | Ask the user to grant READ access to a directory outside the workspace. The agent cannot self-grant — on approval the dir joins the live fence; headless/denied → refused |
 | `remember` | no | Save a durable note to project memory (reloaded next session). **OPT-IN** (`CODE_MEMORY`); non-mutating (the agent's notebook), writes inside the fence |
 | `web_fetch` | yes | Fetch a URL → text. **OPT-IN** (`CODE_ENABLE_WEB`); sends the URL off-machine. Only in the toolset when enabled |
-| `web_search` | yes | Search via a BYO endpoint (`CODE_SEARCH_URL`). **OPT-IN**; sends the query off-machine |
-| `mcp__<server>__<tool>` | varies | Dynamic — any tool from an MCP server in `CODE_MCP_CONFIG` (stdio). Discovered per run |
+| `web_search` | yes | Search via a pluggable provider (`CODE_SEARCH_PROVIDER`: generic/tavily/searxng/brave/module:func). **OPT-IN**; sends the query off-machine |
+| `mcp__<server>__<tool>` | varies | Dynamic — any tool from an MCP server in `CODE_MCP_CONFIG` (stdio). Discovered per run. A server marked `"web": true` (specs/0029) is fenced + grounding-ledgered like the native web tools |
 
 Every tool call is gated at dispatch by the permission engine (`src/permissions.py`,
 §6.4): a `permission` record is written, then the call runs or is refused. The
@@ -185,8 +185,9 @@ Full reference in the README and `.env.example`. Contract-relevant values:
 | `CODE_COMPACT_AT_TOKENS` | `12000` | Reference — live-context compaction budget (0 = off) |
 | `CODE_MAX_SUBAGENT_DEPTH` | `1` | Reference — spawn_agent nesting cap (0 = off) |
 | `CODE_ENABLE_WEB` | `false` | Yes — master switch for web_fetch/web_search (off = no egress, tools hidden) |
-| `CODE_SEARCH_URL` | (empty) | Yes — BYO search endpoint for web_search |
-| `CODE_MCP_CONFIG` | (empty) | Yes — path to MCP server config (stdio); tools appear as `mcp__*` |
+| `CODE_SEARCH_PROVIDER` | `generic` | Yes — `generic` \| `tavily` \| `searxng` (data-sovereign) \| `brave` \| `module:func` |
+| `CODE_SEARCH_URL` | (empty) | Yes — endpoint for the generic / searxng providers |
+| `CODE_MCP_CONFIG` | (empty) | Yes — path to MCP server config (stdio); tools appear as `mcp__*`; a `"web": true` server is fenced + ledgered (specs/0029) |
 | `CODE_VERIFY_COMMAND` | (empty) | Yes — defines the reward signal |
 | `CODE_TRAJECTORY_DIR` | `trajectories` | Yes — where training data lands |
 | `CODE_SFT_VIEW` | `raw` | Reference — `raw` or `as_sent` view the converter flattens |

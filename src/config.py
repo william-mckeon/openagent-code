@@ -524,9 +524,24 @@ except ValueError:
     SEARCH_MAX_RESULTS = 5
 
 # CODE_MCP_CONFIG — path to a JSON file listing MCP servers to connect (stdio):
-#   { "mcpServers": { "<name>": { "command": "...", "args": [...], "env": {...} } } }
-# Unset = MCP off. Each server's tools appear as mcp__<name>__<tool>.
+#   { "mcpServers": { "<name>": { "command": "...", "args": [...], "env": {...}, "web": true } } }
+# Unset = MCP off. Each server's tools appear as mcp__<name>__<tool>. A server marked "web": true (specs/0029,
+# e.g. Tavily's MCP) has its tool output routed through the SAME untrusted-content fence + grounding
+# read-ledger as web_fetch/web_search - so external web content it returns can't inject and a cited URL it
+# surfaced grounds. A non-web server (git/filesystem) is unchanged.
 MCP_CONFIG = os.environ.get("CODE_MCP_CONFIG", "")
+# Runtime flag (NOT a CODE_* env var): mcp_client.connect() sets it True when a web-marked MCP server is
+# connected, disconnect() resets it. web_grounding_active() lets the grounding gate treat MCP-surfaced web
+# content exactly like native web content. Default False -> byte-identical when no web-marked MCP is present.
+MCP_WEB_ACTIVE = False
+
+
+def web_grounding_active():
+    """True when web content can enter the model's context - native web tools (CODE_ENABLE_WEB) OR a
+    web-marked MCP server (specs/0029). The grounding gate's web checks key on THIS so an MCP-surfaced URL is
+    grounded / fed to the verifier exactly like a native one. False (both off) -> the web checks are skipped
+    (byte-identical)."""
+    return ENABLE_WEB or MCP_WEB_ACTIVE
 
 # -----------------------------------------------------------------------------
 # Cross-session memory (Phase 4 #7) — see specs/0002-memory.md.

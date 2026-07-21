@@ -493,6 +493,11 @@ def _wrap_external(text):
     return f"{_WEB_UNTRUSTED_OPEN}\n{text}\n{_WEB_UNTRUSTED_CLOSE}"
 
 
+# An http(s) URL in a body of external text (specs/0029). Kept in sync in spirit with grounding._URL: the
+# trailing char class excludes whitespace/quotes/brackets so a prose-wrapped URL is captured cleanly.
+_EXTERNAL_URL = re.compile(r"https?://[^\s`'\"<>\)\]]+", re.I)
+
+
 def _record_fetch(ctx, url, content):
     """Record a FETCHED page on the web read-ledger (specs/0024) as the STRONG tier: the RAW (unwrapped) full
     page the verifier checks claims against, not boundary lines. Stored as {content, tier} (specs/0028) with
@@ -517,6 +522,28 @@ def _record_surfaced(ctx, url, snippet):
     if isinstance(cur, dict) and cur.get("tier") == "fetched":
         return   # a full page already fetched this URL - keep the strong source, don't overwrite with a snippet
     led[url] = {"content": snippet, "tier": "surfaced"}
+
+
+def record_external(ctx, text, args=None):
+    """Record the URLs an EXTERNAL web tool returned (an MCP web-marked server, specs/0029) on the read-ledger
+    as WEAK (surfaced) sources - the SAME choke point native web tools use - so a URL the model cites from
+    that content grounds without a redundant web_fetch. Extracts http(s) URLs from the result BODY and from an
+    args 'url'/'urls' (an extract/crawl target). Bounded body; defensive getattr; never downgrades a fetched
+    full page (via _record_surfaced). PUBLIC (no leading underscore) so mcp_client can reach it."""
+    led = getattr(ctx, "fetched", None)
+    if led is None:
+        return
+    body = (text or "")[:8000]
+    urls = set(_EXTERNAL_URL.findall(body))
+    if isinstance(args, dict):
+        u = args.get("url")
+        if isinstance(u, str) and u.strip():
+            urls.add(u.strip())
+        for u in (args.get("urls") or []):
+            if isinstance(u, str) and u.strip():
+                urls.add(u.strip())
+    for url in urls:
+        _record_surfaced(ctx, url, body)
 
 
 def web_fetch(args, ctx):
