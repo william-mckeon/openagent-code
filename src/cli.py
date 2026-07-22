@@ -394,24 +394,76 @@ def _atomic_write(path, text):
 
 
 def _parse_set_name(args):
-    """Parse `<name> [--persona "..."]` -> (name|None, persona)."""
-    name, persona, rest = None, "", list(args)
+    """Parse `<name> [--persona "..."] [--no-profile]` -> (name|None, persona, no_profile)."""
+    rest = list(args)
+    no_profile = "--no-profile" in rest
+    rest = [a for a in rest if a != "--no-profile"]
+    name, persona = None, ""
     if rest and not rest[0].startswith("--"):
         name, rest = rest[0], rest[1:]
     if "--persona" in rest:
         j = rest.index("--persona")
         if j + 1 < len(rest):
             persona = rest[j + 1]
-    return name, persona
+    return name, persona, no_profile
+
+
+def _powershell_profiles():
+    """The CurrentUserCurrentHost $PROFILE path for each installed PowerShell (pwsh/PS7, then powershell/PS5),
+    resolved by ASKING PowerShell itself (Python can't read the $PROFILE automatic variable), with -NoProfile
+    so resolution never runs the user's own profile (specs/0037). Empty on POSIX / no PowerShell -> the caller
+    falls back to printing the manual line. Never raises."""
+    import shutil
+    out = []
+    for name in ("pwsh", "powershell"):
+        exe = shutil.which(name)
+        if not exe:
+            continue
+        try:
+            r = subprocess.run([exe, "-NoProfile", "-Command", "$PROFILE"],
+                               capture_output=True, text=True, timeout=20)
+        except (OSError, subprocess.SubprocessError):
+            continue
+        path = (r.stdout or "").strip()
+        if path and path not in out:
+            out.append(path)
+    return out
+
+
+def _apply_to_profiles(line, remove=False):
+    """Register (or un-register, remove=True) the launcher dot-source `line` in each resolved PowerShell
+    profile - idempotently, atomically, creating the file + dir when registering (specs/0037). Returns a list
+    of (path, action) for the report; empty when no PowerShell profile is found."""
+    results = []
+    for prof in _powershell_profiles():
+        try:
+            text = ""
+            if os.path.isfile(prof):
+                with open(prof, encoding="utf-8") as f:
+                    text = f.read()
+            elif remove:
+                continue   # nothing to remove from a profile that doesn't exist
+            if remove:
+                new, changed = installshim.profile_remove(text, line)
+            else:
+                os.makedirs(os.path.dirname(prof), exist_ok=True)
+                new, changed = installshim.profile_ensure(text, line)
+            if changed:
+                _atomic_write(prof, new)
+            results.append((prof, ("removed" if changed else "not present") if remove
+                            else ("added" if changed else "already present")))
+        except OSError as e:
+            results.append((prof, f"failed: {e}"))
+    return results
 
 
 def _set_name(args):
     """`openagent-code --set-name <name> [--persona "..."]` (specs/0036): write CODE_AGENT_NAME (+persona) to
     the install-root .env and generate a launcher named <name> mirroring scripts/oac.ps1. Set-and-exit — no
     network I/O. 0 on success, 2 on a usage/validation error."""
-    name, persona = _parse_set_name(args)
+    name, persona, no_profile = _parse_set_name(args)
     if not name:
-        print('usage: openagent-code --set-name <name> [--persona "..."]')
+        print('usage: openagent-code --set-name <name> [--persona "..."] [--no-profile]')
         return 2
     try:
         name = installshim.validate_name(name)
@@ -438,9 +490,18 @@ def _set_name(args):
     _atomic_write(env_path, installshim.compute_env_update(env_text, name, persona))
     print(f"  wrote launcher: {plan.path}")
     print(f"  set CODE_AGENT_NAME={name}" + ("  (+ persona)" if persona.strip() else "") + f" in {env_path}")
-    if plan.profile_line:
-        print("  To finish, add this line to your PowerShell $PROFILE (notepad $PROFILE), then reload (. $PROFILE):")
-        print(f"      {plan.profile_line}")
+    line = plan.profile_line
+    if line and not no_profile:
+        reg = _apply_to_profiles(line)   # specs/0037: register the launcher in $PROFILE automatically
+        if reg:
+            for prof, action in reg:
+                print(f"  $PROFILE [{action}]: {prof}")
+            print(f"  Reload with '. $PROFILE' (or just open a new shell), then type:  {name}")
+            return 0
+        print("  (no PowerShell profile found to auto-register)")
+    if line:
+        print("  Add this line to your PowerShell $PROFILE (notepad $PROFILE), then reload (. $PROFILE):")
+        print(f"      {line}")
     else:
         print(f"  {plan.note}")
     print(f"  Then launch it by typing:  {name}")
@@ -468,9 +529,13 @@ def _remove_name(_args):
             except OSError as e:
                 print(f"  could not remove {plan.path}: {e}")
         if plan.profile_line:
-            print("  If you added it, remove this line from your PowerShell $PROFILE:")
-            print(f"      {plan.profile_line}")
-    print("  Done. Restart your shell (or reload $PROFILE) for the change to take effect.")
+            unreg = _apply_to_profiles(plan.profile_line, remove=True)   # specs/0037: un-register from $PROFILE
+            for prof, action in unreg:
+                print(f"  $PROFILE [{action}]: {prof}")
+            if not unreg:
+                print("  If you added it manually, remove this line from your PowerShell $PROFILE:")
+                print(f"      {plan.profile_line}")
+    print("  Done. Reload $PROFILE (or open a new shell) for the change to take effect.")
     return 0
 
 

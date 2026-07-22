@@ -112,6 +112,25 @@ def main():
     rem = installshim.plan_remove("arcus", "C:\\root", windows=True)
     check("plan_remove targets exactly what plan_launcher created", rem.path == win.path and rem.profile_line == win.profile_line)
 
+    # ---- profile_ensure / profile_remove (pure $PROFILE line management, specs/0037) ------------------
+    line = '. "C:\\root\\scripts\\arcus.ps1"'
+    prof0 = '# my profile\n. "C:\\root\\scripts\\oac.ps1"\n'
+    p1, ch1 = installshim.profile_ensure(prof0, line)
+    check("profile_ensure appends the line when absent", line in p1 and ch1)
+    check("profile_ensure preserves existing profile lines", "oac.ps1" in p1)
+    p2, ch2 = installshim.profile_ensure(p1, line)
+    check("profile_ensure is idempotent (no duplicate on re-run)",
+          p2 == p1 and (not ch2) and p2.count("arcus.ps1") == 1)
+    pe, che = installshim.profile_ensure("", line)
+    check("profile_ensure handles an empty profile", pe == line + "\n" and che)
+    pn, chn = installshim.profile_ensure("# no trailing newline", line)
+    check("profile_ensure inserts exactly one separator when the profile lacks a trailing newline",
+          pn == "# no trailing newline\n" + line + "\n" and chn)
+    pr, chr_ = installshim.profile_remove(p1, line)
+    check("profile_remove drops the line and keeps the rest", line not in pr and chr_ and "oac.ps1" in pr)
+    pr2, chr2 = installshim.profile_remove(pr, line)
+    check("profile_remove is a no-op when the line is absent", not chr2)
+
     # ---- default proven against the fallback, not this repo's live .env -------------------------------
     _env = os.environ.pop("CODE_AGENT_NAME", None)
     default_name = (os.environ.get("CODE_AGENT_NAME", "OAC").strip() or "OAC")

@@ -60,8 +60,8 @@ its "response" is the process exit code plus a trajectory file.
 python -m src "<task prompt>"     # one-shot autonomous run (deterministic; ask_user degrades)
 python -m src                     # interactive REPL: multi-turn chat, ask_user live
 python -m src --resume <id>       # continue a stopped session (rehydrated from its trajectory)
-openagent-code --set-name <name> [--persona "..."]   # name the agent + drop a launcher (specs/0036)
-openagent-code --remove-name                          # revert the name/persona to the OAC default
+openagent-code --set-name <name> [--persona "..."]   # name the agent + launcher + register in $PROFILE (0036/0037)
+openagent-code --remove-name                          # revert to the OAC default (+ un-register the launcher)
 ```
 
 The REPL and `--resume` share one `ContextManager` + `Trajectory` across turns; `/exit`

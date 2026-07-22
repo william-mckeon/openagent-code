@@ -82,6 +82,24 @@ def compute_env_update(env_text, name, persona):
     return "\n".join(lines)
 
 
+def profile_ensure(text, line):
+    """Append `line` to a PowerShell $PROFILE body only if it is not already present (specs/0037). Pure
+    string->string; returns (new_text, changed). Idempotent — re-running --set-name never duplicates the
+    dot-source line. Preserves every existing line and inserts exactly one separating newline."""
+    if any(ln.strip() == line.strip() for ln in text.split("\n")):
+        return text, False
+    sep = "" if (text == "" or text.endswith("\n")) else "\n"
+    return text + sep + line + "\n", True
+
+
+def profile_remove(text, line):
+    """Remove every occurrence of `line` from a $PROFILE body (specs/0037). Pure; returns (new_text,
+    changed). A no-op (changed=False) when the line is absent."""
+    lines = text.split("\n")
+    kept = [ln for ln in lines if ln.strip() != line.strip()]
+    return "\n".join(kept), len(kept) != len(lines)
+
+
 def _ps_launcher(name, exe_path):
     """A PowerShell function mirroring scripts/oac.ps1, calling the venv openagent-code.exe with @args."""
     return (

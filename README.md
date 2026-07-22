@@ -129,13 +129,14 @@ openagent-code "fix the failing test in foo.py"     # one-shot, autonomous
 openagent-code                                       # interactive REPL (just talk to it)
 ```
 
-**Name it (optional, specs/0036).** The agent is **OAC** by default. Give it your own name once, at install:
+**Name it (optional, specs/0036–0037).** The agent is **OAC** by default. Give it your own name once, at install:
 
 ```powershell
 openagent-code --set-name arcus --persona "precise, direct, a little wry"
-# writes CODE_AGENT_NAME/CODE_AGENT_PERSONA to .env and generates scripts\arcus.ps1;
-# it prints one `. "...\scripts\arcus.ps1"` line to add to your $PROFILE — then `arcus` launches it.
-openagent-code --remove-name        # revert the name + persona back to OAC (and remove the launcher)
+# writes CODE_AGENT_NAME/CODE_AGENT_PERSONA to .env, generates scripts\arcus.ps1, and REGISTERS it in your
+# PowerShell $PROFILE — reload (. $PROFILE) or open a new shell, then `arcus` launches it.
+#   add --no-profile to skip the $PROFILE step and just print the line to add by hand.
+openagent-code --remove-name        # revert name + persona to OAC, remove the launcher + its $PROFILE line
 ```
 
 The package/import name stays `openagent-code`; only the agent's display identity + an added launcher change.

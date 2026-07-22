@@ -52,6 +52,10 @@ The generated `scripts/<name>.ps1` is **gitignored** (`scripts/*.ps1` with `!scr
 per-user and bakes in an absolute path, so a rename is never committed. The name + persona themselves live
 in `.env`, which is already gitignored.
 
+> **specs/0037** promotes the print-only `$PROFILE` step to an automatic **registration** (`--set-name`
+> appends the dot-source line; `--remove-name` removes it). Pass `--no-profile` to keep this print-only
+> behavior.
+
 `src/installshim.py` holds the PURE logic (no filesystem / PATH / clock / `sys.executable` — every input is
 an argument), so it is unit-testable and importing it never pulls `litellm`/runtime/model:
 
