@@ -48,6 +48,10 @@ writes `.env`, and **prints** the exact `. "…\scripts\arcus.ps1"` line to add 
 `oac` was installed). `--remove-name` deletes the generated `scripts/<name>.ps1`, strips the two vars from
 `.env`, and prints the `$PROFILE` line to remove.
 
+The generated `scripts/<name>.ps1` is **gitignored** (`scripts/*.ps1` with `!scripts/oac.ps1`): it is
+per-user and bakes in an absolute path, so a rename is never committed. The name + persona themselves live
+in `.env`, which is already gitignored.
+
 `src/installshim.py` holds the PURE logic (no filesystem / PATH / clock / `sys.executable` — every input is
 an argument), so it is unit-testable and importing it never pulls `litellm`/runtime/model:
 

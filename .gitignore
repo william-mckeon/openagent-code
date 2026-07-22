@@ -112,3 +112,10 @@ desktop.ini
 # adaptive-effort online learner state (Phase 21) - local data, never committed
 effort_state.json
 *.effort_state.json
+
+# --- generated agent launchers (--set-name, specs/0036) --------------------
+# Per-user, machine-specific (each bakes in an absolute path), so a rename is never
+# committed. The name + persona themselves live in .env, which is already ignored.
+# The tracked oac.ps1 wrapper is kept.
+scripts/*.ps1
+!scripts/oac.ps1
