@@ -225,6 +225,7 @@ there, documented in `.env.example`). There is no YAML config file. Key ones:
 | `CODE_PERMISSION_MODE` | (derived) | `default` / `acceptEdits` / `plan` / `bypass` (Phase 4 #6) |
 | `CODE_PERMISSIONS_CONFIG` | (empty) | JSON allow/ask/deny rules; `deny` always wins (see `permissions.json.example`) |
 | `CODE_ADD_DIRS` | (empty) | Dirs the file tools may touch beyond the workspace (widens the fence) |
+| `CODE_TRUST_USER_DIRS` | `false` | Treat a dir the user literally types as a **read** grant, and auto-grant `request_dir` for an existing dir under bypass at depth 0 (into a read-only tier writes can't reach) |
 | `CODE_MEMORY` | `false` | Opt-in cross-session memory: offer `remember`, load project notes into context |
 | `CODE_MEMORY_FILE` | `.openagent/memory.md` | Per-project memory file (relative to the workspace) |
 | `CODE_MEMORY_MAX_CHARS` | `4000` | Cap on memory loaded into the system prompt |

@@ -43,7 +43,12 @@ def build_env_context(cwd, granted_dirs=None, include_git=False, git_status_fn=N
     `_git_status`; any failure there is swallowed (no git line) so a git problem can't break the turn."""
     when = now or datetime.now()  # LOCAL date so "today" matches the user's wall clock, not UTC
     lines = [
-        "Environment context (refreshed each turn - trust this over assumptions):",
+        # Header reframed (specs/0035 fix C): self-identify as auto-generated system state, NOT user input.
+        # A live session saw the model treat this block as something the USER typed and bleed its first word
+        # ("Environment") into a path the user gave ("...\\OpenCode" -> "...\\OpenCodeEnvironment"). Every
+        # FIELD line below is byte-identical; only this header line changed.
+        "(system) Automatically-generated environment state - NOT a message from the user. "
+        "Refreshed each turn; trust it over assumptions:",
         f"- cwd: {cwd}",
         f"- os: {(platform.system() + ' ' + platform.release()).strip()}",
         f"- shell: {_shell_name()}",

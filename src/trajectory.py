@@ -76,6 +76,12 @@ class Trajectory:
     # 0.6.0: `permission` record per gated tool call (Phase 4 #6) — the decision
     #        (allow/ask/deny + which rule/mode decided it), captured before the call.
     # Older data stays usable — the converter falls back to as-sent / reattachment.
+    # note (specs/0035 fix C): the per-turn situational-context env block is now captured via
+    #        ContextManager.log_env_capture as a `turn` with role:'system' (was role:'user'), so the raw SFT
+    #        view no longer trains it as something the USER said. This is NOT a schema change — `role` is a
+    #        value inside the opaque message dict a `turn` already carries, not a record field — so
+    #        SCHEMA_VERSION is unchanged and old data stays byte-identical. Only emitted under
+    #        CODE_SITUATIONAL_CONTEXT (off by default).
     SCHEMA_VERSION = "0.13.0"
 
     @classmethod

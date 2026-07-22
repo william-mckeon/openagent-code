@@ -280,6 +280,17 @@ class ContextManager:
         turn, so capture is unaffected."""
         self.pinned_env = (self._capped({"role": "user", "content": text}) if text else None)
 
+    def log_env_capture(self, text):
+        """Capture the per-turn environment block to the TRAJECTORY, WITHOUT sending it again (specs/0035
+        fix C). The block is already SENT once via set_env_context's pin (pinned_env, in _base); this only
+        records it in the raw history so the flywheel still captures it — but as role:'system' (auto-
+        generated state), NOT the role:'user' turn agent.py used to add. That old add did double duty: it
+        logged the capture AND put a second copy in `working` ADJACENT to the task, where the model treated
+        it as user input and bled it into a typed path. This records the capture with no second sent copy
+        and no touch to the pin. A no-op on empty text."""
+        if text:
+            self.traj.log_turn({"role": "system", "content": text})
+
     def _base(self):
         return ([self.system]
                 + ([self.pinned_task] if self.pinned_task else [])   # the request first — the anchor

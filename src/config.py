@@ -266,6 +266,15 @@ SITUATIONAL_GIT = _as_bool(os.environ.get("CODE_SITUATIONAL_GIT", "false"))
 # isn't rendered and the granted-dirs note keeps its old text (byte-identical).
 WORKDIR_PROMPT = _as_bool(os.environ.get("CODE_WORKDIR_PROMPT", "false"))
 
+# Trusted user directories (Phase 35 / specs/0035). Treat a directory the USER LITERALLY TYPED in their REPL
+# message as an explicit READ grant (src/userdirs.py extracts it; cli.py grants it into the new
+# Permissions.read_only_roots tier that MUTATING tools ignore), and let request_dir AUTO-GRANT an existing
+# dir under BYPASS at the top level with a human present (no [y/N]) instead of prompting. Fixes a live
+# session where a project the user named twice was never reviewed (the model corrupted the typed path and
+# request_dir dead-ended). READ-only by construction: read_only_roots widens reads, never writes. OFF by
+# default -> read_only_roots stays empty, the extractor/auto-grant never run, request_dir is byte-identical.
+TRUST_USER_DIRS = _as_bool(os.environ.get("CODE_TRUST_USER_DIRS", "false"))
+
 # Edit-layer (Phase 13 / specs/0013). CODE_EDIT_FUZZY: a SAFE fuzzy fallback UNDER exact-match edit_file
 # - when the exact old_string isn't found, editmatch.resolve locates it (whitespace-insensitive, then
 # most-similar chunk) and applies ONLY a UNIQUE, above-threshold match; any ambiguity refuses, so

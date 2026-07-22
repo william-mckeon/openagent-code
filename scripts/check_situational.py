@@ -29,7 +29,10 @@ def check(label, cond):
 
 
 class _Traj:
-    def log_turn(self, m): pass
+    def __init__(self):
+        self.turns = []
+
+    def log_turn(self, m): self.turns.append(m)
     def log_compaction(self, *a): pass
 
 
@@ -94,7 +97,28 @@ def main():
     sp = prompts.build_system_prompt("native", active_tools())
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     check("dynamic state stays OUT of the static system prompt (no date / git / env block)",
-          today not in sp and "git: branch" not in sp and "Environment context" not in sp)
+          today not in sp and "git: branch" not in sp and "environment state" not in sp)
+
+    # 8. Fix C (specs/0035): the env block is CAPTURED to the trajectory as role:'system' (not the old
+    #    role:'user' turn), is NOT re-appended to the SENT working set, and the pin stays role:'user'
+    #    (a mid-array system message risks a Bedrock Converse rejection, so only the CAPTURE role changed).
+    tr = _Traj()
+    cm2 = ContextManager("s", _Model(), tr)
+    before_working = list(cm2.working)
+    cm2.set_env_context("PINNED_ENV_BLOCK")
+    cm2.log_env_capture("CAPTURED_ENV_BLOCK")
+    captured = [m for m in tr.turns
+                if m.get("role") == "system" and "CAPTURED_ENV_BLOCK" in (m.get("content") or "")]
+    check("log_env_capture records the env block to the trajectory as role:'system'", len(captured) == 1)
+    check("log_env_capture does NOT add the env block to the sent context",
+          cm2.working == before_working
+          and not any("CAPTURED_ENV_BLOCK" in (m.get("content") or "") for m in cm2.context()))
+    check("the env PIN stays role:'user' and carries the block (Bedrock-safe; only the capture role changed)",
+          cm2.pinned_env is not None and cm2.pinned_env.get("role") == "user"
+          and "PINNED_ENV_BLOCK" in (cm2.pinned_env.get("content") or ""))
+    # the header now self-identifies as system state (attribution fix)
+    check("the env-block header self-identifies as auto-generated system state, not user input",
+          "NOT a message from the user" in envcontext.build_env_context("/w", now=fixed))
 
     passed, total = sum(_results), len(_results)
     print(f"\nVERDICT: {passed}/{total} {'[OK]' if passed == total else '[FAIL]'}")

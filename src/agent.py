@@ -215,15 +215,17 @@ class Agent:
             _emdl.effort = self._baseline_effort
         ctx.request = task            # pin the user's request so the guardian can weigh "is this what was asked"
         # Situational context (specs/0012): inject the agent's real environment (cwd / OS / shell / date
-        # / granted dirs, + git branch when enabled) once per turn as a refreshed pin, so it conditions
-        # on live state instead of confabulating it. Pinned (survives compaction) AND logged as a turn
-        # (raw capture) — the same dual the task itself uses. Off by default => today's behavior verbatim.
+        # / granted dirs, + git branch when enabled) once per turn as a refreshed pin, so it conditions on
+        # live state instead of confabulating it. The pin (set_env_context) is the SINGLE SENT copy; the raw
+        # capture goes through log_env_capture as role:'system' (specs/0035 fix C) — NOT a second role:'user'
+        # turn ADJACENT to the task, which a live run treated as user input and bled ("Environment") into a
+        # user-typed path ("...\\OpenCode" -> "...\\OpenCodeEnvironment"). Off by default => today's behavior.
         if config.SITUATIONAL_CONTEXT:
             env = envcontext.build_env_context(
                 ctx.cwd, getattr(ctx.permissions, "extra_roots", None),
                 include_git=config.SITUATIONAL_GIT)
             self.cm.set_env_context(env)
-            self.cm.add({"role": "user", "content": env})
+            self.cm.log_env_capture(env)
         consecutive_fail = {}  # tool name -> count of prior consecutive failures
         tool_calls = 0
         verify_retries = 0     # completion-gate re-prompts used this run (Phase 6)

@@ -15,7 +15,7 @@ import os
 import sys
 import subprocess
 
-from . import config, logsetup, outcomes
+from . import config, logsetup, outcomes, userdirs
 from .permissions import Permissions
 from .runtime import build_agent
 from .subagent import make_context
@@ -217,6 +217,23 @@ def _repl_add_dir(agent, ctx, path):
     print(f"  granted (read): {ap}")
 
 
+def _repl_grant_readonly(agent, ctx, ap):
+    """Grant READ-only access to a directory the USER TYPED (specs/0035 fix A). Routes into read_only_roots
+    (NOT extra_roots: a trusted-user-dir grant widens READS only, never writes) and tells the agent the
+    CORRECT absolute path so it reads there instead of a mis-typed one — the whole point is that the grant
+    is keyed off the user's own text, immune to the model corrupting the path. Distinct from _repl_add_dir,
+    which is the human-explicit /add-dir grant (write-capable extra_roots). Prints so the auto-grant is
+    never silent (the session-lived widening stays visible)."""
+    real = os.path.realpath(ap)
+    if real not in ctx.permissions.read_only_roots:
+        ctx.permissions.read_only_roots.append(real)
+    agent.cm.add({"role": "user", "content":
+                  f"(system) Read access granted to: {ap}\n"
+                  f"You may now read files there with absolute paths, and pass that path to grep/glob to "
+                  f"search it. It is READ-only reference unless told otherwise."})
+    print(f"  auto-granted READ: {ap}  (a directory you named; read-only)")
+
+
 def _repl_set_mode(ctx, name):
     """`/mode <name>` — switch the permission mode mid-session."""
     name = name.strip()
@@ -261,6 +278,13 @@ def _run_session(traj, agent, ctx):
             if user.startswith("/mode"):
                 _repl_set_mode(ctx, user[len("/mode"):])
                 continue
+            # Trusted user dirs (specs/0035 fix A): a directory the user LITERALLY typed, if it exists and
+            # is safe (userdirs applies the denylist + negation veto), is granted READ access keyed off the
+            # user's own text. Off by default -> the extractor never runs and nothing is granted or printed
+            # (byte-identical). A grant widens reads only (read_only_roots); it is never write-capable.
+            if config.TRUST_USER_DIRS:
+                for _ap in userdirs.user_typed_dirs(user):
+                    _repl_grant_readonly(agent, ctx, _ap)
             turns += 1
             log.info("turn %d | you> %s", turns, user)
             try:

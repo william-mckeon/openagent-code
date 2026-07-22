@@ -117,6 +117,11 @@ class Permissions:
         self.ask = list((rules or {}).get("ask") or [])
         self.allow = list((rules or {}).get("allow") or [])
         self.extra_roots = list(extra_roots or [])
+        # READ-only reference roots (specs/0035), populated at runtime by a trusted-user-dir grant (cli.py
+        # fix A / request_dir fix B, both under CODE_TRUST_USER_DIRS). Unlike extra_roots these widen READS
+        # ONLY: _within_roots consults them just for non-mutating path tools, so a write/edit/delete/rename
+        # can never reach a read-granted dir. Empty until a grant lands -> byte-identical to today.
+        self.read_only_roots = []
 
     @classmethod
     def from_config(cls, mode_override=None, extra_dirs=None):
@@ -174,8 +179,11 @@ class Permissions:
         if r:
             return D(False, "deny", f"deny rule {r!r}", r)
 
-        # 2. fence — file tools may not resolve outside the workspace + CODE_ADD_DIRS.
-        if t.kind == "path" and not self._within_roots(t.abs, ctx.cwd):
+        # 2. fence — file tools may not resolve outside the workspace + CODE_ADD_DIRS. A READ tool (specs/0035)
+        # additionally reaches a trusted-user-dir READ grant (read_only_roots); a MUTATING path tool never
+        # does, so a read-granted dir can be read but not written/edited/deleted. read_only_roots is empty
+        # until such a grant lands -> byte-identical when the feature is off.
+        if t.kind == "path" and not self._within_roots(t.abs, ctx.cwd, include_read_only=not mutating):
             return D(False, "deny", "path is outside your allowed directories — call request_dir "
                                     "to ask the user for access, or have them restart with --add-dir")
 
@@ -355,8 +363,14 @@ class Permissions:
             return _Target("other", args.get("query", ""))
         return _Target("none", "")
 
-    def _within_roots(self, abs_path, cwd):
+    def _within_roots(self, abs_path, cwd, include_read_only=False):
+        """Is abs_path inside the workspace fence? `include_read_only` (specs/0035) additionally admits the
+        READ-only reference roots — passed True by the step-2 fence ONLY for non-mutating path tools, so a
+        read reaches a read-granted dir while a write/edit/delete does not. read_only_roots is empty until a
+        trusted-user-dir grant lands, so with the flag off this is byte-identical however it is called."""
         roots = [os.path.realpath(cwd)] + self.extra_roots
+        if include_read_only:
+            roots = roots + self.read_only_roots
         return any(abs_path == r or abs_path.startswith(r + os.sep) for r in roots)
 
     def _match(self, rules, tool, target):

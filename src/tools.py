@@ -31,6 +31,7 @@ from dataclasses import dataclass, field
 
 from . import config
 from . import editmatch
+from . import userdirs
 
 
 @dataclass
@@ -446,8 +447,21 @@ def request_dir(args, ctx):
     if not os.path.isdir(ap):
         return ToolResult(False, f"Not a directory: {ap}")
     real = os.path.realpath(ap)
-    if ctx.permissions._within_roots(real, ctx.cwd):
+    if ctx.permissions._within_roots(real, ctx.cwd, include_read_only=True):
         return ToolResult(True, f"Already accessible: {ap}")
+    # Fix B (specs/0035): in BYPASS, at the top level, with a human at the REPL, auto-grant an existing dir
+    # into the READ-only tier without prompting — bypass already means do-not-prompt, yet request_dir asked
+    # anyway. Denylist-guarded (grantable_dir rejects a drive/share root or a system/credential dir even
+    # here). The flag is the FIRST operand, so when it is off this whole block is skipped and control falls
+    # to the existing no-human/prompt path verbatim (byte-identical). Subagents (depth>0) and non-bypass
+    # modes never reach the auto-grant; they take the prompt/denial path below.
+    if (config.TRUST_USER_DIRS and getattr(ctx.permissions, "mode", None) == "bypass"
+            and getattr(ctx, "depth", 0) == 0 and getattr(ctx, "interactive", False)
+            and userdirs.grantable_dir(real)):
+        if real not in ctx.permissions.read_only_roots:
+            ctx.permissions.read_only_roots.append(real)
+        return ToolResult(True, f"Access granted (read-only) to {ap}. You may now read files there with "
+                                "absolute paths; it stays read-only reference unless told otherwise.")
     if ctx.ask is None or not ctx.interactive:
         return ToolResult(False, f"Cannot grant access to {ap}: no human is present to approve. "
                                  "Ask the user to restart with --add-dir, or proceed without it.")
@@ -456,8 +470,11 @@ def request_dir(args, ctx):
                 + (f"\n  reason: {why}" if why else "") + "\nGrant access? [y/N]")
     ans = (ctx.ask(question) or "").strip().lower()
     if ans in ("y", "yes", "ok", "sure", "allow", "approve"):
-        if real not in ctx.permissions.extra_roots:
-            ctx.permissions.extra_roots.append(real)
+        # With the trusted-dir feature on, an approved request_dir is a true READ grant (read_only_roots);
+        # with it off, keep the historical behavior (extra_roots) so the flag-off path is byte-identical.
+        roots = ctx.permissions.read_only_roots if config.TRUST_USER_DIRS else ctx.permissions.extra_roots
+        if real not in roots:
+            roots.append(real)
         return ToolResult(True, f"Access granted to {ap}. You may now read files there with absolute paths.")
     return ToolResult(False, f"The user denied access to {ap}. Do not try to read it.")
 
