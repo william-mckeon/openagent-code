@@ -60,6 +60,8 @@ its "response" is the process exit code plus a trajectory file.
 python -m src "<task prompt>"     # one-shot autonomous run (deterministic; ask_user degrades)
 python -m src                     # interactive REPL: multi-turn chat, ask_user live
 python -m src --resume <id>       # continue a stopped session (rehydrated from its trajectory)
+openagent-code --set-name <name> [--persona "..."]   # name the agent + drop a launcher (specs/0036)
+openagent-code --remove-name                          # revert the name/persona to the OAC default
 ```
 
 The REPL and `--resume` share one `ContextManager` + `Trajectory` across turns; `/exit`
@@ -174,6 +176,8 @@ Full reference in the README and `.env.example`. Contract-relevant values:
 |---|---|---|
 | `CODE_MODEL` | `openai/gpt-oss-120b` | Yes — selects model + provider |
 | `CODE_API_BASE` | `http://localhost:8000/v1` | Yes — the model endpoint |
+| `CODE_AGENT_NAME` | `OAC` | Reference (specs/0036) — the agent's display name (identity line + banners); managed by `--set-name` / `--remove-name`. Package/import name unchanged |
+| `CODE_AGENT_PERSONA` | (empty) | Reference (specs/0036) — optional one-line persona appended to the system prompt; empty appends nothing |
 | `CODE_API_KEY` | `EMPTY` | Yes — endpoint auth |
 | `CODE_TOOL_MODE` | `native` | Yes — `native` (server tool-calls) or `json` (prompt fallback) |
 | `CODE_WORKSPACE` | cwd / `/workspace` | Yes — what the agent edits |

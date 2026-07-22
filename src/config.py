@@ -102,6 +102,30 @@ _EFFORTS = {"low", "medium", "high"}
 _effort = os.environ.get("CODE_REASONING_EFFORT", "").strip().lower()
 REASONING_EFFORT = _effort if _effort in _EFFORTS else ""
 
+# -----------------------------------------------------------------------------
+# Agent identity (Phase 36 / specs/0036) — the name the agent answers to, chosen at install.
+#
+# CODE_AGENT_NAME     The user-facing NAME (system-prompt identity line + the two cli.py banners). Default
+#                     "OAC". The package / import name stays openagent-code; only the display identity moves.
+#                     A blank value coalesces back to "OAC" so the prompt can never emit "You are ,".
+# CODE_AGENT_PERSONA  An OPTIONAL short persona line appended to the system prompt, single-line + capped.
+#                     Empty (default) appends nothing. Managed by `openagent-code --set-name/--remove-name`.
+# -----------------------------------------------------------------------------
+AGENT_NAME = (os.environ.get("CODE_AGENT_NAME", "OAC").strip() or "OAC")
+PERSONA_MAX = 280
+AGENT_PERSONA = os.environ.get("CODE_AGENT_PERSONA", "").replace("\n", " ").replace("\r", " ").strip()[:PERSONA_MAX]
+
+
+def agent_name() -> str:
+    """The display / launch name (specs/0036). The single normalization choke point; a blank name is the
+    default "OAC" (never an empty identity)."""
+    return (AGENT_NAME or "").strip() or "OAC"
+
+
+def agent_persona() -> str:
+    """The optional persona line, re-sanitized on READ (defense in depth): single-line, capped, may be ''."""
+    return (AGENT_PERSONA or "").replace("\n", " ").replace("\r", " ").strip()[:PERSONA_MAX]
+
 # CODE_TOOL_MODE — how the model invokes tools:
 #   "native" — OpenAI tool-calling. Default. Requires the serving stack to parse
 #              tool calls; for gpt-oss on vLLM, launch the worker with

@@ -15,7 +15,7 @@ import os
 import sys
 import subprocess
 
-from . import config, logsetup, outcomes, userdirs
+from . import config, logsetup, outcomes, userdirs, installshim
 from .permissions import Permissions
 from .runtime import build_agent
 from .subagent import make_context
@@ -142,7 +142,7 @@ def _one_shot(task, perms):
     logsetup.configure(traj.session_id)
     ctx = make_context(workspace, perms, traj.session_id,
                        depth=0, verbose=config.VERBOSE, interactive=False)
-    print(f"openagent-code | model={config.display_model()} | tool_mode={config.TOOL_MODE} | "
+    print(f"{config.agent_name()} | model={config.display_model()} | tool_mode={config.TOOL_MODE} | "
           f"mode={perms.mode} | effort={config.REASONING_EFFORT or 'default'} | workspace={workspace}")
     log.info("one-shot start | model=%s mode=%s workspace=%s", config.display_model(), perms.mode, workspace)
     log.info("task: %s", task)
@@ -252,7 +252,7 @@ def _repl_set_mode(ctx, name):
 
 def _run_session(traj, agent, ctx):
     """The interactive chat loop, shared by a fresh REPL and a resumed session."""
-    print(f"openagent-code REPL | model={config.display_model()} | mode={ctx.permissions.mode} | "
+    print(f"{config.agent_name()} REPL | model={config.display_model()} | mode={ctx.permissions.mode} | "
           f"effort={config.REASONING_EFFORT or 'default'} | workspace={ctx.cwd}")
     print("Type a task and press enter. Commands: /exit  /plan  /add-dir <path>  /mode <name>")
     log.info("REPL start | model=%s mode=%s workspace=%s", config.display_model(), ctx.permissions.mode, ctx.cwd)
@@ -368,9 +368,126 @@ def _force_utf8_stdout():
             pass  # redirected to something without reconfigure() — leave it as-is
 
 
+def _venv_python_and_exe(root):
+    """Resolve the venv openagent-code launcher exe + python for the generated launcher to call (specs/0036).
+    Prefers the install-root venv layout; falls back to the installed console script on PATH. Never a bare
+    'python' (a generated launcher must point at THIS install's interpreter, not a Store/global one)."""
+    import shutil
+    win = os.name == "nt"
+    scripts = os.path.join(root, ".venv", "Scripts" if win else "bin")
+    exe = os.path.join(scripts, "openagent-code.exe" if win else "openagent-code")
+    py = os.path.join(scripts, "python.exe" if win else "python")
+    if not os.path.isfile(exe):
+        found = shutil.which("openagent-code")
+        if found:
+            exe = found
+            py = os.path.join(os.path.dirname(found), "python.exe" if win else "python")
+    return exe, py
+
+
+def _atomic_write(path, text):
+    """Write text atomically (temp + os.replace) so a crash / OneDrive lock can't leave a half-written file."""
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8", newline="\n") as f:
+        f.write(text)
+    os.replace(tmp, path)
+
+
+def _parse_set_name(args):
+    """Parse `<name> [--persona "..."]` -> (name|None, persona)."""
+    name, persona, rest = None, "", list(args)
+    if rest and not rest[0].startswith("--"):
+        name, rest = rest[0], rest[1:]
+    if "--persona" in rest:
+        j = rest.index("--persona")
+        if j + 1 < len(rest):
+            persona = rest[j + 1]
+    return name, persona
+
+
+def _set_name(args):
+    """`openagent-code --set-name <name> [--persona "..."]` (specs/0036): write CODE_AGENT_NAME (+persona) to
+    the install-root .env and generate a launcher named <name> mirroring scripts/oac.ps1. Set-and-exit — no
+    network I/O. 0 on success, 2 on a usage/validation error."""
+    name, persona = _parse_set_name(args)
+    if not name:
+        print('usage: openagent-code --set-name <name> [--persona "..."]')
+        return 2
+    try:
+        name = installshim.validate_name(name)
+    except ValueError as e:
+        print(f"  invalid name: {e}")
+        return 2
+    root = config.INSTALL_ROOT
+    exe, py = _venv_python_and_exe(root)
+    plan = installshim.plan_launcher(name, root, exe, py, windows=(os.name == "nt"))
+    import shutil
+    existing = shutil.which(name)   # a DIFFERENT real command already on PATH -> refuse (our .ps1 fn isn't found here)
+    if existing and os.path.realpath(existing) != os.path.realpath(plan.path):
+        print(f"  refusing: a command named '{name}' already exists at {existing}. Pick another name.")
+        return 2
+    os.makedirs(os.path.dirname(plan.path), exist_ok=True)
+    _atomic_write(plan.path, plan.content)
+    if plan.chmod is not None:
+        os.chmod(plan.path, plan.chmod)
+    env_path = os.path.join(root, ".env")
+    env_text = ""
+    if os.path.isfile(env_path):
+        with open(env_path, encoding="utf-8") as f:
+            env_text = f.read()
+    _atomic_write(env_path, installshim.compute_env_update(env_text, name, persona))
+    print(f"  wrote launcher: {plan.path}")
+    print(f"  set CODE_AGENT_NAME={name}" + ("  (+ persona)" if persona.strip() else "") + f" in {env_path}")
+    if plan.profile_line:
+        print("  To finish, add this line to your PowerShell $PROFILE (notepad $PROFILE), then reload (. $PROFILE):")
+        print(f"      {plan.profile_line}")
+    else:
+        print(f"  {plan.note}")
+    print(f"  Then launch it by typing:  {name}")
+    return 0
+
+
+def _remove_name(_args):
+    """`openagent-code --remove-name` (specs/0036): revert CODE_AGENT_NAME / CODE_AGENT_PERSONA to the OAC
+    default and remove the generated launcher for the current name. Set-and-exit. Returns 0."""
+    root = config.INSTALL_ROOT
+    current = config.agent_name()
+    env_path = os.path.join(root, ".env")
+    env_text = ""
+    if os.path.isfile(env_path):
+        with open(env_path, encoding="utf-8") as f:
+            env_text = f.read()
+    _atomic_write(env_path, installshim.compute_env_update(env_text, None, None))
+    print(f"  reverted CODE_AGENT_NAME / CODE_AGENT_PERSONA to the default (OAC) in {env_path}")
+    if current and current not in ("OAC", "openagent-code"):
+        plan = installshim.plan_remove(current, root, windows=(os.name == "nt"))
+        if os.path.isfile(plan.path):
+            try:
+                os.remove(plan.path)
+                print(f"  removed launcher: {plan.path}")
+            except OSError as e:
+                print(f"  could not remove {plan.path}: {e}")
+        if plan.profile_line:
+            print("  If you added it, remove this line from your PowerShell $PROFILE:")
+            print(f"      {plan.profile_line}")
+    print("  Done. Restart your shell (or reload $PROFILE) for the change to take effect.")
+    return 0
+
+
 def main(argv=None):
     _force_utf8_stdout()
     argv = list(argv if argv is not None else sys.argv[1:])
+    # Agent-name install verbs (specs/0036): set-and-exit BEFORE _parse_flags / Permissions / MCP connect() /
+    # warm_up(), so they do ZERO network I/O and need no configured endpoint. They must be the LEADING token;
+    # appearing anywhere else is a usage error, never allowed to slip through into the task prompt (trap D).
+    if argv and argv[0] == "--set-name":
+        return _set_name(argv[1:])
+    if argv and argv[0] == "--remove-name":
+        return _remove_name(argv[1:])
+    if "--set-name" in argv or "--remove-name" in argv:
+        print('usage: openagent-code --set-name <name> [--persona "..."]   |   openagent-code --remove-name'
+              "\n(run the name verb as the FIRST argument)")
+        return 2
     mode_override, add_dirs, argv = _parse_flags(argv)
     perms = Permissions.from_config(mode_override=mode_override, extra_dirs=add_dirs)
     # Selecting propose mode (--mode propose / CODE_PERMISSION_MODE=propose) turns the propose machinery on,

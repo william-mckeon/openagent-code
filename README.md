@@ -129,6 +129,17 @@ openagent-code "fix the failing test in foo.py"     # one-shot, autonomous
 openagent-code                                       # interactive REPL (just talk to it)
 ```
 
+**Name it (optional, specs/0036).** The agent is **OAC** by default. Give it your own name once, at install:
+
+```powershell
+openagent-code --set-name arcus --persona "precise, direct, a little wry"
+# writes CODE_AGENT_NAME/CODE_AGENT_PERSONA to .env and generates scripts\arcus.ps1;
+# it prints one `. "...\scripts\arcus.ps1"` line to add to your $PROFILE — then `arcus` launches it.
+openagent-code --remove-name        # revert the name + persona back to OAC (and remove the launcher)
+```
+
+The package/import name stays `openagent-code`; only the agent's display identity + an added launcher change.
+
 Common flags (instead of `$env:CODE_*`):
 
 | Flag | Purpose |
@@ -206,6 +217,8 @@ there, documented in `.env.example`). There is no YAML config file. Key ones:
 |---|---|---|
 | `CODE_MODEL` | `openai/gpt-oss-120b` | LiteLLM model string (RunPod / Bedrock) |
 | `CODE_API_BASE` | `http://localhost:8000/v1` | OpenAI-compatible endpoint (empty for Bedrock) |
+| `CODE_AGENT_NAME` | `OAC` | The name the agent answers to (identity line + banners); manage with `--set-name` / `--remove-name` |
+| `CODE_AGENT_PERSONA` | (empty) | Optional one-line persona appended to the system prompt; empty appends nothing |
 | `CODE_API_KEY` | `EMPTY` | Endpoint key (or use `AWS_*` for Bedrock) |
 | `CODE_TOOL_MODE` | `native` | `native` (server tool-calls) or `json` (prompt fallback) |
 | `CODE_WORKSPACE` | cwd / `/workspace` | The repo the agent edits |

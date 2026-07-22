@@ -304,7 +304,18 @@ def build_system_prompt(mode, tools, memory=None, todos=None, spec=None, granted
                + spec.strip()
                + "\n\nBuild AGAINST this spec. Mark each Acceptance item done with write_spec(action='done', "
                  "item=N) as you satisfy it; you may NOT report the task done until every Acceptance item is met.")
-    return BASE_PROMPT + "\n\n" + suffix + note + mem + tdo + spc
+    # Agent identity (specs/0036): substitute the configured name into the ONE identity line (the
+    # "You are openagent-code," token is unique in the file) and append an OPTIONAL persona line. The
+    # default name "OAC" renders "You are OAC,"; setting CODE_AGENT_NAME=openagent-code restores the
+    # original literal exactly. An empty persona (default) appends nothing — the "\n\n" separator is
+    # INSIDE the `if` gate, never a bare trailing blank block.
+    base = BASE_PROMPT
+    _name = config.agent_name()
+    if _name != "openagent-code":
+        base = base.replace("You are openagent-code,", f"You are {_name},", 1)
+    _persona = config.agent_persona()
+    per = ("\n\n" + _persona) if _persona else ""
+    return base + "\n\n" + suffix + note + mem + tdo + spc + per
 
 
 # Used by the ContextManager when the live context overflows. It summarizes the
