@@ -279,6 +279,16 @@ def build_system_prompt(mode, tools, memory=None, todos=None, spec=None, granted
                  "the spec, fold their feedback in and call write_spec(action='propose') AGAIN - it amends "
                  "the SAME spec; don't abandon it and act ad hoc. For a trivial change, skip the spec.")
 
+    # Workflows (specs/0038): advertise run_workflow ONLY when it is actually offered (CODE_WORKFLOWS), so a
+    # flag-off prompt is byte-identical.
+    if any(t["name"] == "run_workflow" for t in tools):
+        note += ("\n\nWORKFLOWS: for a BIG, decomposable investigation (audit N things, or research M "
+                 "questions then cross-check them), author a MULTI-PHASE `run_workflow` instead of reading "
+                 "everything yourself — ordered phases, each with `jobs` (the items to fan out over) and an "
+                 "`instruction`; each phase's digest feeds the next. Call it ONCE, then write your answer by "
+                 "synthesizing the digest it returns; do NOT read the raw material yourself. For a whole-repo "
+                 "REVIEW specifically, use review_repo.")
+
     # Cross-session memory (Phase 4 #7): prior-session notes about THIS repo. Lands in
     # the system prompt, which is logged as the first raw turn -> self-containment holds.
     mem = ""

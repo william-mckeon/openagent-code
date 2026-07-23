@@ -618,6 +618,7 @@ def web_search(args, ctx):
 # without a circular import — ToolResult is defined above by now.
 from .orchestrator import review_repo  # noqa: E402
 from .skills import run_skill  # noqa: E402  (skills.py imports ToolResult lazily -> no cycle)
+from .workflow import run_workflow  # noqa: E402  (workflow.py imports ToolResult lazily -> no cycle)
 from .patch import apply_patch  # noqa: E402  (patch.py imports ToolResult lazily -> no cycle)
 
 TOOLS = [
@@ -1277,6 +1278,36 @@ SPEC_TOOLS = [
                           "description": "explicitly out of scope (propose, optional)"},
             "item": {"type": "string", "description": "which acceptance item to mark done: its number or exact text (done)"},
         }, "required": []},
+    },
+]
+
+
+# Opt-in workflows (Phase 38 / specs/0038) — added to the active toolset by src/toolset.py only when
+# CODE_WORKFLOWS is on, so run_workflow isn't offered (and the schema is byte-identical) when off.
+WORKFLOW_TOOLS = [
+    {
+        "name": "run_workflow", "fn": run_workflow,
+        "description": ("Run a deterministic MULTI-PHASE workflow to digest a big, decomposable problem — the "
+                        "generalization of review_repo to ORDERED PHASES you author. Each phase fans out one "
+                        "bounded child agent per job (running your instruction on that item), reduces them to "
+                        "a digest, and that digest is CARRIED into the next phase — so a probe -> critique -> "
+                        "synthesize pipeline runs in one call. YOU never read the raw material; you author the "
+                        "plan, then synthesize the digest it returns. Use it to audit N things or research M "
+                        "questions then cross-check; for a whole-repo REVIEW specifically, review_repo is the "
+                        "specialized tool. Call it ONCE, then write your final answer from the digest."),
+        "parameters": {"type": "object", "properties": {
+            "workflow": {"type": "array",
+                         "description": "The ORDERED phases (a pipeline). Each phase fans out one bounded "
+                                        "child per job; the phase's digest feeds the next phase's workers.",
+                         "items": {"type": "object", "properties": {
+                             "label": {"type": "string", "description": "short name of the phase, e.g. 'probe' or 'verify'"},
+                             "jobs": {"type": "array", "items": {"type": "string"},
+                                      "description": "the items/questions to fan out over — one bounded child each"},
+                             "instruction": {"type": "string", "description": "what each child should do with its item"},
+                             "focus": {"type": "string", "description": "optional lens applied to every job in this phase"},
+                         }, "required": ["jobs", "instruction"]}},
+            "synthesis": {"type": "string", "description": "optional: how you should synthesize the final digest"},
+        }, "required": ["workflow"]},
     },
 ]
 

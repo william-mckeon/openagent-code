@@ -102,6 +102,7 @@ docker run --rm --env-file .env -v /path/to/repo:/workspace \
 | `ask_user` | no | Ask the human a clarifying question (interactive mode); degrades to "proceed" when no human is present |
 | `spawn_agent` | yes | Delegate a standalone subtask to an isolated subagent; returns its final answer. Capped by `CODE_MAX_SUBAGENT_DEPTH` |
 | `request_dir` | no | Ask the user to grant READ access to a directory outside the workspace. The agent cannot self-grant — on approval the dir joins the live fence; headless/denied → refused. With `CODE_TRUST_USER_DIRS` on, auto-grants an existing dir under **bypass** at depth 0 into a **read-only** tier (writes still denied) |
+| `run_workflow` | no | **OPT-IN** (`CODE_WORKFLOWS`, specs/0038): a synchronous multi-phase fan-out+reduce engine — the model authors ordered phases, each fans out captured subagents and reduces to a digest that feeds the next. Non-mutating (children do their own gated work); capped by `CODE_MAX_WORKFLOW_PHASES` × `CODE_MAX_SUBAGENT_FANOUT` |
 | `remember` | no | Save a durable note to project memory (reloaded next session). **OPT-IN** (`CODE_MEMORY`); non-mutating (the agent's notebook), writes inside the fence |
 | `web_fetch` | yes | Fetch a URL → text. **OPT-IN** (`CODE_ENABLE_WEB`); sends the URL off-machine. Only in the toolset when enabled |
 | `web_search` | yes | Search via a pluggable provider (`CODE_SEARCH_PROVIDER`: generic/tavily/searxng/brave/module:func). **OPT-IN**; sends the query off-machine |
@@ -201,6 +202,7 @@ Full reference in the README and `.env.example`. Contract-relevant values:
 | `CODE_PERMISSIONS_CONFIG` | (empty) | Yes — JSON allow/ask/deny rules; `deny` always wins |
 | `CODE_ADD_DIRS` | (empty) | Yes — extra roots the file tools may touch (widens the fence) |
 | `CODE_TRUST_USER_DIRS` | `false` | Yes (specs/0035) — a user-typed absolute dir becomes a **read** grant; `request_dir` auto-grants under bypass at depth 0 into a read-only tier writes can't reach |
+| `CODE_WORKFLOWS` | `false` | Yes (specs/0038) — offer `run_workflow`, a synchronous multi-phase fan-out+reduce engine; `CODE_MAX_WORKFLOW_PHASES` (5) caps the pipeline length |
 | `CODE_MEMORY` | `false` | Yes — opt-in cross-session memory (specs/0002-memory.md); off keeps eval isolated |
 | `CODE_MEMORY_FILE` | `.openagent/memory.md` | Reference — per-project memory file (relative to workspace) |
 | `CODE_MEMORY_MAX_CHARS` | `4000` | Reference — cap on memory loaded into the system prompt |

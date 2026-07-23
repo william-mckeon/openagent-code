@@ -194,6 +194,7 @@ class Agent:
         # later, unrelated turns (the same cross-turn-leak class as the plan/mutations reset above).
         ctx.spawn_count = 0
         ctx._reviewed_digest = None   # a new task may run review_repo fresh (the per-turn re-run guard)
+        ctx._workflow_digest = None   # same, for run_workflow (specs/0038); inert unless CODE_WORKFLOWS offers it
         ctx._guardian_cache = {}      # per-turn guardian verdicts (specs/0019): a repeated command isn't re-reviewed
         ctx._destructive_targets = set()  # per-turn mass-destruction ledger (ride-5): distinct approved delete/move/dangerous ops
         ctx._turn_id = getattr(ctx, "_turn_id", 0) + 1   # a stable per-turn id a hook can key its own budget on

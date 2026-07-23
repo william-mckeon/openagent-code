@@ -554,6 +554,22 @@ MAX_SUBAGENT_FANOUT = int(os.environ.get("CODE_MAX_SUBAGENT_FANOUT", "8"))
 # to cover EVERY top-level area, and each child is bounded and returns only a short summary.
 MAX_REVIEW_AREAS = int(os.environ.get("CODE_MAX_REVIEW_AREAS", "16"))
 
+# Workflows (Phase 38 / specs/0038) — a synchronous MULTI-PHASE fan-out+reduce engine (src/workflow.py): the
+# generalization of review_repo to N ordered phases the MODEL authors, each phase fanning out captured
+# subagents and reducing to a digest that feeds the next. Opt-in: the `run_workflow` tool is offered ONLY
+# when this is on (the single toolset.py gate), so a flag-off run's tool_schemas + system prompt are
+# byte-identical, and safety_fingerprint is deliberately NOT touched (a fan-out/digest tool is behavioral,
+# not a safety gate — the existing fan-out caps are likewise absent from the fingerprint).
+WORKFLOWS = _as_bool(os.environ.get("CODE_WORKFLOWS", "false"))
+# Caps the pipeline length; each phase fans out up to MAX_SUBAGENT_FANOUT children (reused), so the worst
+# case is MAX_WORKFLOW_PHASES * MAX_SUBAGENT_FANOUT captured subagents. A DISTINCT cap from MAX_REVIEW_AREAS
+# so the two orchestrators tune independently. Defensive int (config is imported on every flag-off run — a
+# bad value must never raise at import).
+try:
+    MAX_WORKFLOW_PHASES = max(1, int(os.environ.get("CODE_MAX_WORKFLOW_PHASES", "5")))
+except ValueError:
+    MAX_WORKFLOW_PHASES = 5
+
 # -----------------------------------------------------------------------------
 # External tools (Phase 4 tool breadth) — these reach OFF the machine, so they
 # are OPT-IN to preserve the data-sovereignty default.

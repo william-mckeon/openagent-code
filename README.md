@@ -76,7 +76,7 @@ openagent-code/
 ├── src/                      # the agent
 │   ├── config.py             # CODE_* env -> config (no YAML; .env is the source)
 │   ├── model.py              # LiteLLM gateway (+ summarize() for compaction)
-│   ├── tools.py              # tools: read/grep/glob/tree/write/edit/delete/run_command/update_plan/spawn_agent/review_repo/run_skill/apply_patch/request_dir/remember
+│   ├── tools.py              # tools: read/grep/glob/tree/write/edit/delete/run_command/update_plan/spawn_agent/review_repo/run_skill/run_workflow/apply_patch/request_dir/remember
 │   ├── editmatch.py          # safe fuzzy fallback for edit_file (specs/0013)
 │   ├── patch.py              # atomic multi-file apply_patch (specs/0013)
 │   ├── verify_edits.py       # auto-verify: run a check on touched files + reflection loop (specs/0014)
@@ -88,6 +88,7 @@ openagent-code/
 │   ├── effort.py             # adaptive reasoning effort: pluggable policy, escalate-only (specs/0021)
 │   ├── effort_online.py      # opt-in self-learning effort policy (CODE_EFFORT_POLICY=online, specs/0021)
 │   ├── skills.py             # skills (specs/0008): SKILL.md workflows; run_skill fans out captured concern subagents
+│   ├── workflow.py           # workflows (specs/0038): run_workflow — a synchronous multi-phase fan-out+reduce engine
 │   ├── memory.py             # cross-session project memory — load + remember (Phase 4)
 │   ├── context.py            # ContextManager — live context + compaction (Phase 4)
 │   ├── envcontext.py         # per-turn environment block — situational context (specs/0012)
@@ -240,6 +241,7 @@ there, documented in `.env.example`). There is no YAML config file. Key ones:
 | `CODE_PERMISSIONS_CONFIG` | (empty) | JSON allow/ask/deny rules; `deny` always wins (see `permissions.json.example`) |
 | `CODE_ADD_DIRS` | (empty) | Dirs the file tools may touch beyond the workspace (widens the fence) |
 | `CODE_TRUST_USER_DIRS` | `false` | Treat a dir the user literally types as a **read** grant, and auto-grant `request_dir` for an existing dir under bypass at depth 0 (into a read-only tier writes can't reach) |
+| `CODE_WORKFLOWS` | `false` | Offer `run_workflow`: a synchronous multi-phase fan-out+reduce engine (specs/0038). `CODE_MAX_WORKFLOW_PHASES` caps the pipeline length |
 | `CODE_MEMORY` | `false` | Opt-in cross-session memory: offer `remember`, load project notes into context |
 | `CODE_MEMORY_FILE` | `.openagent/memory.md` | Per-project memory file (relative to the workspace) |
 | `CODE_MEMORY_MAX_CHARS` | `4000` | Cap on memory loaded into the system prompt |
