@@ -202,11 +202,11 @@ def run_skill(args, ctx):
     if diff is None:
         return ToolResult(True, f"Nothing to review: {info}")
 
+    from .fanout import fanout  # local import keeps skills import-light (fanout is pure stdlib)
     subs = subs[:config.MAX_REVIEW_AREAS]
-    findings = []
-    for s in subs:
-        result = ctx.spawn(_concern_task(s.name, s.body, diff, info))
-        findings.append((s.name, (result or "").strip() or "(no findings returned)"))
+    tasks = [_concern_task(s.name, s.body, diff, info) for s in subs]   # pure builders -> prebuild is byte-safe
+    results = fanout(ctx.spawn, tasks, config.WORKFLOW_CONCURRENCY)     # specs/0039: bounded parallel, read-only children
+    findings = [(s.name, (r or "").strip() or "(no findings returned)") for s, r in zip(subs, results)]
 
     parts = [f"Reviewed the current diff across {len(findings)} concern(s):\n"]
     for concern, text in findings:

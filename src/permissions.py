@@ -133,6 +133,17 @@ class Permissions:
                 roots.append(os.path.realpath(d))
         return cls(mode, config.load_permission_rules(), roots)
 
+    def readonly_view(self):
+        """A READ-ONLY projection of this Permissions for a PARALLEL fan-out child (specs/0039): a FRESH
+        object at mode 'plan' (the ladder denies every MUTATING tool at the plan step) carrying this
+        object's deny/ask/allow rules + the fence (extra_roots + read_only_roots). So a concurrent child can
+        read its scope but can never write/edit/delete/run — parallel children can't race the filesystem.
+        This object is left untouched (the SERIAL fan-out path uses it directly and must stay byte-identical)."""
+        p = Permissions("plan", None, list(self.extra_roots))
+        p.deny, p.ask, p.allow = list(self.deny), list(self.ask), list(self.allow)
+        p.read_only_roots = list(self.read_only_roots)
+        return p
+
     # -- the gate -------------------------------------------------------------
 
     def decide(self, tool, args, ctx):

@@ -569,6 +569,16 @@ try:
     MAX_WORKFLOW_PHASES = max(1, int(os.environ.get("CODE_MAX_WORKFLOW_PHASES", "5")))
 except ValueError:
     MAX_WORKFLOW_PHASES = 5
+# Bounded PARALLEL fan-out (Phase 39 / specs/0039). How many fan-out children run CONCURRENTLY: 1 (default) =
+# SERIAL = byte-identical to today (the src/fanout.py helper never constructs an executor); N>1 = up to N at
+# once. Parallel children run READ-ONLY (subagent.run_subagent -> Permissions.readonly_view) so they can't
+# race the filesystem. Floored at 1 (0/negative would disable fan-out) and CEILED at MAX_REVIEW_AREAS (so it
+# can't burst the account-global Bedrock rate limit). Behavioral, not a safety gate -> absent from
+# safety_fingerprint like the other fan-out caps. Defensive int (a bad value must not raise at import).
+try:
+    WORKFLOW_CONCURRENCY = max(1, min(int(os.environ.get("CODE_WORKFLOW_CONCURRENCY", "1")), MAX_REVIEW_AREAS))
+except ValueError:
+    WORKFLOW_CONCURRENCY = 1
 
 # -----------------------------------------------------------------------------
 # External tools (Phase 4 tool breadth) — these reach OFF the machine, so they

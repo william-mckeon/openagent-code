@@ -18,6 +18,7 @@ Capture needs no change here: the run_workflow tool_call (its spec + the returne
 agent loop, and each fanned-out child is already a linked trajectory via ctx.spawn (parent_session_id+depth).
 """
 from . import config
+from .fanout import fanout                    # specs/0039: bounded parallel fan-out within a phase
 from .orchestrator import _degenerate_scope   # reuse the "names the whole repo, not a part" guard (no cycle)
 
 # Harness-owned per-child bound: appended to EVERY child prompt regardless of the model's `instruction`, so a
@@ -151,9 +152,11 @@ def run_workflow(args, ctx):
     records, carry, total_jobs = [], "", 0
     for phase in phases:
         jobs, truncated = plan_jobs(phase, carry, cap)
-        results = []
-        for job_label, child_prompt in jobs:
-            results.append((job_label, (ctx.spawn(child_prompt) or "").strip() or "(no summary returned)"))
+        # Fan the phase's jobs out (specs/0039): parallel within a phase at CODE_WORKFLOW_CONCURRENCY>1 (the
+        # children run read-only then), serial + byte-identical at 1. The OUTER phase loop stays serial —
+        # each phase's digest is the `carry` the next phase's workers build on.
+        raw = fanout(ctx.spawn, [p for _, p in jobs], config.WORKFLOW_CONCURRENCY)
+        results = [(job_label, (r or "").strip() or "(no summary returned)") for (job_label, _), r in zip(jobs, raw)]
         total_jobs += len(results)
         digest = assemble_digest(phase["label"], results, truncated, cap)
         records.append(digest)

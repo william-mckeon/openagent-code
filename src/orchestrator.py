@@ -210,10 +210,12 @@ def review_repo(args, ctx):
         print(f"  [review_repo] fanning out across {len(units)} area(s) ({source})"
               + (f", focus={focus}" if focus else ""))
 
-    summaries = []
-    for label, scope_line, area_focus in units:
-        result = ctx.spawn(_child_task(label, scope_line, area_focus, root if ext else None))
-        summaries.append((label, (result or "").strip() or "(no summary returned)"))
+    from .fanout import fanout  # local import keeps orchestrator import-light (fanout is pure stdlib)
+    tasks = [_child_task(label, scope_line, area_focus, root if ext else None)
+             for label, scope_line, area_focus in units]   # pure builders -> prebuild is byte-safe
+    results = fanout(ctx.spawn, tasks, config.WORKFLOW_CONCURRENCY)   # specs/0039: bounded parallel, read-only children
+    summaries = [(label, (r or "").strip() or "(no summary returned)")
+                 for (label, *_), r in zip(units, results)]
 
     # Reduce: a compact digest the lead synthesizes from. Small by construction — N short
     # summaries, never the raw files.

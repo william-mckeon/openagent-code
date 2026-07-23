@@ -27,9 +27,15 @@ import threading
 from . import config
 
 _TOOLS = []      # discovered MCP tools as tool-dicts (read by toolset.active_tools)
+import threading
+
 _LOOP = None     # background asyncio loop
 _THREAD = None
 _STACK = None    # AsyncExitStack keeping the sessions open until disconnect()
+# Serialize MCP dispatch (specs/0039): dispatch is already thread-safe (run_coroutine_threadsafe), but ONE
+# ClientSession per server multiplexes a single stdio transport, so concurrent fan-out children could
+# interleave frames. The coroutine runs on the loop thread (not the lock holder), so this never self-deadlocks.
+_CALL_LOCK = threading.Lock()
 
 
 def mcp_tools():
@@ -50,8 +56,11 @@ def _load_servers():
 
 
 def _call_sync(coro):
-    """Run a coroutine on the background loop and block for its result."""
-    return asyncio.run_coroutine_threadsafe(coro, _LOOP).result()
+    """Run a coroutine on the background loop and block for its result. Serialized by _CALL_LOCK (specs/0039)
+    so concurrent fan-out children don't interleave frames on the shared per-server session; an uncontended
+    lock at concurrency 1 changes nothing."""
+    with _CALL_LOCK:
+        return asyncio.run_coroutine_threadsafe(coro, _LOOP).result()
 
 
 def _result_to_toolresult(result, is_web, ctx, args):

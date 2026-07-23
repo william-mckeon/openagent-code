@@ -50,7 +50,8 @@ def make_context(cwd, permissions, session_id, depth=0, verbose=False, interacti
     ctx.traj_dir = traj_dir
     # effort is optional so a caller (the grounding verifier) can run the child at its own reasoning
     # effort; a bare spawn(task) keeps the parent's/global effort.
-    ctx.spawn = lambda task, effort=None, label=None: run_subagent(task, ctx, effort=effort, label=label)
+    ctx.spawn = lambda task, effort=None, label=None, read_only=False: run_subagent(
+        task, ctx, effort=effort, label=label, read_only=read_only)
     ctx.ask = _terminal_ask if interactive else None
     return ctx
 
@@ -68,12 +69,17 @@ def _classify(result, tool_calls):
     return outcomes.classify(result.terminated, tool_calls)
 
 
-def run_subagent(task, parent_ctx, effort=None, label=None):
+def run_subagent(task, parent_ctx, effort=None, label=None, read_only=False):
     """Build a child agent for `task`, run it in isolation, return its final text. `effort` overrides
     the child's reasoning effort (None = the global) — e.g. a grounding verifier at CODE_GROUNDING_EFFORT.
     `label` is a short human tag for the console line (a guardian/grounding review) instead of dumping the
-    raw injected prompt; it does NOT change what the child runs."""
+    raw injected prompt; it does NOT change what the child runs. `read_only` (specs/0039): a PARALLEL
+    fan-out child runs under a read-only Permissions projection so concurrent children can't race the FS."""
     child_depth = parent_ctx.depth + 1
+    # A parallel fan-out child (specs/0039) runs READ-ONLY (writes/edits/deletes/commands denied) so
+    # concurrent children can't race the filesystem; the SERIAL path passes read_only=False -> the parent's
+    # own Permissions, byte-identical to today.
+    perms = parent_ctx.permissions.readonly_view() if read_only else parent_ctx.permissions
     # Children write to the parent's trajectory dir (None -> the corpus). This keeps subagents spawned
     # INSIDE an eval — e.g. the Phase-10 grounding verifier — under trajectories/eval/ (the firewall),
     # not in the training corpus (specs/0005).
@@ -82,13 +88,13 @@ def run_subagent(task, parent_ctx, effort=None, label=None):
         traj_dir, task, config.MODEL, parent_ctx.cwd,
         parent_session_id=parent_ctx.session_id,
         depth=child_depth,   # tool_schemas defaults to the active toolset
-        safety=config.safety_fingerprint(parent_ctx.permissions),   # specs/0033: same guards as the parent
+        safety=config.safety_fingerprint(perms),   # specs/0033: the child's ACTUAL guards (read-only when parallel)
     )
     # Children are ALWAYS non-interactive, even from a REPL: a spawned worker reviewing one
     # folder must never prompt the human (ask_user degrades to "no human - proceed"). Inheriting
     # the parent's interactive flag let a child hijack the REPL with "Could you specify the path?"
     # mid-review. The human talks to the lead; children just do their bounded task and report.
-    child_ctx = make_context(parent_ctx.cwd, parent_ctx.permissions, traj.session_id,
+    child_ctx = make_context(parent_ctx.cwd, perms, traj.session_id,
                              depth=child_depth, verbose=parent_ctx.verbose,
                              interactive=False, traj_dir=getattr(parent_ctx, "traj_dir", None))
     if parent_ctx.verbose:
