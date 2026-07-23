@@ -171,6 +171,8 @@ def main():
     import tempfile
     from src.orchestrator import review_repo
     from src.tools import Context as _ToolCtx
+    from src import config as _cfg
+    _cfg.WORKFLOW_CONCURRENCY = 1   # hermetic (specs/0039): serial fan-out so the 1-arg stub spawn below is used
     _d = tempfile.mkdtemp(prefix="revrepo_")
     os.makedirs(os.path.join(_d, "src"))
     os.makedirs(os.path.join(_d, "docs"))

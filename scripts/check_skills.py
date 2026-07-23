@@ -22,6 +22,11 @@ from src import config, skills  # noqa: E402
 from src.tools import Context  # noqa: E402
 from src.toolset import active_tools  # noqa: E402
 
+# Hermetic against the operator's live .env (specs/0039): pin SERIAL fan-out so run_skill calls the
+# deterministic 1-arg stub ctx.spawn below. At CODE_WORKFLOW_CONCURRENCY>1, fanout would spawn read-only
+# children in PARALLEL and pass read_only=True, which these single-arg stubs don't accept.
+config.WORKFLOW_CONCURRENCY = 1
+
 _results = []
 
 

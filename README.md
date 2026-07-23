@@ -90,6 +90,7 @@ openagent-code/
 │   ├── skills.py             # skills (specs/0008): SKILL.md workflows; run_skill fans out captured concern subagents
 │   ├── workflow.py           # workflows (specs/0038): run_workflow — a multi-phase fan-out+reduce engine
 │   ├── fanout.py             # bounded parallel fan-out (specs/0039): one helper for all three fan-out sites
+│   ├── tasks.py              # async background runtime (specs/0040): pure TaskRegistry + drain/fold + subprocess launcher
 │   ├── memory.py             # cross-session project memory — load + remember (Phase 4)
 │   ├── context.py            # ContextManager — live context + compaction (Phase 4)
 │   ├── envcontext.py         # per-turn environment block — situational context (specs/0012)
@@ -244,6 +245,8 @@ there, documented in `.env.example`). There is no YAML config file. Key ones:
 | `CODE_TRUST_USER_DIRS` | `false` | Treat a dir the user literally types as a **read** grant, and auto-grant `request_dir` for an existing dir under bypass at depth 0 (into a read-only tier writes can't reach) |
 | `CODE_WORKFLOWS` | `false` | Offer `run_workflow`: a multi-phase fan-out+reduce engine (specs/0038). `CODE_MAX_WORKFLOW_PHASES` caps the pipeline length |
 | `CODE_WORKFLOW_CONCURRENCY` | `1` | Bounded parallel fan-out (specs/0039): 1 = serial (byte-identical); N = up to N children at once across `run_workflow`/`review_repo`/`run_skill`. Parallel children run **read-only** |
+| `CODE_WORKFLOWS_ASYNC` | `false` | REPL-only (specs/0040): `run_workflow` can **submit** to run in the background + return a task-id; `/tasks`, `/result <id>`, a completion banner. Workers are read-only |
+| `CODE_MAX_BACKGROUND_TASKS` | `3` | Cap on concurrent background tasks |
 | `CODE_MEMORY` | `false` | Opt-in cross-session memory: offer `remember`, load project notes into context |
 | `CODE_MEMORY_FILE` | `.openagent/memory.md` | Per-project memory file (relative to the workspace) |
 | `CODE_MEMORY_MAX_CHARS` | `4000` | Cap on memory loaded into the system prompt |

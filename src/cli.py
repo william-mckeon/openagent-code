@@ -15,7 +15,7 @@ import os
 import sys
 import subprocess
 
-from . import config, logsetup, outcomes, userdirs, installshim
+from . import config, logsetup, outcomes, userdirs, installshim, tasks
 from .permissions import Permissions
 from .runtime import build_agent
 from .subagent import make_context
@@ -254,13 +254,28 @@ def _run_session(traj, agent, ctx):
     """The interactive chat loop, shared by a fresh REPL and a resumed session."""
     print(f"{config.agent_name()} REPL | model={config.display_model()} | mode={ctx.permissions.mode} | "
           f"effort={config.REASONING_EFFORT or 'default'} | workspace={ctx.cwd}")
-    print("Type a task and press enter. Commands: /exit  /plan  /add-dir <path>  /mode <name>")
+    cmds = "/exit  /plan  /add-dir <path>  /mode <name>"
+    if config.WORKFLOWS_ASYNC:
+        cmds += "  /tasks  /result <id>"
+    print("Type a task and press enter. Commands: " + cmds)
     log.info("REPL start | model=%s mode=%s workspace=%s", config.display_model(), ctx.permissions.mode, ctx.cwd)
     last_todos = _show_todos(ctx.cwd)   # surface the project backlog at startup (Phase 23; no-op when off)
     _show_spec(ctx.cwd)                 # surface the active spec at startup (Phase 25; no-op when off)
     turns = 0
+    # Async background runtime (specs/0040): a registry + a pending-result queue, built ONLY when the flag is
+    # on, so a flag-off session builds nothing and every gated block below executes zero lines (byte-identical).
+    reg = tasks.TaskRegistry() if config.WORKFLOWS_ASYNC else None
+    ctx.task_registry = reg
+    pending_results = []
     try:
         while True:
+            if reg is not None:
+                try:
+                    reg.refresh()
+                    for line in reg.drain_finished():   # completion banner, drained-once, before the prompt
+                        print(line)
+                except Exception:  # noqa: BLE001 - a drain error must never kill the REPL
+                    pass
             try:
                 user = input("\nyou> ").strip()
             except (EOFError, KeyboardInterrupt):
@@ -278,6 +293,17 @@ def _run_session(traj, agent, ctx):
             if user.startswith("/mode"):
                 _repl_set_mode(ctx, user[len("/mode"):])
                 continue
+            if reg is not None and user == "/tasks":   # specs/0040: list background tasks
+                print(reg.render())
+                continue
+            if reg is not None and user.startswith("/result"):   # specs/0040: pull a finished digest to fold in
+                pulled = reg.pull(user[len("/result"):])
+                if pulled is None:
+                    print("  no finished task matches that id - /tasks to list.")
+                else:
+                    print(tasks.render_result(pulled))
+                    pending_results.append(pulled)
+                continue
             # Trusted user dirs (specs/0035 fix A): a directory the user LITERALLY typed, if it exists and
             # is safe (userdirs applies the denylist + negation veto), is granted READ access keyed off the
             # user's own text. Off by default -> the extractor never runs and nothing is granted or printed
@@ -287,8 +313,11 @@ def _run_session(traj, agent, ctx):
                     _repl_grant_readonly(agent, ctx, _ap)
             turns += 1
             log.info("turn %d | you> %s", turns, user)
+            # Fold any pulled background results into THIS turn as ONE user message (specs/0040); no-op + the
+            # exact same `user` object when there are none, so a flag-off/no-pull turn is byte-identical.
+            task_for_model = tasks.fold_result(pending_results, user) if (reg is not None and pending_results) else user
             try:
-                result = agent.run(user, ctx)
+                result = agent.run(task_for_model, ctx)
             except Exception as e:
                 # A model error (500, context overflow, a flaky worker) must NOT kill the
                 # REPL — end the turn with a message and keep the session alive.
@@ -296,6 +325,8 @@ def _run_session(traj, agent, ctx):
                 print(f"\n[error] that turn failed: {type(e).__name__}: {str(e)[:200]}\n"
                       "(the session is still alive — try again, rephrase, or /exit)")
                 continue
+            if reg is not None:
+                pending_results.clear()   # delivered -> clear ONLY after a successful run (a failed turn keeps them)
             # Stamp THIS turn's honest outcome (0.7.0) so convert can drop a degenerate/ungrounded/
             # unverified turn WITHOUT discarding the good turns in the same session. result.tool_calls is
             # this turn's own count; classify() is the same mapping the one-shot path uses.
@@ -318,12 +349,36 @@ def _run_session(traj, agent, ctx):
                           else "\nProject todos: all clear.\n")
                     last_todos = new_todos
     finally:
+        if reg is not None:
+            _teardown_tasks(reg)   # specs/0040: prompt to keep-running or cancel any still-running tasks
         traj.end("completed" if traj.tool_calls else "no_action", None, terminated="session_end")
         log.info("REPL end | %d turn(s) tool_calls=%s", turns, traj.tool_calls)
         print(f"\nsession ended ({turns} turn(s)). resume later with:"
               f"  python -m src --resume {traj.session_id}")
         _print_log_path()
     return 0
+
+
+def _teardown_tasks(reg):
+    """On session end, handle any still-running background tasks (specs/0040). PROMPT the user (per request):
+    KEEP them running after exit (they finish + write result files under trajectories/tasks/, unattended), or
+    CANCEL them now. No human present (EOF/Ctrl-C) -> cancel, so an unattended exit never leaves orphaned
+    subprocesses hitting the model."""
+    reg.refresh()
+    running = reg.non_terminal()
+    if not running:
+        return
+    try:
+        ans = input(f"\n{len(running)} background task(s) still running. "
+                    "Keep them running after you exit, or cancel them? [k]eep / [c]ancel: ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        ans = "c"
+    if ans.startswith("k"):
+        print(f"  left {len(running)} task(s) running; results will land in {tasks.tasks_dir()}.")
+        return
+    for t in running:
+        reg.cancel(t)
+    print(f"  cancelled {len(running)} background task(s).")
 
 
 def _repl(perms):
@@ -539,6 +594,36 @@ def _remove_name(_args):
     return 0
 
 
+def _run_task(task_id, spec_path, perms):
+    """Background-worker entry (specs/0040): run ONE submitted workflow to a result file and exit. Launched as
+    a subprocess by an async run_workflow submit; never interactive; READ-ONLY (perms is --mode plan). Its own
+    run_workflow can never re-enter the async branch (interactive=False + _OAC_BG_WORKER=1 + no registry), so
+    it runs the workflow INLINE and writes {status, digest, session_id, path} for the parent REPL to drain."""
+    from . import workflow
+    workspace = config.WORKSPACE
+    spec = tasks.read_spec(spec_path)
+    if spec is None:
+        tasks.write_result(task_id, {"status": "error", "digest": "(could not read the task spec)"})
+        return 1
+    traj = Trajectory(config.trajectory_dir(), f"(background workflow {task_id})", config.MODEL, workspace,
+                      safety=config.safety_fingerprint(perms))
+    logsetup.configure(traj.session_id)
+    ctx = make_context(workspace, perms, traj.session_id, depth=0, verbose=config.VERBOSE, interactive=False)
+    agent = build_agent(traj, granted_dirs=perms.extra_roots, cwd=workspace)  # noqa: F841 - warms the toolset/prompt
+    try:
+        result = workflow.run_workflow({"workflow": spec.get("phases"), "synthesis": spec.get("synthesis")}, ctx)
+        ok = result.ok
+        traj.end("completed" if ok else "error", result.content if ok else None, terminated="workflow_done")
+        tasks.write_result(task_id, {"status": "done" if ok else "error", "digest": result.content,
+                                     "session_id": traj.session_id, "path": traj.path})
+        return 0 if ok else 1
+    except Exception as e:
+        traj.end("error", None, terminated="exception")
+        tasks.write_result(task_id, {"status": "error",
+                                     "digest": f"(background workflow crashed: {type(e).__name__}: {e})"})
+        return 1
+
+
 def main(argv=None):
     _force_utf8_stdout()
     argv = list(argv if argv is not None else sys.argv[1:])
@@ -560,6 +645,17 @@ def main(argv=None):
     # Without this the mode would validate but stay a dead read-only mode with no way to ever approve a plan.
     if perms.mode == "propose":
         config.PROPOSE = True
+    # Background worker entry (specs/0040): a subprocess launched by an async run_workflow submit. Runs ONE
+    # submitted workflow to a result file and exits. Minimal bring-up — it does NOT connect the human-facing
+    # MCP servers (N workers each opening the full set can conflict on exclusive resources); it warms its own
+    # model. The launcher passes `-C <workspace> --mode plan` (applied above), so the worker is READ-ONLY.
+    if argv and argv[0] == "--run-task":
+        if len(argv) < 3:
+            print("usage: python -m src --run-task <task_id> <spec_path>")
+            return 2
+        from .model import warm_up
+        warm_up()
+        return _run_task(argv[1], argv[2], perms)
     from .mcp_client import connect, disconnect
     from .model import warm_up
     n = connect()

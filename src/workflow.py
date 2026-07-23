@@ -17,6 +17,9 @@ the dep-free harness stub-tests the whole fan-out + carry chaining with a fake c
 Capture needs no change here: the run_workflow tool_call (its spec + the returned digest) is logged by the
 agent loop, and each fanned-out child is already a linked trajectory via ctx.spawn (parent_session_id+depth).
 """
+import os
+import uuid
+
 from . import config
 from .fanout import fanout                    # specs/0039: bounded parallel fan-out within a phase
 from .orchestrator import _degenerate_scope   # reuse the "names the whole repo, not a part" guard (no cycle)
@@ -147,8 +150,29 @@ def run_workflow(args, ctx):
                                  "with `jobs` (the items/questions to fan out over) and an `instruction` "
                                  "(what each worker should do). Add at least one phase with real jobs.")
     synthesis = (args.get("synthesis") or args.get("synthesis_prompt") or "").strip()
-    cap = config.MAX_SUBAGENT_FANOUT
 
+    # Async submit (specs/0040): under CODE_WORKFLOWS_ASYNC, at the top level of an INTERACTIVE REPL with a
+    # task registry, run this workflow as a BACKGROUND subprocess and return a task-id IMMEDIATELY instead of
+    # running it inline. Gated five ways; a background worker (interactive=False AND _OAC_BG_WORKER=1 AND no
+    # registry) can never re-enter here (no bespoke recursion counter). Flag-off / one-shot / subagent /
+    # worker -> this branch is dead and the inline loop below runs byte-for-byte as before.
+    reg = getattr(ctx, "task_registry", None)
+    if (config.WORKFLOWS_ASYNC and getattr(ctx, "interactive", False) and reg is not None
+            and getattr(ctx, "depth", 0) == 0 and os.environ.get("_OAC_BG_WORKER") != "1"):
+        from . import tasks
+        task_id = uuid.uuid4().hex[:8]
+        label = phases[0]["label"] + (f" +{len(phases) - 1} phase(s)" if len(phases) > 1 else "")
+        spec_path = tasks.write_spec(task_id, phases, synthesis, getattr(ctx, "request", "") or "",
+                                     getattr(ctx, "session_id", None))
+        tid, err = reg.submit(task_id, label, spec_path, tasks.popen_spawn(ctx.cwd))
+        if err:
+            return ToolResult(False, err)
+        ctx._workflow_digest = f"(submitted as background task {tid})"   # arm the per-turn re-run guard
+        return ToolResult(True, f"Submitted as background task {tid}. Keep working - use /tasks to check "
+                                f"status, and /result {tid} to fold the result into your next message.",
+                          {"task_id": tid})
+
+    cap = config.MAX_SUBAGENT_FANOUT
     records, carry, total_jobs = [], "", 0
     for phase in phases:
         jobs, truncated = plan_jobs(phase, carry, cap)

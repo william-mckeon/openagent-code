@@ -579,6 +579,16 @@ try:
     WORKFLOW_CONCURRENCY = max(1, min(int(os.environ.get("CODE_WORKFLOW_CONCURRENCY", "1")), MAX_REVIEW_AREAS))
 except ValueError:
     WORKFLOW_CONCURRENCY = 1
+# Async background runtime (Phase 40 / specs/0040), REPL-ONLY. When on, run_workflow can SUBMIT a workflow to
+# run as a background SUBPROCESS and return a task-id immediately; the REPL drains a completion banner + /tasks
+# + /result <id>. Off by default -> run_workflow runs inline exactly as today (the submit branch is dead) and
+# the REPL adds zero lines. Behavioral (background execution / a concurrency cap), NOT a safety gate -> absent
+# from safety_fingerprint, like the other workflow flags. Defensive int (a bad value must not raise at import).
+WORKFLOWS_ASYNC = _as_bool(os.environ.get("CODE_WORKFLOWS_ASYNC", "false"))
+try:
+    MAX_BACKGROUND_TASKS = max(1, int(os.environ.get("CODE_MAX_BACKGROUND_TASKS", "3")))
+except ValueError:
+    MAX_BACKGROUND_TASKS = 3
 
 # -----------------------------------------------------------------------------
 # External tools (Phase 4 tool breadth) — these reach OFF the machine, so they
