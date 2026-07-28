@@ -203,6 +203,7 @@ Full reference in the README and `.env.example`. Contract-relevant values:
 | `CODE_ADD_DIRS` | (empty) | Yes — extra roots the file tools may touch (widens the fence) |
 | `CODE_TRUST_USER_DIRS` | `false` | Yes (specs/0035) — a user-typed absolute dir becomes a **read** grant; `request_dir` auto-grants under bypass at depth 0 into a read-only tier writes can't reach |
 | `CODE_WORKFLOWS` | `false` | Yes (specs/0038) — offer `run_workflow`, a multi-phase fan-out+reduce engine; `CODE_MAX_WORKFLOW_PHASES` (5) caps the pipeline length |
+| `CODE_REPLY_SHAPE` | `false` | Yes (specs/0041) — a user reply-shape/length instruction this turn outranks a tool's "synthesize now" trailer, and is scoped per-turn |
 | `CODE_WORKFLOW_CONCURRENCY` | `1` | Yes (specs/0039) — bounded parallel fan-out; 1 = serial (byte-identical), N = up to N children at once (across `run_workflow`/`review_repo`/`run_skill`); parallel children run **read-only** |
 | `CODE_WORKFLOWS_ASYNC` | `false` | Yes (specs/0040) — REPL-only: `run_workflow` gains an opt-in background-submit (subprocess, read-only worker) + `/tasks` / `/result`; depth-0 only. No new tool |
 | `CODE_MAX_BACKGROUND_TASKS` | `3` | Yes (specs/0040) — cap on concurrent background tasks |

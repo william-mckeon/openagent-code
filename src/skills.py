@@ -213,7 +213,8 @@ def run_skill(args, ctx):
         parts.append(f"### {concern}\n{text}\n")
     synthesis = skill.body.strip() or ("Synthesize the findings above into ONE numbered review, "
                                        "each item with a file path + line.")
+    from . import prompts   # specs/0041: reply_shape_caveat() (prompts imports config only -> no cycle)
     parts.append("\n" + synthesis + "\n\nWrite that final review NOW from the findings above. Do "
                  "NOT re-read files or call more tools — the concern reviews already covered the "
-                 "diff. This is a REVIEW: report only; do not edit or run anything.")
+                 "diff. This is a REVIEW: report only; do not edit or run anything." + prompts.reply_shape_caveat())
     return ToolResult(True, "\n".join(parts), {"concerns": len(findings)})

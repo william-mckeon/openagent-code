@@ -21,6 +21,7 @@ import os
 import uuid
 
 from . import config
+from . import prompts                         # specs/0041: reply_shape_caveat() for the final-digest trailer
 from .fanout import fanout                    # specs/0039: bounded parallel fan-out within a phase
 from .orchestrator import _degenerate_scope   # reuse the "names the whole repo, not a part" guard (no cycle)
 
@@ -120,7 +121,7 @@ def final_digest(records, synthesis):
                "synthesizing ALL phases above — do not let one phase crowd out the rest. Do NOT call "
                "run_workflow / review_repo / spawn_agent / read_file / grep again: the workers already did "
                "the work, and re-running only wastes budget and overflows your context. Your next reply "
-               "must be the finished result, as a clean report.")
+               "must be the finished result, as a clean report." + prompts.reply_shape_caveat())
     if synthesis:
         trailer = f"\nHow to synthesize: {synthesis}" + trailer
     parts.append(trailer)

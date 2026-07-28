@@ -233,9 +233,14 @@ class ContextManager:
         """
         self.pinned_review = None  # a new task invalidates any prior turn's review digest
         self.pinned_goal = None    # ...and any prior turn's goal/bar (the cross-turn hijack class)
-        self.pinned_task = (self._capped({"role": "user",
-                                          "content": "The user's current request (answer THIS directly):\n" + text})
-                            if text else None)
+        # Reply-shape precedence (specs/0041): when on, the pin asserts that THIS request is the only
+        # instruction in force and an earlier turn's format/length constraint does not carry over. Off ->
+        # the neutral "answer THIS directly" lead, byte-identical to before.
+        lead = (("The user's current request - this is the ONLY instruction in force this turn; answer THIS, "
+                 "in the shape they ask. A format or length constraint from an EARLIER turn does NOT apply "
+                 "now unless repeated here:\n") if config.REPLY_SHAPE
+                else "The user's current request (answer THIS directly):\n")
+        self.pinned_task = (self._capped({"role": "user", "content": lead + text}) if text else None)
 
     def set_review_digest(self, text):
         """Pin the digest a review_repo fan-out returned — always sent, never compacted.

@@ -22,6 +22,10 @@ import re
 # matched. `[^\s"'`<>|]` stops the token at whitespace, quotes, backticks, and the shell redirection glyphs.
 _PATH_TOKEN = re.compile(r"(?:[A-Za-z]:[\\/]|\\\\)[^\s\"'`<>|]*")
 
+# A QUOTED absolute path may legitimately contain SPACES the unquoted token would truncate at
+# ("C:\\a\\b c") — capture the whole quoted span (specs/0041 F3).
+_QUOTED_PATH = re.compile(r"""["'`]((?:[A-Za-z]:[\\/]|\\\\)[^"'`\n]+?)["'`]""")
+
 # Negation words: a path in a clause introduced by one of these ("don't touch C:\\Windows") is vetoed.
 _NEG = re.compile(r"\b(?:not|no|dont|don't|never|avoid|except|excluding|ignore|without|skip|leave)\b", re.I)
 
@@ -89,25 +93,47 @@ def user_typed_dirs(text):
     if not text:
         return []
     out, seen = [], set()
-    for m in _PATH_TOKEN.finditer(text):
-        raw = m.group(0).strip()
-        # trim surrounding quote/bracket pairs and trailing sentence punctuation
-        raw = raw.strip("\"'`").strip().rstrip(".,;:!?)]}").strip("\"'`").strip()
+
+    def _resolve(raw):
+        """Strip surrounding quotes/brackets + trailing sentence punctuation, realpath, and return it iff
+        grantable_dir accepts (a real, safe directory); else None."""
+        raw = raw.strip().strip("\"'`").strip().rstrip(".,;:!?)]}").strip("\"'`").strip()
         if not raw:
-            continue
-        # negation veto: look only at the CURRENT clause (text since the last sentence break) before the token
-        preceding = text[:m.start()]
-        clause = re.split(r"[.\n;]", preceding)[-1]
-        if _NEG.search(clause):
-            continue
+            return None
         try:
             real = os.path.realpath(raw)
         except (OSError, ValueError):
-            continue
-        if not grantable_dir(real):
-            continue
+            return None
+        return real if grantable_dir(real) else None
+
+    def _emit(real, at):
+        # negation veto (the CURRENT clause before the path) + order-preserving dedup
+        if _NEG.search(re.split(r"[.\n;]", text[:at])[-1]):
+            return
         key = _norm(real)
         if key not in seen:
             seen.add(key)
             out.append(real)
+
+    # 1. a QUOTED absolute path may contain spaces the unquoted token truncates at: take the whole span.
+    for m in _QUOTED_PATH.finditer(text):
+        real = _resolve(m.group(1))
+        if real:
+            _emit(real, m.start())
+
+    # 2. an UNQUOTED anchored token stops at the first space (F3: "...\resume helper" -> "...\resume").
+    # Extend it word-by-word over the following spaces and grant the LONGEST candidate that is a real,
+    # grantable directory — so a spaced folder the user typed beats a shorter same-prefix sibling. A no-space
+    # path yields a single candidate, byte-identical to the pre-fix behavior.
+    for m in _PATH_TOKEN.finditer(text):
+        words, cand, best = text[m.start():].split("\n", 1)[0].split(" "), "", None
+        for i, w in enumerate(words):
+            if i >= 12:   # word cap so a long sentence can't explode the candidate list
+                break
+            cand = w if i == 0 else cand + " " + w
+            real = _resolve(cand)
+            if real:
+                best = real   # keep extending; the longest grantable dir wins
+        if best:
+            _emit(best, m.start())
     return out

@@ -299,6 +299,14 @@ WORKDIR_PROMPT = _as_bool(os.environ.get("CODE_WORKDIR_PROMPT", "false"))
 # default -> read_only_roots stays empty, the extractor/auto-grant never run, request_dir is byte-identical.
 TRUST_USER_DIRS = _as_bool(os.environ.get("CODE_TRUST_USER_DIRS", "false"))
 
+# Reply-shape precedence (Phase 41 / specs/0041). When on, the system prompt + the task pin + the
+# review_repo/run_workflow/run_skill digest trailers teach that an explicit USER reply-shape/length
+# instruction for THIS turn ("respond with only Yes", "one word", "just the list") OUTRANKS a tool's
+# "synthesize now" trailer, and that such an instruction is PER-TURN (does not bind later turns). Fixes a
+# live session where "respond with only Yes" was overridden by the review digest, then a stale terseness bled
+# into later turns. OFF by default -> no prompt paragraph, neutral pin, empty caveat (byte-identical).
+REPLY_SHAPE = _as_bool(os.environ.get("CODE_REPLY_SHAPE", "false"))
+
 # Edit-layer (Phase 13 / specs/0013). CODE_EDIT_FUZZY: a SAFE fuzzy fallback UNDER exact-match edit_file
 # - when the exact old_string isn't found, editmatch.resolve locates it (whitespace-insensitive, then
 # most-similar chunk) and applies ONLY a UNIQUE, above-threshold match; any ambiguity refuses, so

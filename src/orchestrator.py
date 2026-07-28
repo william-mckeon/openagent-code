@@ -21,6 +21,7 @@ skipped, misordered, or overflowed, because the model isn't the one doing it.
 import os
 
 from . import config
+from . import prompts   # specs/0041: reply_shape_caveat() for the digest trailer (prompts imports config only)
 # NOTE: do NOT import from .tools at module level — tools.py imports review_repo from here,
 # so a module-level import would be a circular dependency sensitive to import order. ToolResult
 # is imported lazily inside review_repo() instead.
@@ -234,7 +235,8 @@ def review_repo(args, ctx):
                  f"grep / spawn_agent / review_repo again: the children already covered the files, "
                  f"and re-reading or re-delegating only wastes budget and overflows your context. "
                  f"This is a REVIEW — report findings only; do not edit, create, or run anything. "
-                 f"Your next reply must be the finished review, as a clean report, with no tool calls.")
+                 f"Your next reply must be the finished review, as a clean report, with no tool calls."
+                 + prompts.reply_shape_caveat())
     digest = "\n".join(parts)
     ctx._reviewed_digest = digest   # cache it so a re-run this turn short-circuits (see the top guard)
     return ToolResult(True, digest, {"areas": len(summaries)})

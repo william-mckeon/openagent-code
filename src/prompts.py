@@ -127,6 +127,16 @@ Working method:
 - Work one step at a time: one tool call, read its result, then the next."""
 
 
+def reply_shape_caveat():
+    """The clause appended to the review_repo / run_workflow / run_skill digest trailers when CODE_REPLY_SHAPE
+    is on (specs/0041), so a trailer's "synthesize NOW" command yields to an explicit shorter user ask.
+    Empty when off -> the trailers are byte-identical."""
+    if not config.REPLY_SHAPE:
+        return ""
+    return (" — UNLESS the user constrained your reply THIS turn (asked for a specific short answer, one word,"
+            " or a particular format); if so give EXACTLY that and hold this synthesis for when they ask.")
+
+
 def native_tools_note(tools):
     """Suffix for native (OpenAI) tool-calling mode."""
     names = ", ".join(t["name"] for t in tools)
@@ -288,6 +298,16 @@ def build_system_prompt(mode, tools, memory=None, todos=None, spec=None, granted
                  "`instruction`; each phase's digest feeds the next. Call it ONCE, then write your answer by "
                  "synthesizing the digest it returns; do NOT read the raw material yourself. For a whole-repo "
                  "REVIEW specifically, use review_repo.")
+
+    # Reply-shape precedence (specs/0041): an explicit user reply-shape/length instruction outranks a tool
+    # "synthesize now" trailer, and is scoped to its own turn. Gated -> a flag-off prompt is byte-identical.
+    if config.REPLY_SHAPE:
+        note += ("\n\nREPLY SHAPE: when the user specifies the SHAPE or LENGTH of your reply for THIS turn - "
+                 "'answer in one word', 'respond with only Yes', 'just give the list' - that OUTRANKS any "
+                 "'write the full report' or 'synthesize now' instruction a tool result produced: give "
+                 "EXACTLY what they asked, nothing more. Such a format instruction applies ONLY to the turn "
+                 "it was given on; it does NOT carry to later turns unless the user repeats it - so a later, "
+                 "open-ended question gets a full, normal answer.")
 
     # Cross-session memory (Phase 4 #7): prior-session notes about THIS repo. Lands in
     # the system prompt, which is logged as the first raw turn -> self-containment holds.

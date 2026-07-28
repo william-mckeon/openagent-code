@@ -245,6 +245,7 @@ there, documented in `.env.example`). There is no YAML config file. Key ones:
 | `CODE_TRUST_USER_DIRS` | `false` | Treat a dir the user literally types as a **read** grant, and auto-grant `request_dir` for an existing dir under bypass at depth 0 (into a read-only tier writes can't reach) |
 | `CODE_WORKFLOWS` | `false` | Offer `run_workflow`: a multi-phase fan-out+reduce engine (specs/0038). `CODE_MAX_WORKFLOW_PHASES` caps the pipeline length |
 | `CODE_WORKFLOW_CONCURRENCY` | `1` | Bounded parallel fan-out (specs/0039): 1 = serial (byte-identical); N = up to N children at once across `run_workflow`/`review_repo`/`run_skill`. Parallel children run **read-only** |
+| `CODE_REPLY_SHAPE` | `false` | An explicit user reply-shape/length instruction this turn (e.g. "respond with only Yes") outranks a tool's "synthesize now" trailer, and is per-turn (specs/0041) |
 | `CODE_WORKFLOWS_ASYNC` | `false` | REPL-only (specs/0040): `run_workflow` can **submit** to run in the background + return a task-id; `/tasks`, `/result <id>`, a completion banner. Workers are read-only |
 | `CODE_MAX_BACKGROUND_TASKS` | `3` | Cap on concurrent background tasks |
 | `CODE_MEMORY` | `false` | Opt-in cross-session memory: offer `remember`, load project notes into context |

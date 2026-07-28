@@ -145,6 +145,21 @@ def main():
           userdirs.user_typed_dirs("review C:\\Nope_zzz_" + os.path.basename(ref) + "_absent") == [])
     check("user_typed_dirs rejects a bare drive root (C:\\)", userdirs.user_typed_dirs("open C:\\") == [])
 
+    # F3 (specs/0041): a user-typed path with a SPACE must grant the FULL folder, not a truncated sibling
+    os.makedirs(os.path.join(ref, "foo"), exist_ok=True)
+    os.makedirs(os.path.join(ref, "foo bar"), exist_ok=True)
+    _spaced = os.path.join(ref, "foo bar")
+    _got = [_rp(d) for d in userdirs.user_typed_dirs("review " + _spaced + " folder by folder")]
+    check("F3: a spaced path grants the FULL '...foo bar' folder", _rp(_spaced) in _got)
+    check("F3: ...and NOT the shorter '...foo' sibling", _rp(os.path.join(ref, "foo")) not in _got)
+    check("F3: a QUOTED spaced path is extracted in full",
+          _rp(_spaced) in [_rp(d) for d in userdirs.user_typed_dirs('open "' + _spaced + '" plz')])
+    check("F3: a no-space path is unchanged (still grants the folder)",
+          _rp(os.path.join(ref, "foo")) in [_rp(d) for d in userdirs.user_typed_dirs("look at " + os.path.join(ref, "foo") + " now")])
+    if os.path.isdir(r"C:\Program Files"):
+        check("F3: a spaced SYSTEM path stays denylisted (C:\\Program Files)",
+              userdirs.user_typed_dirs("look in C:\\Program Files") == [])
+
     sysroot = os.environ.get("SystemRoot", r"C:\Windows")
     if os.path.isdir(sysroot):
         check("grantable_dir rejects a system root even when isdir is true (SystemRoot)",
