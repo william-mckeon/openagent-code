@@ -197,6 +197,16 @@ def _print_log_path():
 _MODES = {"default", "acceptEdits", "plan", "bypass", "propose"}
 
 
+def _closest_mode(name):
+    """The nearest valid permission mode to a mistyped one — 'perpose' -> 'propose' (difflib, stdlib) — or
+    None if nothing is close. Used only to HINT: an unknown --mode is always REJECTED, never auto-applied,
+    because silently running a different permission mode than the operator typed is exactly the failure this
+    guards against (specs/0042)."""
+    import difflib
+    m = difflib.get_close_matches(name or "", sorted(_MODES), n=1, cutoff=0.6)
+    return m[0] if m else None
+
+
 def _repl_add_dir(agent, ctx, path):
     """`/add-dir <path>` — grant a reference folder mid-session (0003 host access).
     Widens the LIVE permission fence and tells the agent it can now read there."""
@@ -639,6 +649,18 @@ def main(argv=None):
               "\n(run the name verb as the FIRST argument)")
         return 2
     mode_override, add_dirs, argv = _parse_flags(argv)
+    # Validate the --mode LAUNCH FLAG before it reaches Permissions (specs/0042). An unknown mode — the live
+    # `--mode perpose` typo — used to sail straight through: Permissions stored the bogus string, `propose`
+    # never turned on, and propose-mode auto-allow silently degraded into a per-write approval prompt for
+    # every single edit (27 prompts after one approved manifest). A permission-mode typo must FAIL LOUD and
+    # never be guessed at. (An invalid CODE_PERMISSION_MODE *env* value is a config default, not this-run
+    # intent, so it keeps its back-compat fallback in resolved_permission_mode — only the explicit flag is
+    # hard-rejected here.)
+    if mode_override is not None and mode_override not in _MODES:
+        hint = _closest_mode(mode_override)
+        sugg = f" (did you mean --mode {hint}?)" if hint else ""
+        print(f"unknown --mode '{mode_override}'{sugg}\n  valid modes: {' | '.join(sorted(_MODES))}")
+        return 2
     perms = Permissions.from_config(mode_override=mode_override, extra_dirs=add_dirs)
     # Selecting propose mode (--mode propose / CODE_PERMISSION_MODE=propose) turns the propose machinery on,
     # so `propose_changes` is actually offered (toolset reads config.PROPOSE, built next in build_agent).

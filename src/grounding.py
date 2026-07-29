@@ -528,6 +528,32 @@ def _present_path_problems(final_text, ctx, noext=False):
     return deterministic_problems(paths, _exists)
 
 
+_GREENFIELD_SKIP_DIRS = {".git", ".venv", "venv", "env", "node_modules", "__pycache__", ".mypy_cache",
+                         ".pytest_cache", ".ruff_cache", "dist", "build", ".idea", ".vscode"}
+
+
+def is_greenfield(cwd, _cap=4000):
+    """True when the workspace has NO reviewable source files — a fresh, empty project directory. On such a
+    workspace every path the answer cites is a PROPOSAL (a file to be CREATED), so the path-existence
+    grounding has nothing to ground against and would flag every proposed file as a phantom (the live
+    Centpilot scaffold run: 42 then 15 false 'unbacked' flags on an empty dir). Bounded walk that RETURNS
+    THE INSTANT it finds one real file — so the normal populated-repo case pays a single readdir. Skips
+    VCS / venv / build / cache dirs and dotfiles (a lone .git / .env / .gitignore does not make a project
+    'started')."""
+    if not cwd or not os.path.isdir(cwd):
+        return False
+    scanned = 0
+    for _root, dirs, files in os.walk(cwd):
+        dirs[:] = [d for d in dirs if d not in _GREENFIELD_SKIP_DIRS and not d.startswith(".")]
+        for f in files:
+            if not f.startswith("."):
+                return False            # a real source/content file exists -> not greenfield
+        scanned += 1
+        if scanned > _cap:
+            return False                # unexpectedly deep dot/skip-only tree -> treat as populated (safe)
+    return True
+
+
 def problems(final_text, ctx):
     """Runtime entry (Feature B): the live-ctx adapter. Grounding checks ONLY the top-level, user-facing
     answer (ctx.depth == 0). A subagent's answer is intermediate and a Tier-2 verifier must never
@@ -546,6 +572,11 @@ def problems(final_text, ctx):
     check — which flags only a SPECIFIC missing path, never a bare basename it can't cheaply locate."""
     if getattr(ctx, "depth", 0) != 0:
         return []
+    # Greenfield guard (specs/0042): on an EMPTY project dir every cited path is a file the answer PROPOSES
+    # to create, not a present-state claim, so the path-existence checks below would flag each as a phantom.
+    # This skips ONLY the path checks — the success-claim / absence / web nets still run. Short-circuits on
+    # the flag, so OFF -> is_greenfield never runs -> byte-identical.
+    greenfield = config.GROUND_SKIP_GREENFIELD and is_greenfield(getattr(ctx, "cwd", "") or "")
     # Deterministic absence contradiction (model-free, authoritative for the live workspace) runs FIRST
     # and ALONGSIDE the semantic verifier — the verifier can mis-read a tree and wrongly agree a path is
     # empty, so os.path.exists is the backstop (the src/auth/cmd main.go case).
@@ -564,13 +595,16 @@ def problems(final_text, ctx):
     if config.VERIFY_MUTATION_CLAIMS:
         det += unbacked_mutation_claim(final_text, getattr(ctx, "mutations", None) or {})
     if config.VERIFY_GROUNDING_SEMANTIC and getattr(ctx, "spawn", None) is not None:
-        paths = cited_paths(final_text, strict=False)   # BROAD: the verifier judges, so include dirs
+        # Greenfield -> no path is a present-state claim, so hand the verifier NO paths (it still runs for an
+        # absence / web claim, which are true or independently grounded on an empty dir).
+        paths = [] if greenfield else cited_paths(final_text, strict=False)   # BROAD: the verifier judges, so include dirs
         # The bounded cited+fetched web sources to hand the verifier (empty unless web is on and used).
         web_srcs = _cited_fetched(final_text, getattr(ctx, "fetched", None) or {}) if config.web_grounding_active() else {}
         # Phantom PRESENT-path (specs/0027): the Tier-2 verifier is fail-open on a cited path that doesn't
         # exist (the described-but-never-written Dockerfile), so run the deterministic os.path existence
-        # check HERE too. Gated -> flag-off keeps the check semantic-off-only (byte-identical).
-        if config.VERIFY_GROUNDING_PATHS:
+        # check HERE too. Gated -> flag-off keeps the check semantic-off-only (byte-identical). Skipped on a
+        # greenfield workspace, where a not-yet-created path is a proposal, not a phantom.
+        if config.VERIFY_GROUNDING_PATHS and not greenfield:
             det += _present_path_problems(final_text, ctx, noext=True)
         # Spawn the verifier when the answer cites a path, makes an ABSENCE claim (which names its target
         # only in prose, so it cites no path), OR cites a fetched web source to check against.
@@ -578,5 +612,8 @@ def problems(final_text, ctx):
             return det + semantic_problems(final_text, paths, ctx.spawn, config.GROUNDING_EFFORT, fetched=web_srcs)
         return det
     # Semantic OFF (or no spawn): the deterministic present-path existence check is the only path check.
-    # noext rides the flag, so flag-off reproduces the old NARROW strict-only behavior exactly.
+    # noext rides the flag, so flag-off reproduces the old NARROW strict-only behavior exactly. Skipped
+    # entirely on a greenfield workspace (specs/0042) — a cited not-yet-written path is a proposal.
+    if greenfield:
+        return det
     return det + _present_path_problems(final_text, ctx, noext=config.VERIFY_GROUNDING_PATHS)

@@ -265,6 +265,16 @@ GROUNDING_EFFORT = _g_effort if _g_effort in _EFFORTS else ""
 # the verifier isn't handed granted dirs).
 VERIFY_GROUNDING_PATHS = _as_bool(os.environ.get("CODE_VERIFY_GROUNDING_PATHS", "false"))
 
+# Greenfield grounding guard (specs/0042). On a GREENFIELD workspace — a fresh, empty project dir with no
+# reviewable source files — every path the closing answer cites is a PROPOSAL (a file to CREATE), not a
+# claim about existing state. The path-existence grounding (deterministic present-path check + the Tier-2
+# path verifier) then has nothing to ground against and flags every proposed path as a phantom — the live
+# Centpilot scaffold run produced 42 then 15 false 'unbacked' flags on an empty directory. When on,
+# grounding skips ONLY the PATH checks while the workspace has no reviewable files; the success-claim /
+# absence / web nets and every populated-repo run are untouched. OFF -> byte-identical (the short-circuit
+# means is_greenfield is never even called, so no extra I/O).
+GROUND_SKIP_GREENFIELD = _as_bool(os.environ.get("CODE_GROUND_SKIP_GREENFIELD", "false"))
+
 # Corpus curation (Phase 11 / specs/0011). An OFFLINE batch pass (train/curate.py) over captured
 # trajectories that flags PHANTOM CITATIONS — a closing answer referencing a file the run never opened.
 # Deterministic, no model (the semantic honest-but-wrong class is caught live by the grounding gate).
