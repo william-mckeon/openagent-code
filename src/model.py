@@ -60,19 +60,39 @@ def _non_retryable(e):
     ))
 
 
-def _reasoning_kwargs(effort=None):
-    """Provider-aware reasoning_effort. The LiteLLM `bedrock/` provider takes it as a
-    TOP-LEVEL param (it maps to additionalModelRequestFields), where extra_body is ignored;
-    OpenAI-compatible endpoints (vLLM / Bedrock's /openai/v1) take it via extra_body, which
-    lands verbatim in the request body. `effort` overrides the global for ONE Model (e.g. the
-    grounding verifier subagent at CODE_GROUNDING_EFFORT); None/empty inherits config.REASONING_EFFORT.
-    Both empty = send nothing."""
-    effort = effort or config.REASONING_EFFORT
+def _effort_kwargs(effort):
+    """The legacy low/medium/high reasoning_effort path (pre-0044), unchanged. The LiteLLM `bedrock/`
+    provider takes it as a TOP-LEVEL param (maps to additionalModelRequestFields, where extra_body is
+    ignored); OpenAI-compatible endpoints (vLLM / Together / Bedrock's /openai/v1) take it via extra_body,
+    which lands verbatim in the request body. Empty = send nothing."""
     if not effort:
         return {}
     if config.MODEL.startswith("bedrock/"):
         return {"reasoning_effort": effort}
     return {"extra_body": {"reasoning_effort": effort}}
+
+
+def _reasoning_kwargs(effort=None):
+    """Provider-aware reasoning control, in precedence order:
+
+      1. An explicit per-Model `effort` override (the grounding / guardian subagents at CODE_GROUNDING_EFFORT
+         / CODE_GUARDIAN_EFFORT, the adaptive ladder) -> ALWAYS the legacy low/medium/high string path, so a
+         per-subagent effort is never silently replaced by the global pass-through.
+      2. Else, the GLOBAL pass-through (specs/0044): if CODE_REASONING_VALUE is set, send
+         {CODE_REASONING_PARAM: <value>} — a raw string, an int budget, or a JSON object — TOP-LEVEL when
+         CODE_REASONING_TOPLEVEL (or a bedrock/ model), else via extra_body. Lets the operator target
+         whatever reasoning control the served model (Inkling) accepts, no code change, no _EFFORTS allowlist.
+      3. Else, the legacy GLOBAL config.REASONING_EFFORT string path.
+
+    With CODE_REASONING_VALUE empty (default), branches 1+3 reproduce the pre-0044 behavior EXACTLY:
+    _effort_kwargs(effort or config.REASONING_EFFORT) for every effort/model combination."""
+    if effort:
+        return _effort_kwargs(effort)                    # per-Model override — legacy path, unchanged
+    if config.REASONING_VALUE not in (None, ""):         # global pass-through (specs/0044)
+        payload = {config.REASONING_PARAM: config.REASONING_VALUE}
+        top_level = config.REASONING_TOPLEVEL or config.MODEL.startswith("bedrock/")
+        return payload if top_level else {"extra_body": payload}
+    return _effort_kwargs(config.REASONING_EFFORT)       # legacy global effort, unchanged
 
 
 def _assemble_stream(chunks):

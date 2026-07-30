@@ -233,6 +233,7 @@ there, documented in `.env.example`). There is no YAML config file. Key ones:
 | `CODE_WARMUP` | `true` | Probe-until-warm before the first task (no-op for Bedrock) |
 | `CODE_WARMUP_BUDGET` | `120` | Max seconds to wait for a cold worker to warm |
 | `CODE_STREAM` | `false` | Stream the primary model turn (specs/0043); off = byte-identical single call |
+| `CODE_REASONING_PARAM` / `_VALUE` / `_TOPLEVEL` | `reasoning_effort` / (empty) / `false` | Reasoning pass-through (specs/0044); VALUE empty = off (legacy `CODE_REASONING_EFFORT` path) |
 | `CODE_COMPACT_AT_TOKENS` | `12000` | Compact the live context past this budget (0 = off) |
 | `CODE_MODEL_MAX_TOKENS` | `131072` | Model's HARD context window — the sent context is compacted under it (specs/0034) |
 | `CODE_MAX_SUBAGENT_DEPTH` | `1` | How deep `spawn_agent` can nest (0 = off) |

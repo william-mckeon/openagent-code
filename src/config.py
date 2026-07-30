@@ -102,6 +102,22 @@ _EFFORTS = {"low", "medium", "high"}
 _effort = os.environ.get("CODE_REASONING_EFFORT", "").strip().lower()
 REASONING_EFFORT = _effort if _effort in _EFFORTS else ""
 
+# Reasoning pass-through (specs/0044) — a flexible layer ABOVE the low/medium/high CODE_REASONING_EFFORT
+# path, so the operator can send whatever reasoning control the served model accepts (Inkling exposes
+# several reasoning layers) WITHOUT a code change or the _EFFORTS allowlist. CODE_REASONING_VALUE empty
+# (default) = pass-through OFF -> the legacy effort path is used, BYTE-IDENTICAL. When set, the request
+# gets {CODE_REASONING_PARAM: <value>}; the value is JSON-parsed if it parses (an int budget, or an object
+# like {"type":"enabled","budget_tokens":2048}), else sent as a literal string. Routed via extra_body unless
+# CODE_REASONING_TOPLEVEL (or a bedrock/ model, which takes reasoning params top-level). A per-subagent
+# effort override (grounding / guardian / adaptive ladder) always wins and keeps the legacy string path.
+REASONING_PARAM = os.environ.get("CODE_REASONING_PARAM", "reasoning_effort").strip() or "reasoning_effort"
+_reasoning_value_raw = os.environ.get("CODE_REASONING_VALUE", "").strip()
+try:
+    REASONING_VALUE = json.loads(_reasoning_value_raw) if _reasoning_value_raw else ""
+except (ValueError, TypeError):
+    REASONING_VALUE = _reasoning_value_raw   # not JSON -> literal string (e.g. "xhigh"); never raises at import
+REASONING_TOPLEVEL = _as_bool(os.environ.get("CODE_REASONING_TOPLEVEL", "false"))
+
 # -----------------------------------------------------------------------------
 # Agent identity (Phase 36 / specs/0036) — the name the agent answers to, chosen at install.
 #
