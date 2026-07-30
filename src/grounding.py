@@ -532,22 +532,25 @@ _GREENFIELD_SKIP_DIRS = {".git", ".venv", "venv", "env", "node_modules", "__pyca
                          ".pytest_cache", ".ruff_cache", "dist", "build", ".idea", ".vscode"}
 
 
-def is_greenfield(cwd, _cap=4000):
-    """True when the workspace has NO reviewable source files — a fresh, empty project directory. On such a
-    workspace every path the answer cites is a PROPOSAL (a file to be CREATED), so the path-existence
-    grounding has nothing to ground against and would flag every proposed file as a phantom (the live
-    Centpilot scaffold run: 42 then 15 false 'unbacked' flags on an empty dir). Bounded walk that RETURNS
-    THE INSTANT it finds one real file — so the normal populated-repo case pays a single readdir. Skips
-    VCS / venv / build / cache dirs and dotfiles (a lone .git / .env / .gitignore does not make a project
-    'started')."""
+def is_greenfield(cwd, max_files=0, _cap=4000):
+    """True when the workspace has AT MOST `max_files` reviewable source files. max_files=0 (default) means
+    strictly EMPTY — a fresh project dir (the specs/0042 behavior). Raising it (CODE_GROUND_GREENFIELD_MAX,
+    specs/0047) also treats a small EARLY-STAGE scaffold as greenfield, so path-existence grounding does not
+    flag a build session's own not-yet-real files turn after turn (the Inkling Centpilot run re-flagged its
+    11 stub files repeatedly and derailed into a file-existence argument). On such a workspace a cited path
+    is a PROPOSAL, not a phantom. Bounded walk that bails the instant the count exceeds max_files (a
+    populated repo pays a couple of readdirs) and after _cap directories; skips VCS / venv / build / cache
+    dirs and dotfiles (a lone .git / .env / .gitignore does not make a project 'started')."""
     if not cwd or not os.path.isdir(cwd):
         return False
-    scanned = 0
+    count = scanned = 0
     for _root, dirs, files in os.walk(cwd):
         dirs[:] = [d for d in dirs if d not in _GREENFIELD_SKIP_DIRS and not d.startswith(".")]
         for f in files:
             if not f.startswith("."):
-                return False            # a real source/content file exists -> not greenfield
+                count += 1
+                if count > max_files:
+                    return False        # more real files than the greenfield threshold -> populated
         scanned += 1
         if scanned > _cap:
             return False                # unexpectedly deep dot/skip-only tree -> treat as populated (safe)
@@ -576,7 +579,7 @@ def problems(final_text, ctx):
     # to create, not a present-state claim, so the path-existence checks below would flag each as a phantom.
     # This skips ONLY the path checks — the success-claim / absence / web nets still run. Short-circuits on
     # the flag, so OFF -> is_greenfield never runs -> byte-identical.
-    greenfield = config.GROUND_SKIP_GREENFIELD and is_greenfield(getattr(ctx, "cwd", "") or "")
+    greenfield = config.GROUND_SKIP_GREENFIELD and is_greenfield(getattr(ctx, "cwd", "") or "", config.GROUND_GREENFIELD_MAX)
     # Deterministic absence contradiction (model-free, authoritative for the live workspace) runs FIRST
     # and ALONGSIDE the semantic verifier — the verifier can mis-read a tree and wrongly agree a path is
     # empty, so os.path.exists is the backstop (the src/auth/cmd main.go case).

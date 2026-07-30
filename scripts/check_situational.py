@@ -120,6 +120,21 @@ def main():
     check("the env-block header self-identifies as auto-generated system state, not user input",
           "NOT a message from the user" in envcontext.build_env_context("/w", now=fixed))
 
+    # 9. shell hints (specs/0046): OFF -> byte-identical block; ON -> PowerShell 5.1 rules, Windows-only.
+    off = envcontext.build_env_context("/w", now=fixed)
+    check("shell_hints OFF (default): no shell-rules line (byte-identical block)", "shell rules" not in off)
+    on = envcontext.build_env_context("/w", now=fixed, shell_hints=True)
+    if os.name == "nt":
+        check("shell_hints ON + PowerShell: the PS 5.1 rules line is present",
+              "shell rules (PowerShell 5.1)" in on and "New-Item" in on and "&&" in on and "/dev/null" in on)
+    else:
+        check("shell_hints ON + non-Windows shell: no PS rules (PowerShell-specific)", "shell rules" not in on)
+    _s = os.environ.pop("CODE_SHELL_HINTS", None)
+    hints_default_off = config._as_bool(os.environ.get("CODE_SHELL_HINTS", "false")) is False
+    if _s is not None:
+        os.environ["CODE_SHELL_HINTS"] = _s
+    check("CODE_SHELL_HINTS defaults False when unset (opt-in)", hints_default_off)
+
     passed, total = sum(_results), len(_results)
     print(f"\nVERDICT: {passed}/{total} {'[OK]' if passed == total else '[FAIL]'}")
     return 0 if passed == total else 1

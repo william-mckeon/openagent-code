@@ -299,6 +299,17 @@ VERIFY_GROUNDING_PATHS = _as_bool(os.environ.get("CODE_VERIFY_GROUNDING_PATHS", 
 # means is_greenfield is never even called, so no extra I/O).
 GROUND_SKIP_GREENFIELD = _as_bool(os.environ.get("CODE_GROUND_SKIP_GREENFIELD", "false"))
 
+# CODE_GROUND_GREENFIELD_MAX (specs/0047) — how many reviewable source files a workspace may hold and still
+# count as "greenfield" for CODE_GROUND_SKIP_GREENFIELD. 0 (default) = strictly empty (the specs/0042
+# behavior, byte-identical). Raise it to treat a small EARLY-STAGE scaffold as greenfield too, so
+# path-existence grounding does not turn a build session into a file-existence argument (the Inkling
+# Centpilot run flagged its 11 stub files turn after turn). Only consulted when CODE_GROUND_SKIP_GREENFIELD
+# is on.
+try:
+    GROUND_GREENFIELD_MAX = max(0, int(os.environ.get("CODE_GROUND_GREENFIELD_MAX", "0")))
+except ValueError:
+    GROUND_GREENFIELD_MAX = 0
+
 # Corpus curation (Phase 11 / specs/0011). An OFFLINE batch pass (train/curate.py) over captured
 # trajectories that flags PHANTOM CITATIONS — a closing answer referencing a file the run never opened.
 # Deterministic, no model (the semantic honest-but-wrong class is caught live by the grounding gate).
@@ -316,6 +327,12 @@ if CURATE_MODE not in ("flag", "exclude"):
 # SITUATIONAL_CONTEXT is on. Both default OFF (opt-in, near-zero risk).
 SITUATIONAL_CONTEXT = _as_bool(os.environ.get("CODE_SITUATIONAL_CONTEXT", "false"))
 SITUATIONAL_GIT = _as_bool(os.environ.get("CODE_SITUATIONAL_GIT", "false"))
+# CODE_SHELL_HINTS (specs/0046) — when the situational block is on AND the shell is PowerShell, append a
+# one-line block of PowerShell 5.1 command rules (no &&/||, New-Item not `mkdir -p`, $null not /dev/null,
+# curl.exe caveats). A model trained mostly on bash reaches for POSIX commands PS 5.1 rejects — the Inkling
+# Centpilot run failed `mkdir -p`, `curl -o /dev/null`, and `a && b` before recovering. OFF by default ->
+# the env block is byte-identical; needs CODE_SITUATIONAL_CONTEXT on to have any effect.
+SHELL_HINTS = _as_bool(os.environ.get("CODE_SHELL_HINTS", "false"))
 
 # Working-directory prompt (Phase 30 / specs/0030). Pin the ABSOLUTE workspace path in the DURABLE system
 # prompt (never compacted), and teach that a granted reference dir is a READ SOURCE while a copy/create

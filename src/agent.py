@@ -224,7 +224,7 @@ class Agent:
         if config.SITUATIONAL_CONTEXT:
             env = envcontext.build_env_context(
                 ctx.cwd, getattr(ctx.permissions, "extra_roots", None),
-                include_git=config.SITUATIONAL_GIT)
+                include_git=config.SITUATIONAL_GIT, shell_hints=config.SHELL_HINTS)
             self.cm.set_env_context(env)
             self.cm.log_env_capture(env)
         consecutive_fail = {}  # tool name -> count of prior consecutive failures

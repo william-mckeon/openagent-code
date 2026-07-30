@@ -105,6 +105,28 @@ def main():
         check("flag ON + populated repo: a missing cited path is STILL flagged",
               any("does_not_exist.py" in p for p in pop))
 
+        # ---- threshold (specs/0047): a small early scaffold counts as greenfield when max_files is raised
+        for i in range(4):
+            with open(os.path.join(populated, f"stub{i}.js"), "w") as f:
+                f.write("// stub\n")
+        # populated now holds app.py + 4 stubs = 5 reviewable files
+        check("is_greenfield: 5-file scaffold, max_files=0 -> False (empty-only default, byte-identical)",
+              grounding.is_greenfield(populated, 0) is False)
+        check("is_greenfield: 5-file scaffold, max_files=10 -> True (early-stage counts as greenfield)",
+              grounding.is_greenfield(populated, 10) is True)
+        check("is_greenfield: 5-file scaffold, max_files=3 -> False (over threshold)",
+              grounding.is_greenfield(populated, 3) is False)
+        saved_max = config.GROUND_GREENFIELD_MAX
+        config.GROUND_SKIP_GREENFIELD = True
+        config.GROUND_GREENFIELD_MAX = 10
+        prop = grounding.problems("Adding `src/monthly-reset.js` and `src/sinking-funds.js`.", _Ctx(populated))
+        check("threshold ON: proposed files in a small scaffold are NOT flagged", prop == [])
+        config.GROUND_GREENFIELD_MAX = 0
+        still = grounding.problems("See `src/monthly-reset.js`.", _Ctx(populated))
+        check("threshold default (0): the same scaffold IS treated as populated (flagged)",
+              any("monthly-reset.js" in p for p in still))
+        config.GROUND_GREENFIELD_MAX = saved_max
+
         # ---- semantic branch (verifier ON): greenfield hands it NO paths -> no spawn --------------------
         config.VERIFY_GROUNDING_SEMANTIC = True
         config.GROUND_SKIP_GREENFIELD = True
@@ -127,6 +149,12 @@ def main():
     if _env is not None:
         os.environ["CODE_GROUND_SKIP_GREENFIELD"] = _env
     check("CODE_GROUND_SKIP_GREENFIELD defaults False when unset (opt-in)", default_off)
+
+    _envm = os.environ.pop("CODE_GROUND_GREENFIELD_MAX", None)
+    default_zero = int(os.environ.get("CODE_GROUND_GREENFIELD_MAX", "0")) == 0
+    if _envm is not None:
+        os.environ["CODE_GROUND_GREENFIELD_MAX"] = _envm
+    check("CODE_GROUND_GREENFIELD_MAX defaults 0 when unset (empty-only, byte-identical)", default_zero)
 
     # ============ Fix A: --mode launch-flag validation ================================================
     check("_MODES is the 5 real modes incl. propose",

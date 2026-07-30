@@ -35,12 +35,13 @@ def _shell_name():
     return os.environ.get("SHELL") or "bash"
 
 
-def build_env_context(cwd, granted_dirs=None, include_git=False, git_status_fn=None, now=None):
+def build_env_context(cwd, granted_dirs=None, include_git=False, git_status_fn=None, now=None, shell_hints=False):
     """Return a bounded, plain-text environment block (never None, never raises).
 
     Pure + injectable: `now` (a datetime) and `git_status_fn` are injected by the acceptance harness so
     it needs no real clock or git binary. `include_git` appends a git line via git_status_fn or the real
-    `_git_status`; any failure there is swallowed (no git line) so a git problem can't break the turn."""
+    `_git_status`; any failure there is swallowed (no git line) so a git problem can't break the turn.
+    `shell_hints` (specs/0046) appends PowerShell 5.1 command rules on Windows; OFF -> byte-identical block."""
     when = now or datetime.now()  # LOCAL date so "today" matches the user's wall clock, not UTC
     lines = [
         # Header reframed (specs/0035 fix C): self-identify as auto-generated system state, NOT user input.
@@ -54,6 +55,15 @@ def build_env_context(cwd, granted_dirs=None, include_git=False, git_status_fn=N
         f"- shell: {_shell_name()}",
         f"- date: {when.strftime('%Y-%m-%d')}",
     ]
+    # PowerShell 5.1 command rules (specs/0046), only when opted in AND the shell is actually PowerShell —
+    # its syntax differs from POSIX in ways a bash-trained model gets wrong. Gated, so OFF is byte-identical.
+    if shell_hints and os.name == "nt":
+        lines.append(
+            "- shell rules (PowerShell 5.1): chain commands with `;` — `&&` / `||` are NOT valid; make "
+            "directories with `New-Item -ItemType Directory -Force <path>`, NOT `mkdir -p`; discard output "
+            "with `$null` / `Out-Null`, NOT `/dev/null`; `curl` and `wget` are aliases for Invoke-WebRequest "
+            "— for real curl call `curl.exe` and drop `-o /dev/null`; prefer `Invoke-WebRequest ... | "
+            "Select-Object` for HTTP checks.")
     dirs = [d for d in (granted_dirs or []) if d]
     if dirs:
         shown = dirs[:_MAX_DIRS]

@@ -188,6 +188,8 @@ Full reference in the README and `.env.example`. Contract-relevant values:
 | `CODE_WARMUP` | `true` | Reference — probe-until-warm before the first task (off for Bedrock) |
 | `CODE_WARMUP_BUDGET` | `120` | Reference — max seconds to wait for a cold worker to warm |
 | `CODE_STREAM` | `false` | Reference — stream the primary model turn (specs/0043); off = byte-identical single call; safety-fingerprint: No |
+| `CODE_SHELL_HINTS` | `false` | Reference — PowerShell 5.1 command rules in the env block on Windows (specs/0046); needs `CODE_SITUATIONAL_CONTEXT`; safety-fingerprint: No |
+| `CODE_GROUND_SKIP_GREENFIELD` / `CODE_GROUND_GREENFIELD_MAX` | `false` / `0` | Reference — skip path-grounding on an empty (specs/0042) or small early-stage (specs/0047) workspace; safety-fingerprint: No |
 | `CODE_REASONING_PARAM` / `_VALUE` / `_TOPLEVEL` | `reasoning_effort` / (empty) / `false` | Reference — reasoning pass-through (specs/0044); VALUE empty = off; safety-fingerprint: No |
 | `CODE_COMPACT_AT_TOKENS` | `12000` | Reference — live-context compaction budget (0 = off) |
 | `CODE_MODEL_MAX_TOKENS` | `131072` | Reference — model HARD context window; sent context compacted under it (specs/0034); `auto` resolves at startup (specs/0045) |
