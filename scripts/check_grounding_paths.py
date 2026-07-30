@@ -47,8 +47,9 @@ def main():
     os.makedirs(os.path.join(ws, "sub"), exist_ok=True)
     open(os.path.join(ws, "sub", "real.py"), "w").close()   # an existing cited target
     _saved = {k: getattr(config, k) for k in ("VERIFY_GROUNDING_PATHS", "VERIFY_GROUNDING_SEMANTIC",
-                                              "ENABLE_WEB", "VERIFY_MUTATION_CLAIMS")}
+                                              "ENABLE_WEB", "VERIFY_MUTATION_CLAIMS", "GROUND_SKIP_GREENFIELD")}
     config.ENABLE_WEB = config.VERIFY_MUTATION_CLAIMS = False
+    config.GROUND_SKIP_GREENFIELD = False   # isolate from live .env: these tests exercise the pre-greenfield path checks
 
     # =====================================================================================================
     # 1. extension-less extraction (only with noext)

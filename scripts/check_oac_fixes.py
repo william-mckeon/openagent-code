@@ -69,8 +69,10 @@ def _has_litellm():
 
 
 def main():
-    save = (config.GROUND_SKIP_GREENFIELD, config.VERIFY_GROUNDING_SEMANTIC, config.VERIFY_GROUNDING_PATHS)
+    save = (config.GROUND_SKIP_GREENFIELD, config.VERIFY_GROUNDING_SEMANTIC, config.VERIFY_GROUNDING_PATHS,
+            config.GROUND_GREENFIELD_MAX)
     config.VERIFY_GROUNDING_PATHS = False   # keep the deterministic extractor in its plain strict form
+    config.GROUND_GREENFIELD_MAX = 0        # isolate from live .env: default (empty-only) baseline for these tests
 
     with tempfile.TemporaryDirectory() as empty, tempfile.TemporaryDirectory() as populated:
         # empty: only a .git dir + a dotfile -> still greenfield (neither is a reviewable source file)
@@ -141,7 +143,8 @@ def main():
         check("flag OFF + populated + semantic: the verifier IS spawned (unchanged behavior)",
               spy_pop.spawned is True)
 
-    config.GROUND_SKIP_GREENFIELD, config.VERIFY_GROUNDING_SEMANTIC, config.VERIFY_GROUNDING_PATHS = save
+    (config.GROUND_SKIP_GREENFIELD, config.VERIFY_GROUNDING_SEMANTIC, config.VERIFY_GROUNDING_PATHS,
+     config.GROUND_GREENFIELD_MAX) = save
 
     # ---- default proven against the fallback, not this repo's live .env --------------------------------
     _env = os.environ.pop("CODE_GROUND_SKIP_GREENFIELD", None)

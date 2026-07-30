@@ -41,9 +41,11 @@ def main():
     # .env that ENABLES them (each phase's own harness exercises the ON behavior). Without this, a .env with
     # CODE_VERIFY_GROUNDING_PATHS=true makes the deterministic present-path check also fire in semantic mode.
     _saved_gp, _saved_mc = config.VERIFY_GROUNDING_PATHS, config.VERIFY_MUTATION_CLAIMS
+    _saved_gf = config.GROUND_SKIP_GREENFIELD
     config.ENABLE_WEB = False
     config.VERIFY_GROUNDING_PATHS = False
     config.VERIFY_MUTATION_CLAIMS = False
+    config.GROUND_SKIP_GREENFIELD = False   # isolate from live .env: these tests use a small workspace + the verifier
 
     # -- cited_paths: BROAD (verifier) vs STRICT (deterministic) --------------
     cp = grounding.cited_paths("See `docker/README.md` and `src/auth/init.sql`; `config` is not a path.")
@@ -261,6 +263,7 @@ def main():
 
     config.ENABLE_WEB = _saved_web
     config.VERIFY_GROUNDING_PATHS, config.VERIFY_MUTATION_CLAIMS = _saved_gp, _saved_mc
+    config.GROUND_SKIP_GREENFIELD = _saved_gf
     passed, total = sum(_results), len(_results)
     print(f"\nVERDICT: {passed}/{total} {'[OK]' if passed == total else '[FAIL]'}")
     return 0 if passed == total else 1
