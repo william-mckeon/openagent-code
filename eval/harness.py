@@ -173,10 +173,11 @@ def main(argv=None):
     print(f"trajectories -> {EVAL_TRAJ_DIR}\n")
 
     from src.mcp_client import connect, disconnect
-    from src.model import warm_up
+    from src.model import warm_up, resolve_model_window
     connect()
     # Warm a scale-to-zero endpoint once up front, so the first task isn't the one
     # that eats the cold start (and fails on a cold worker's empty tool_calls).
+    resolve_model_window()   # specs/0045: resolve an auto window before ContextManager budgets are read
     warm_up()
     results, behavior = [], []
     try:

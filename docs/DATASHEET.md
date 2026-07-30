@@ -190,7 +190,8 @@ Full reference in the README and `.env.example`. Contract-relevant values:
 | `CODE_STREAM` | `false` | Reference — stream the primary model turn (specs/0043); off = byte-identical single call; safety-fingerprint: No |
 | `CODE_REASONING_PARAM` / `_VALUE` / `_TOPLEVEL` | `reasoning_effort` / (empty) / `false` | Reference — reasoning pass-through (specs/0044); VALUE empty = off; safety-fingerprint: No |
 | `CODE_COMPACT_AT_TOKENS` | `12000` | Reference — live-context compaction budget (0 = off) |
-| `CODE_MODEL_MAX_TOKENS` | `131072` | Reference — model HARD context window; sent context compacted under it (specs/0034) |
+| `CODE_MODEL_MAX_TOKENS` | `131072` | Reference — model HARD context window; sent context compacted under it (specs/0034); `auto` resolves at startup (specs/0045) |
+| `CODE_MODEL_MAX_OUTPUT_TOKENS` / `CODE_OUTPUT_MARGIN_TOKENS` | (empty) / `4096` | Reference — optional per-request output cap (specs/0045); empty = no cap; safety-fingerprint: No |
 | `CODE_MAX_SUBAGENT_DEPTH` | `1` | Reference — spawn_agent nesting cap (0 = off) |
 | `CODE_ENABLE_WEB` | `false` | Yes — master switch for web_fetch/web_search (off = no egress, tools hidden) |
 | `CODE_SEARCH_PROVIDER` | `generic` | Yes — `generic` \| `tavily` \| `searxng` (data-sovereign) \| `brave` \| `module:func` |

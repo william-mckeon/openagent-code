@@ -675,15 +675,17 @@ def main(argv=None):
         if len(argv) < 3:
             print("usage: python -m src --run-task <task_id> <spec_path>")
             return 2
-        from .model import warm_up
+        from .model import warm_up, resolve_model_window
+        resolve_model_window()   # specs/0045: resolve an auto window before ContextManager budgets are read
         warm_up()
         return _run_task(argv[1], argv[2], perms)
     from .mcp_client import connect, disconnect
-    from .model import warm_up
+    from .model import warm_up, resolve_model_window
     n = connect()
     if n:
         print(f"MCP: connected {n} tool(s)")
     # Absorb a scale-to-zero cold start once, so the first task runs warm.
+    resolve_model_window()   # specs/0045: resolve an auto window before any ContextManager budgets are read
     warm_up()
     try:
         if argv and argv[0] == "--resume":

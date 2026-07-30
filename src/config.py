@@ -572,12 +572,53 @@ MAX_MESSAGE_CHARS = int(os.environ.get("CODE_MAX_MESSAGE_CHARS", "48000"))
 # more than SUMMARIZE_INPUT_MAX_TOKENS — so a resumed session's whole history is summarized in chunks instead of
 # overflowing the window in one shot. Headroom matters: estimate_tokens undercounts, and the window must also
 # hold the model's OUTPUT.
+# specs/0045: CODE_MODEL_MAX_TOKENS may be the sentinel `auto`, which defers resolution to
+# model.resolve_model_window() at startup (litellm model-info, then the OpenAI-compatible /models
+# context_length, else the 131072 fallback). The two derived budgets live in _recompute_window_budgets()
+# so an auto-resolve recomputes them in ONE place; _recompute_window_budgets(131072) reproduces the exact
+# pre-0045 131072 / 119072 / 96072 triple.
+_max_tokens_raw = os.environ.get("CODE_MODEL_MAX_TOKENS", "131072").strip()
+MODEL_MAX_TOKENS_AUTO = _max_tokens_raw.lower() == "auto"
+
+
+def _recompute_window_budgets(window):
+    """Set MODEL_MAX_TOKENS and its two DERIVED budgets from a context window — ONE source of the
+    derivation, shared by import-time and by model.resolve_model_window() after an auto-detect."""
+    global MODEL_MAX_TOKENS, COMPACT_HARD_AT_TOKENS, SUMMARIZE_INPUT_MAX_TOKENS
+    MODEL_MAX_TOKENS = max(8000, int(window))
+    COMPACT_HARD_AT_TOKENS = max(8000, MODEL_MAX_TOKENS - 12000)      # ~120k for a 131k window (output/estimate headroom)
+    SUMMARIZE_INPUT_MAX_TOKENS = max(8000, MODEL_MAX_TOKENS - 35000)  # ~96k (minus SUMMARIZE_PROMPT + output reserve)
+
+
+if MODEL_MAX_TOKENS_AUTO:
+    _initial_window = 131072   # pre-resolution fallback; resolve_model_window() overwrites at startup
+else:
+    try:
+        _initial_window = int(_max_tokens_raw)
+    except ValueError:
+        _initial_window = 131072
+_recompute_window_budgets(_initial_window)
+
+# CODE_MODEL_MAX_OUTPUT_TOKENS / CODE_OUTPUT_MARGIN_TOKENS (specs/0045) — an OPTIONAL per-request output cap
+# (max_tokens), independent of the auto window above. Empty / 0 (default) = send NO max_tokens key, which is
+# BYTE-IDENTICAL to today. A positive int = fixed cap. `auto` = MODEL_MAX_TOKENS - estimate_tokens(messages)
+# - CODE_OUTPUT_MARGIN_TOKENS, floored at MIN_OUTPUT_TOKENS so a large prompt cannot drive it non-positive.
+# The margin must cover the model's OUTPUT including reasoning tokens (Inkling's reasoning_content is
+# output-side), so it couples with CODE_REASONING_VALUE (specs/0044).
+_out_raw = os.environ.get("CODE_MODEL_MAX_OUTPUT_TOKENS", "").strip()
+MODEL_MAX_OUTPUT_TOKENS_AUTO = _out_raw.lower() == "auto"
+if MODEL_MAX_OUTPUT_TOKENS_AUTO:
+    MODEL_MAX_OUTPUT_TOKENS = 0
+else:
+    try:
+        MODEL_MAX_OUTPUT_TOKENS = max(0, int(_out_raw)) if _out_raw else 0
+    except ValueError:
+        MODEL_MAX_OUTPUT_TOKENS = 0
 try:
-    MODEL_MAX_TOKENS = max(8000, int(os.environ.get("CODE_MODEL_MAX_TOKENS", "131072")))
+    OUTPUT_MARGIN_TOKENS = max(0, int(os.environ.get("CODE_OUTPUT_MARGIN_TOKENS", "4096")))
 except ValueError:
-    MODEL_MAX_TOKENS = 131072
-COMPACT_HARD_AT_TOKENS = max(8000, MODEL_MAX_TOKENS - 12000)      # ~120k for a 131k window (output/estimate headroom)
-SUMMARIZE_INPUT_MAX_TOKENS = max(8000, MODEL_MAX_TOKENS - 35000)  # ~96k (minus SUMMARIZE_PROMPT + output reserve)
+    OUTPUT_MARGIN_TOKENS = 4096
+MIN_OUTPUT_TOKENS = 512   # floor for the auto output cap so a large prompt never yields a non-positive cap
 
 # CODE_MAX_SUBAGENT_DEPTH — how deep spawn_agent can nest (Phase 4).
 #   0 = subagents disabled, 1 = one level (top-level agent may spawn, children

@@ -235,7 +235,8 @@ there, documented in `.env.example`). There is no YAML config file. Key ones:
 | `CODE_STREAM` | `false` | Stream the primary model turn (specs/0043); off = byte-identical single call |
 | `CODE_REASONING_PARAM` / `_VALUE` / `_TOPLEVEL` | `reasoning_effort` / (empty) / `false` | Reasoning pass-through (specs/0044); VALUE empty = off (legacy `CODE_REASONING_EFFORT` path) |
 | `CODE_COMPACT_AT_TOKENS` | `12000` | Compact the live context past this budget (0 = off) |
-| `CODE_MODEL_MAX_TOKENS` | `131072` | Model's HARD context window — the sent context is compacted under it (specs/0034) |
+| `CODE_MODEL_MAX_TOKENS` | `131072` | Model's HARD context window — sent context compacted under it (specs/0034); `auto` resolves it at startup (specs/0045) |
+| `CODE_MODEL_MAX_OUTPUT_TOKENS` / `CODE_OUTPUT_MARGIN_TOKENS` | (empty) / `4096` | Optional per-request output cap (specs/0045); empty = no cap (byte-identical); `auto` = window − prompt − margin |
 | `CODE_MAX_SUBAGENT_DEPTH` | `1` | How deep `spawn_agent` can nest (0 = off) |
 | `CODE_ENABLE_WEB` | `false` | Opt-in `web_fetch`/`web_search` (off = no egress) |
 | `CODE_MCP_CONFIG` | (empty) | Path to MCP server config; their tools appear as `mcp__*` |

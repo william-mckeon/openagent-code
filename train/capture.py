@@ -30,7 +30,7 @@ sys.path.insert(0, ROOT)
 
 from src import config  # noqa: E402
 from src.mcp_client import connect, disconnect  # noqa: E402
-from src.model import warm_up  # noqa: E402
+from src.model import warm_up, resolve_model_window  # noqa: E402
 from eval.harness import run_task  # noqa: E402  (reused runner; corpus uses a different traj_dir)
 
 TASK_GLOB = os.path.join(ROOT, "train", "tasks", "*.yaml")
@@ -54,6 +54,7 @@ def main(argv=None):
           f"(separate from the eval gate)\n")
 
     connect()
+    resolve_model_window()   # specs/0045: resolve an auto window before ContextManager budgets are read
     warm_up()  # no-op on Bedrock; absorbs a cold start on a scale-to-zero endpoint
     passed = total = 0
     try:

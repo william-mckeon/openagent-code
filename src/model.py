@@ -148,6 +148,20 @@ def _assemble_stream(chunks):
                            usage=usage)
 
 
+def _output_cap(messages):
+    """The per-request output cap sent as max_tokens (specs/0045), or None to add NO key (BYTE-IDENTICAL
+    default). A fixed CODE_MODEL_MAX_OUTPUT_TOKENS is sent as-is; 'auto' derives
+    MODEL_MAX_TOKENS - estimate_tokens(messages) - OUTPUT_MARGIN_TOKENS, floored at MIN_OUTPUT_TOKENS so a
+    large prompt can never yield a non-positive cap (which would truncate the answer or 400)."""
+    if config.MODEL_MAX_OUTPUT_TOKENS_AUTO:
+        from .context import estimate_tokens   # lazy — avoids the model<->context import cycle, like summarize()
+        remaining = config.MODEL_MAX_TOKENS - estimate_tokens(messages) - config.OUTPUT_MARGIN_TOKENS
+        return max(config.MIN_OUTPUT_TOKENS, remaining)
+    if config.MODEL_MAX_OUTPUT_TOKENS > 0:
+        return config.MODEL_MAX_OUTPUT_TOKENS
+    return None
+
+
 class Model:
     def __init__(self, trajectory, effort=None):
         self.traj = trajectory
@@ -222,6 +236,9 @@ class Model:
         if schemas:
             kwargs["tools"] = schemas
             kwargs["tool_choice"] = "auto"
+        cap = _output_cap(messages)   # specs/0045: optional per-request output cap (None = no key, byte-identical)
+        if cap is not None:
+            kwargs["max_tokens"] = cap
 
         warmed_once = False   # re-warm the endpoint at most ONCE per call (no ×retries)
         for attempt in range(config.MODEL_RETRIES + 1):
@@ -285,6 +302,55 @@ class Model:
         if config.VERBOSE:
             print(f"  [retry] {why} - attempt {attempt + 1}/{config.MODEL_RETRIES}, waiting {delay:.1f}s")
         time.sleep(delay)
+
+
+def _fetch_context_length(model_id, api_base, api_key):
+    """Best-effort GET {api_base}/models -> the served model's context_length (Together / vLLM expose it).
+    Returns None on ANY failure. Stdlib urllib, no new dependency. The served id is the part after the
+    litellm provider prefix (openai/<id> -> <id>)."""
+    import json as _json
+    import urllib.request
+    served = model_id.split("/", 1)[1] if "/" in model_id else model_id
+    try:
+        headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+        req = urllib.request.Request(api_base.rstrip("/") + "/models", headers=headers)
+        with urllib.request.urlopen(req, timeout=15) as r:
+            data = _json.load(r)
+        rows = data if isinstance(data, list) else data.get("data", [])
+        for m in rows:
+            mid = str(m.get("id", ""))
+            if mid == served or mid.endswith("/" + served) or served.endswith(mid):
+                cl = m.get("context_length") or m.get("context_window") or m.get("max_model_len")
+                if cl:
+                    return int(cl)
+    except Exception:
+        return None
+    return None
+
+
+def resolve_model_window():
+    """Resolve the model's real context window when CODE_MODEL_MAX_TOKENS=auto (specs/0045); a NO-OP
+    otherwise. NEVER raises — on any failure it leaves the 131072 pre-resolution fallback in place. Tries
+    litellm's bundled model-info map first (offline, instant), then the OpenAI-compatible /models
+    context_length. Called ONCE at startup BEFORE any ContextManager is built, so the compaction budgets
+    (COMPACT_HARD_AT_TOKENS / SUMMARIZE_INPUT_MAX_TOKENS) derive from the true window."""
+    if not config.MODEL_MAX_TOKENS_AUTO:
+        return config.MODEL_MAX_TOKENS
+    window = None
+    try:
+        info = litellm.get_model_info(config.MODEL)
+        window = info.get("max_input_tokens") or info.get("max_tokens")
+    except Exception:
+        window = None
+    if not window and config.API_BASE:
+        window = _fetch_context_length(config.MODEL, config.API_BASE, config.API_KEY)
+    if window:
+        config._recompute_window_budgets(int(window))
+        if config.VERBOSE:
+            print(f"  [model] auto context window resolved: {config.MODEL_MAX_TOKENS}")
+    elif config.VERBOSE:
+        print(f"  [model] auto window unresolved — keeping fallback {config.MODEL_MAX_TOKENS}")
+    return config.MODEL_MAX_TOKENS
 
 
 def warm_up():
