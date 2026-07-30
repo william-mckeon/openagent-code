@@ -171,6 +171,14 @@ WARMUP = _as_bool(os.environ.get("CODE_WARMUP", "true"))
 # unavoidable first wait a single one. Set 0 / CODE_WARMUP=false to skip.
 WARMUP_BUDGET = float(os.environ.get("CODE_WARMUP_BUDGET", "600"))
 
+# CODE_STREAM (specs/0043) — stream the primary model turn. OFF by default -> the ONE
+# litellm.completion in complete() is a single non-streaming call, and both the request kwargs
+# and the consumed response object are BYTE-IDENTICAL to before. ON -> the same request is made
+# with stream=True + stream_options={"include_usage": True} and reassembled by model._assemble_stream
+# into an attribute-shaped response, so every downstream consumer (the dropped-call check,
+# log_model_call, the planner reasoning fold) is unchanged. warm_up() and summarize() never stream.
+STREAM = _as_bool(os.environ.get("CODE_STREAM", "false"))
+
 # -----------------------------------------------------------------------------
 # Agent loop
 #

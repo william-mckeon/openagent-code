@@ -18,6 +18,7 @@ CODE_MODEL / CODE_API_BASE examples (see src/config.py and .env.example):
 import os
 import random
 import time
+from types import SimpleNamespace
 
 # Use LiteLLM's BUNDLED model-cost map instead of fetching it from GitHub on import. The
 # remote fetch phones raw.githubusercontent.com at startup and times out when the network is
@@ -74,6 +75,59 @@ def _reasoning_kwargs(effort=None):
     return {"extra_body": {"reasoning_effort": effort}}
 
 
+def _assemble_stream(chunks):
+    """Reassemble a STREAMED litellm response (CODE_STREAM, specs/0043) into an attribute-shaped
+    object EQUIVALENT to a non-streaming resp (resp.choices[0].message + resp.usage), so complete()'s
+    dropped-call check, trajectory.log_model_call, and the planner reasoning fold consume it UNCHANGED.
+    Hand-rolled (not litellm.stream_chunk_builder) so the reassembly is dep-free unit-testable with a
+    fake chunk iterator. Folds content and reasoning_content fragments, and tool-call fragments whose
+    name/arguments arrive split across chunks (keyed by index); usage rides the terminal include_usage
+    chunk (stays None if the provider omits it — log_model_call tolerates a None usage)."""
+    content, reasoning, usage, finish = [], [], None, None
+    tools = {}   # index -> {"id", "name", "args": [fragments]}
+    for chunk in chunks:
+        u = getattr(chunk, "usage", None)
+        if u is not None:
+            usage = u
+        choices = getattr(chunk, "choices", None) or []
+        if not choices:
+            continue                       # a usage-only terminal chunk carries no choices
+        choice0 = choices[0]
+        if getattr(choice0, "finish_reason", None):
+            finish = choice0.finish_reason
+        delta = getattr(choice0, "delta", None)
+        if delta is None:
+            continue
+        if getattr(delta, "content", None):
+            content.append(delta.content)
+        if getattr(delta, "reasoning_content", None):
+            reasoning.append(delta.reasoning_content)
+        for td in (getattr(delta, "tool_calls", None) or []):
+            slot = tools.setdefault(getattr(td, "index", 0) or 0, {"id": None, "name": None, "args": []})
+            if getattr(td, "id", None):
+                slot["id"] = td.id
+            fn = getattr(td, "function", None)
+            if fn is not None:
+                if getattr(fn, "name", None):
+                    slot["name"] = fn.name
+                if getattr(fn, "arguments", None):
+                    slot["args"].append(fn.arguments)
+    tool_calls = None
+    if tools:
+        tool_calls = [
+            SimpleNamespace(id=s["id"], type="function",
+                            function=SimpleNamespace(name=s["name"], arguments="".join(s["args"])))
+            for _, s in sorted(tools.items())
+        ]
+    # content/reasoning None (not "") when nothing streamed, to mirror a non-streaming tool-only turn.
+    msg = SimpleNamespace(role="assistant",
+                          content=("".join(content) if content else None),
+                          reasoning_content=("".join(reasoning) if reasoning else None),
+                          tool_calls=tool_calls)
+    return SimpleNamespace(choices=[SimpleNamespace(index=0, finish_reason=finish, message=msg)],
+                           usage=usage)
+
+
 class Model:
     def __init__(self, trajectory, effort=None):
         self.traj = trajectory
@@ -92,6 +146,17 @@ class Model:
             kw["api_key"] = config.API_KEY
         kw.update(_reasoning_kwargs(self.effort))   # provider-aware (bedrock top-level vs extra_body)
         return kw
+
+    def _invoke(self, kwargs):
+        """The single primary-turn litellm call site (specs/0043). CODE_STREAM off (default): a plain
+        non-streaming litellm.completion — the passed kwargs and the returned resp are BYTE-IDENTICAL
+        to the old inline call (no stream keys added, original dict untouched). On: stream the same
+        request and reassemble via _assemble_stream so complete()'s consumers stay unchanged. Only the
+        primary turn streams — warm_up() and _summarize_once() call litellm.completion directly."""
+        if not config.STREAM:
+            return litellm.completion(**kwargs)
+        streamed = {**kwargs, "stream": True, "stream_options": {"include_usage": True}}
+        return _assemble_stream(litellm.completion(**streamed))
 
     def summarize(self, messages):
         """Compress older turns into a briefing for the ContextManager.
@@ -143,7 +208,7 @@ class Model:
             last = attempt == config.MODEL_RETRIES
             try:
                 t0 = time.time()
-                resp = litellm.completion(**kwargs)
+                resp = self._invoke(kwargs)   # non-streaming by default; streamed+reassembled when CODE_STREAM (specs/0043)
                 latency_ms = (time.time() - t0) * 1000
             except Exception as e:
                 # A 400 / context-window-exceeded is NOT transient: re-sending the same
