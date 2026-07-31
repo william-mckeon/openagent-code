@@ -14,6 +14,12 @@ CODE_MODEL / CODE_API_BASE examples (see src/config.py and .env.example):
   AWS Bedrock:
     CODE_MODEL=bedrock/openai.gpt-oss-120b-1:0
     CODE_API_BASE=            # unset; Bedrock uses AWS_* credentials
+  Together (OpenAI-compatible):
+    CODE_MODEL=openai/thinkingmachines/Inkling
+    CODE_API_BASE=https://api.together.xyz/v1
+  Thinking Machines Lab / Tinker (OpenAI-compatible; verify the exact URL + model id in Tinker's docs):
+    CODE_MODEL=openai/<inkling-small-model-id>
+    CODE_API_BASE=https://tinker.thinkingmachines.dev/services/tinker-prod/oai/api/v1
 """
 import os
 import random
@@ -179,6 +185,8 @@ class Model:
         if config.API_KEY:
             kw["api_key"] = config.API_KEY
         kw.update(_reasoning_kwargs(self.effort))   # provider-aware (bedrock top-level vs extra_body)
+        if config.EXTRA_BODY:                        # specs/0049: merge operator extra_body params (default {} = no-op, byte-identical)
+            kw["extra_body"] = {**config.EXTRA_BODY, **kw.get("extra_body", {})}   # reasoning knob wins on a key collision
         return kw
 
     def _invoke(self, kwargs):

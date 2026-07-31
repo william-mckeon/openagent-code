@@ -219,7 +219,7 @@ there, documented in `.env.example`). There is no YAML config file. Key ones:
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `CODE_MODEL` | `openai/gpt-oss-120b` | LiteLLM model string (RunPod / Bedrock) |
+| `CODE_MODEL` | `openai/gpt-oss-120b` | LiteLLM model string (RunPod / Bedrock / Together / Tinker) |
 | `CODE_API_BASE` | `http://localhost:8000/v1` | OpenAI-compatible endpoint (empty for Bedrock) |
 | `CODE_AGENT_NAME` | `OAC` | The name the agent answers to (identity line + banners); manage with `--set-name` / `--remove-name` |
 | `CODE_AGENT_PERSONA` | (empty) | Optional one-line persona appended to the system prompt; empty appends nothing |
@@ -236,6 +236,7 @@ there, documented in `.env.example`). There is no YAML config file. Key ones:
 | `CODE_SHELL_HINTS` | `false` | Append PowerShell 5.1 command rules to the env block on Windows (specs/0046); needs `CODE_SITUATIONAL_CONTEXT` |
 | `CODE_GROUND_SKIP_GREENFIELD` / `CODE_GROUND_GREENFIELD_MAX` | `false` / `0` | Skip path-grounding on an empty (specs/0042) or small early-stage (specs/0047) workspace; `MAX` = file-count threshold |
 | `CODE_REASONING_PARAM` / `_VALUE` / `_TOPLEVEL` | `reasoning_effort` / (empty) / `false` | Reasoning pass-through (specs/0044); VALUE empty = off (legacy `CODE_REASONING_EFFORT` path) |
+| `CODE_EXTRA_BODY` | (empty) | Extra JSON params merged into the request `extra_body` (specs/0049); e.g. `{"separate_reasoning": true}` for Tinker; empty = off |
 | `CODE_COMPACT_AT_TOKENS` | `12000` | Compact the live context past this budget (0 = off) |
 | `CODE_MODEL_MAX_TOKENS` | `131072` | Model's HARD context window — sent context compacted under it (specs/0034); `auto` resolves it at startup (specs/0045) |
 | `CODE_MODEL_MAX_OUTPUT_TOKENS` / `CODE_OUTPUT_MARGIN_TOKENS` | (empty) / `4096` | Optional per-request output cap (specs/0045); empty = no cap (byte-identical); `auto` = window − prompt − margin |

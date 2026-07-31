@@ -175,7 +175,7 @@ Full reference in the README and `.env.example`. Contract-relevant values:
 
 | Variable | Default | Contractual? |
 |---|---|---|
-| `CODE_MODEL` | `openai/gpt-oss-120b` | Yes — selects model + provider |
+| `CODE_MODEL` | `openai/gpt-oss-120b` | Yes — selects model + provider (RunPod / Bedrock / Together / Tinker; swap is `.env`-only) |
 | `CODE_API_BASE` | `http://localhost:8000/v1` | Yes — the model endpoint |
 | `CODE_AGENT_NAME` | `OAC` | Reference (specs/0036) — the agent's display name (identity line + banners); managed by `--set-name` / `--remove-name`. Package/import name unchanged |
 | `CODE_AGENT_PERSONA` | (empty) | Reference (specs/0036) — optional one-line persona appended to the system prompt; empty appends nothing |
@@ -191,6 +191,7 @@ Full reference in the README and `.env.example`. Contract-relevant values:
 | `CODE_SHELL_HINTS` | `false` | Reference — PowerShell 5.1 command rules in the env block on Windows (specs/0046); needs `CODE_SITUATIONAL_CONTEXT`; safety-fingerprint: No |
 | `CODE_GROUND_SKIP_GREENFIELD` / `CODE_GROUND_GREENFIELD_MAX` | `false` / `0` | Reference — skip path-grounding on an empty (specs/0042) or small early-stage (specs/0047) workspace; safety-fingerprint: No |
 | `CODE_REASONING_PARAM` / `_VALUE` / `_TOPLEVEL` | `reasoning_effort` / (empty) / `false` | Reference — reasoning pass-through (specs/0044); VALUE empty = off; safety-fingerprint: No |
+| `CODE_EXTRA_BODY` | (empty) | Reference — JSON params merged into request `extra_body` (specs/0049); e.g. `{"separate_reasoning": true}` for Tinker; empty = off; safety-fingerprint: No |
 | `CODE_COMPACT_AT_TOKENS` | `12000` | Reference — live-context compaction budget (0 = off) |
 | `CODE_MODEL_MAX_TOKENS` | `131072` | Reference — model HARD context window; sent context compacted under it (specs/0034); `auto` resolves at startup (specs/0045) |
 | `CODE_MODEL_MAX_OUTPUT_TOKENS` / `CODE_OUTPUT_MARGIN_TOKENS` | (empty) / `4096` | Reference — optional per-request output cap (specs/0045); empty = no cap; safety-fingerprint: No |

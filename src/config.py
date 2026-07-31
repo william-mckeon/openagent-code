@@ -118,6 +118,19 @@ except (ValueError, TypeError):
     REASONING_VALUE = _reasoning_value_raw   # not JSON -> literal string (e.g. "xhigh"); never raises at import
 REASONING_TOPLEVEL = _as_bool(os.environ.get("CODE_REASONING_TOPLEVEL", "false"))
 
+# CODE_EXTRA_BODY (specs/0049) — a JSON object of provider params merged into the request's `extra_body`,
+# so the operator can send WHATEVER an OpenAI-compatible endpoint accepts (e.g. Tinker's `separate_reasoning`)
+# ALONGSIDE the reasoning knob, without a code change. The single-key reasoning pass-through (above) cannot
+# send two extra_body keys at once; this can. Default {} (empty) -> nothing is merged, byte-identical. On a
+# key collision the dedicated reasoning knob wins (it is the more specific setting). Never raises at import.
+_extra_body_raw = os.environ.get("CODE_EXTRA_BODY", "").strip()
+try:
+    EXTRA_BODY = json.loads(_extra_body_raw) if _extra_body_raw else {}
+    if not isinstance(EXTRA_BODY, dict):
+        EXTRA_BODY = {}
+except (ValueError, TypeError):
+    EXTRA_BODY = {}
+
 # -----------------------------------------------------------------------------
 # Agent identity (Phase 36 / specs/0036) — the name the agent answers to, chosen at install.
 #
