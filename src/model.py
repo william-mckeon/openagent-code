@@ -66,10 +66,15 @@ def _effort_kwargs(effort):
     ignored); OpenAI-compatible endpoints (vLLM / Together / Bedrock's /openai/v1) take it via extra_body,
     which lands verbatim in the request body. Empty = send nothing."""
     if not effort:
-        return {}
+      return {}rt}}
     if config.MODEL.startswith("bedrock/"):
-        return {"reasoning_effort": effort}
-    return {"extra_body": {"reasoning_effort": effort}}
+      return {"reasoning_effort": effort}
+    # OpenAI-compatible endpoints: vLLM / Together / Tinker / OpenRouter
+    payload = {"reasoning_effort": effort}
+    # Thinking Machines Lab / Tinker: reasoning split control (default true on endpoint)
+    if getattr(config, "SEPARATE_REASONING", True) is not None:
+        payload["separate_reasoning"] = getattr(config, "SEPARATE_REASONING", True)
+    return {"extra_body": payload}
 
 
 def _reasoning_kwargs(effort=None):
