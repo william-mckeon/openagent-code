@@ -494,6 +494,20 @@ EFFORT_STATE = _resolve_install_path(os.environ.get("CODE_EFFORT_STATE", ""))
 # propose mode (CLI / env) turns it on in cli.main(), so the mode is never a dead read-only mode. Off by
 # default -> the tool isn't offered and every new gate branch is skipped (byte-identical).
 PROPOSE = _as_bool(os.environ.get("CODE_PROPOSE", "false"))
+# Propose-mode follow-through (specs/0048) — three OPT-IN relaxations of the "read-only until a manifest is
+# approved" gate, so an approved plan does not strand the operator read-only on the next turn. All default
+# OFF -> propose mode is byte-identical to specs/0022 (an approval never leaks past its turn). Every
+# relaxation is consulted ONLY after a manifest was approved THIS session (ctx.propose_graduated); a cold
+# `--mode propose` still starts read-only. The deny-rules and the workspace fence ALWAYS win on top.
+#   RUN_AFTER_APPROVAL    (c): a mutating run_command falls to the normal ask ladder instead of hard-deny.
+#   EXTEND_AFTER_APPROVAL (b): an OFF-manifest file mutation / move falls to the ask ladder (per-edit prompt)
+#                              — NO auto-allow (approved_paths is still reset each turn).
+#   PERSIST_APPROVAL      (a): the approved phase + approved paths PERSIST across turns, so the signed-off
+#                              files stay writable with NO further prompt all session (scoped bypass; deny +
+#                              fence still hold). Most permissive; supersedes (b)/(c) while on.
+PROPOSE_RUN_AFTER_APPROVAL = _as_bool(os.environ.get("CODE_PROPOSE_RUN_AFTER_APPROVAL", "false"))
+PROPOSE_EXTEND_AFTER_APPROVAL = _as_bool(os.environ.get("CODE_PROPOSE_EXTEND_AFTER_APPROVAL", "false"))
+PROPOSE_PERSIST_APPROVAL = _as_bool(os.environ.get("CODE_PROPOSE_PERSIST_APPROVAL", "false"))
 
 # Completion & manifest honesty (Phase 26 / specs/0026). Two independent, default-OFF nets that close
 # seams where a "done" claim wasn't backed by a real change:

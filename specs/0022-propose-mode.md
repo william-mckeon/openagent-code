@@ -84,7 +84,10 @@ edit to `.env` or a path outside the workspace.
 - **Headless never auto-approves** — no human -> write the plan out and STOP; an EOF / empty answer is a
   decline, not an approval.
 - **Cross-turn leak** — reset `ctx.manifest / approved_paths / propose_phase` every task (the same leak
-  class the plan/goal resets fix), or a plan approved for one task authorizes edits on the next.
+  class the plan/goal resets fix), or a plan approved for one task authorizes edits on the next. This is the
+  DEFAULT and the guarantee for file writes. specs/0048 adds three OPT-IN, default-off relaxations for
+  graduated follow-through (run/test after approval, prompted extension, and a scoped-bypass persist) — see
+  that spec; with all off, this Trap holds byte-for-byte and `approved_paths` is still reset every turn.
 - **A declined plan is not a keeper** — a manifest with `approved != True` drops that turn from SFT via
   `_unapplied_manifest_turns` (NOT `_contested_turns`: a decline writes no permission record).
 

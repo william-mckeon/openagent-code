@@ -109,6 +109,22 @@ def _acceptance_challenge(unmet):
             "the task done once EVERY acceptance item is checked off.")
 
 
+def _reset_propose_for_turn(ctx):
+    """Per-turn propose-mode reset (specs/0022 + 0048). DEFAULT: re-lock read-only and clear approved_paths,
+    so an approval NEVER leaks past the turn it was granted (the cross-turn WRITE-leak guard). With
+    CODE_PROPOSE_PERSIST_APPROVAL and a session that has already had a manifest approved
+    (ctx.propose_graduated), KEEP the approved phase + approved paths across turns instead, so the signed-off
+    files stay writable (scoped bypass; the deny-rules + the fence still gate every op). propose_graduated is
+    session-scoped and is deliberately NOT reset here. Off by default -> byte-identical to specs/0022."""
+    ctx.manifest = None
+    in_propose = getattr(ctx.permissions, "mode", None) == "propose"
+    if config.PROPOSE_PERSIST_APPROVAL and in_propose and getattr(ctx, "propose_graduated", False):
+        ctx.propose_phase = "approved"           # (a) a prior approval keeps the approved phase + paths live
+    else:
+        ctx.approved_paths = set()               # default / (b)(c): re-lock read-only, nothing auto-allowed
+        ctx.propose_phase = "investigate" if in_propose else None
+
+
 class RunResult:
     def __init__(self, final, terminated, tool_calls):
         self.final = final              # the model's closing text (may be empty)
@@ -204,9 +220,7 @@ class Agent:
         # Propose mode (specs/0022): a change-list approved for one task must NEVER authorize edits on the
         # next (the same cross-turn-leak class the plan/goal resets above fix — and worse here, because it
         # governs WRITES). Reset the manifest + approval every task; start propose mode read-only.
-        ctx.manifest = None
-        ctx.approved_paths = set()
-        ctx.propose_phase = "investigate" if getattr(ctx.permissions, "mode", None) == "propose" else None
+        _reset_propose_for_turn(ctx)   # specs/0022 + 0048: re-lock read-only each turn, unless PERSIST_APPROVAL keeps a graduated approval live
         # Spec-first (specs/0025): a spec approved-but-unfinished on a prior task must never keep the
         # acceptance gate armed on an unrelated later turn (the stale-plan hijack class). Reset per task.
         ctx.spec = None

@@ -290,6 +290,15 @@ class Permissions:
         re-gated per file by patch.py); an OFF-manifest op returns None to fall through to the normal ask
         baseline. Only called when config.PROPOSE and self.mode == 'propose'."""
         if getattr(ctx, "propose_phase", "investigate") != "approved":
+            # specs/0048: after a manifest was approved this session, opt-in relaxations let a mutating op
+            # fall to the ASK ladder instead of hard-deny (deny-rules + the fence already ran above). A
+            # COMMAND rides RUN_AFTER_APPROVAL (c); an off-manifest FILE mutation rides EXTEND_AFTER_APPROVAL
+            # (b). approved_paths is still reset each turn, so nothing is AUTO-allowed here. Off -> the deny.
+            if getattr(ctx, "propose_graduated", False):
+                if t.kind != "path" and config.PROPOSE_RUN_AFTER_APPROVAL:
+                    return None
+                if t.kind == "path" and config.PROPOSE_EXTEND_AFTER_APPROVAL:
+                    return None
             return D(False, "deny", "propose mode is read-only until the manifest is approved")
         if tool == "apply_patch":
             return D(True, "allow", "propose mode: approved (each patch op is re-gated per file)")
@@ -511,7 +520,11 @@ class Permissions:
         # this a mutating command would slip through the investigate phase. (A read-only command already
         # returned above; in the approved phase a command is inherently off-manifest -> falls to ask below.)
         if config.PROPOSE and self.mode == "propose" and getattr(ctx, "propose_phase", "investigate") != "approved":
-            return D(False, "deny", "propose mode is read-only until the manifest is approved")
+            # specs/0048 (c): after a manifest was approved this session, a mutating command falls to the ask
+            # ladder below instead of hard-deny (a command is never ON a file manifest, so gating run/test
+            # behind file approval was a category error). Off by default -> the original deny.
+            if not (config.PROPOSE_RUN_AFTER_APPROVAL and getattr(ctx, "propose_graduated", False)):
+                return D(False, "deny", "propose mode is read-only until the manifest is approved")
         for seg in candidates:                                   # ask — matches ANY segment
             r = self._match_command_rules(self.ask, seg)
             if r:
@@ -566,8 +579,10 @@ class Permissions:
         # through to the default ask below). UNDER the deny + fence checks above.
         if config.PROPOSE and self.mode == "propose":
             if getattr(ctx, "propose_phase", "investigate") != "approved":
-                return D(False, "deny", "propose mode is read-only until the manifest is approved", target=old_path)
-            if self._on_manifest_move(ctx, old_path, new_path):
+                # specs/0048 (b): a graduated off-manifest move falls to the ask ladder instead of hard-deny.
+                if not (config.PROPOSE_EXTEND_AFTER_APPROVAL and getattr(ctx, "propose_graduated", False)):
+                    return D(False, "deny", "propose mode is read-only until the manifest is approved", target=old_path)
+            elif self._on_manifest_move(ctx, old_path, new_path):
                 return D(True, "allow", "move on the approved manifest", target=old_path)
         if self.mode == "plan":
             return D(False, "deny", "plan mode is read-only", target=old_path)

@@ -61,6 +61,7 @@ class Context:
         self.manifest = None           # {items,approved} proposed change-list set by propose_changes (specs/0022)
         self.propose_phase = None      # None | 'investigate' (read-only) | 'approved'; flips on approval, read by decide()
         self.approved_paths = set()    # normcased workspace-rel paths the user signed off; decide() allows exactly these
+        self.propose_graduated = False # specs/0048: a manifest was approved THIS session -> the opt-in follow-through relaxations may apply (persists across the per-turn reset)
         self.spec = None               # {title,goal,acceptance:[{content,done}],non_goals,path,number,approved} set by write_spec (specs/0025); read by the acceptance gate
         self.ask = None                # callable(question) -> answer; wired by make_context
         self.interactive = False       # True only when a human is present to answer
@@ -1150,6 +1151,7 @@ def propose_changes(args, ctx):
             ctx.manifest["approved"] = True
             ctx.propose_phase = "approved"
             ctx.approved_paths = _approved_paths(ctx.permissions, ctx.cwd, items)
+            ctx.propose_graduated = True   # specs/0048: mark the session graduated (survives the per-turn reset)
             return ToolResult(True, f"Approved {len(items)} change(s). Execute exactly this plan now - edits "
                                     "on these paths are pre-approved; anything off the list will be asked.")
         return ToolResult(False, "The user did NOT approve this plan, so nothing was changed. Do not make "

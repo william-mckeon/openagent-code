@@ -41,7 +41,7 @@ def check(label, cond):
 class _Ctx:
     """A minimal context for decide() - the fields the gate reads (specs/0022 adds propose_phase/approved_paths)."""
     def __init__(self, cwd, perms=None, depth=0, interactive=False, propose_phase=None, approved=None,
-                 ask=None, session_id="test"):
+                 ask=None, session_id="test", propose_graduated=False):
         self.cwd = cwd
         self.permissions = perms
         self.depth = depth
@@ -51,6 +51,7 @@ class _Ctx:
         self.ask = ask
         self.session_id = session_id
         self.manifest = None
+        self.propose_graduated = propose_graduated   # specs/0048
 
 
 # -- tiny trajectory-record builders (mirror check_repl_outcomes) ------------------------------------------
@@ -79,9 +80,14 @@ def _end(outcome="completed"):
 
 def main():
     ws = os.path.realpath(tempfile.mkdtemp(prefix="propose-ws-"))
-    _saved = {k: getattr(config, k) for k in ("PROPOSE", "EXECPOLICY", "HOOKS", "GUARDIAN")}
+    _saved = {k: getattr(config, k) for k in ("PROPOSE", "EXECPOLICY", "HOOKS", "GUARDIAN",
+              "PROPOSE_RUN_AFTER_APPROVAL", "PROPOSE_EXTEND_AFTER_APPROVAL", "PROPOSE_PERSIST_APPROVAL")}
     config.HOOKS = config.GUARDIAN = False   # isolate the propose logic from hooks/guardian
     config.EXECPOLICY = False
+    # isolate the specs/0048 relaxations from the live .env so the specs/0022 assertions stay deterministic
+    config.PROPOSE_RUN_AFTER_APPROVAL = False
+    config.PROPOSE_EXTEND_AFTER_APPROVAL = False
+    config.PROPOSE_PERSIST_APPROVAL = False
 
     # =====================================================================================================
     # 1. the tool: propose_changes validation + approval + headless
@@ -311,6 +317,75 @@ def main():
            _mc("proposed", calls=["propose_changes"]), _manifest(False), _end("completed")]
     check("convert: a one-shot run whose plan was DECLINED is dropped as manifest_declined",
           convert.is_trainable(one) == (False, "manifest_declined"))
+
+    # =====================================================================================================
+    # 9. propose follow-through (specs/0048): the per-turn reset + the three opt-in relaxations
+    # =====================================================================================================
+    config.PROPOSE = True
+    from src.agent import _reset_propose_for_turn   # dep-free; drives the EXACT agent.py per-turn reset
+    pp = Permissions("propose", {}, [])
+    APPROVED = pp.norm_path("src/a.py", ws)
+
+    # --- the per-turn reset (agent.py) — the cross-turn behavior the specs/0022 harness never exercised ---
+    config.PROPOSE_PERSIST_APPROVAL = False
+    g = _Ctx(ws, pp, propose_phase="approved", approved={APPROVED}, propose_graduated=True)
+    _reset_propose_for_turn(g)
+    check("reset default: an approved turn re-locks to investigate next turn (approval never leaks)",
+          g.propose_phase == "investigate" and g.approved_paths == set())
+    check("reset default: propose_graduated PERSISTS (session-scoped, not cleared by the reset)",
+          g.propose_graduated is True)
+
+    config.PROPOSE_PERSIST_APPROVAL = True
+    g2 = _Ctx(ws, pp, propose_phase="approved", approved={APPROVED}, propose_graduated=True)
+    _reset_propose_for_turn(g2)
+    check("reset (a) PERSIST+graduated: approved phase + approved_paths survive to the next turn",
+          g2.propose_phase == "approved" and APPROVED in g2.approved_paths)
+    g3 = _Ctx(ws, pp, propose_phase="approved", approved={APPROVED}, propose_graduated=False)
+    _reset_propose_for_turn(g3)
+    check("reset (a): a NON-graduated (cold) session still re-locks to investigate (guard holds)",
+          g3.propose_phase == "investigate" and g3.approved_paths == set())
+    config.PROPOSE_PERSIST_APPROVAL = False
+
+    grad = _Ctx(ws, pp, propose_phase="investigate", propose_graduated=True)   # a graduated later turn
+    cold = _Ctx(ws, pp, propose_phase="investigate", propose_graduated=False)  # a cold session, no approval yet
+
+    # --- (c) RUN_AFTER_APPROVAL: a graduated mutating command falls to ask (both EXECPOLICY paths) --------
+    config.PROPOSE_RUN_AFTER_APPROVAL = True
+    for label, ep in (("execpolicy path", True), ("generic path", False)):
+        config.EXECPOLICY = ep
+        d = pp.decide("run_command", {"command": "docker build ."}, grad)
+        check(f"(c) graduated+RUN ({label}): mutating command NOT hard-denied read-only",
+              "read-only until the manifest is approved" not in (d.reason or ""))
+        dc = pp.decide("run_command", {"command": "docker build ."}, cold)
+        check(f"(c) COLD ({label}): mutating command STILL read-only-denied (cold guard holds)",
+              (not dc.allowed) and "read-only until the manifest is approved" in (dc.reason or ""))
+    config.EXECPOLICY = False
+    config.PROPOSE_RUN_AFTER_APPROVAL = False
+
+    # --- (b) EXTEND_AFTER_APPROVAL: a graduated off-manifest write falls to ask; deny+fence still win -----
+    config.PROPOSE_EXTEND_AFTER_APPROVAL = True
+    dw = pp.decide("write_file", {"path": "src/new.py", "content": "x"}, grad)
+    check("(b) graduated+EXTEND: off-manifest write NOT hard-denied read-only",
+          "read-only until the manifest is approved" not in (dw.reason or ""))
+    dwc = pp.decide("write_file", {"path": "src/new.py", "content": "x"}, cold)
+    check("(b) COLD: off-manifest write STILL read-only-denied",
+          (not dwc.allowed) and "read-only until the manifest is approved" in (dwc.reason or ""))
+    pdeny = Permissions("propose", {"deny": ["write_file(.env)"]}, [])
+    gdeny = _Ctx(ws, pdeny, propose_phase="investigate", propose_graduated=True)
+    denv = pdeny.decide("write_file", {"path": ".env", "content": "x"}, gdeny)
+    check("(b) deny rule STILL wins under graduated EXTEND (.env denied by rule, not relaxed)",
+          (not denv.allowed) and "deny rule" in (denv.reason or ""))
+    outside = os.path.join(os.path.dirname(ws), "outside.py")
+    check("(b) fence STILL wins under graduated EXTEND (a path outside the workspace is denied)",
+          not pp.decide("write_file", {"path": outside, "content": "x"}, grad).allowed)
+    config.PROPOSE_EXTEND_AFTER_APPROVAL = False
+
+    # --- flag-OFF byte-identity: a graduated session with ALL relaxations off is still read-only ---------
+    off_cmd = pp.decide("run_command", {"command": "docker build ."}, grad)
+    off_wr = pp.decide("write_file", {"path": "src/new.py", "content": "x"}, grad)
+    check("flag OFF byte-identical: graduated but all relaxations off -> still read-only-denied",
+          "read-only until the manifest is approved" in (off_cmd.reason or "")
+          and "read-only until the manifest is approved" in (off_wr.reason or ""))
 
     for k, v in _saved.items():
         setattr(config, k, v)
