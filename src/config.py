@@ -117,6 +117,7 @@ try:
 except (ValueError, TypeError):
     REASONING_VALUE = _reasoning_value_raw   # not JSON -> literal string (e.g. "xhigh"); never raises at import
 REASONING_TOPLEVEL = _as_bool(os.environ.get("CODE_REASONING_TOPLEVEL", "false"))
+SEPARATE_REASONING = _as_bool(os.environ.get("CODE_SEPARATE_REASONING", "true"))
 
 # -----------------------------------------------------------------------------
 # Agent identity (Phase 36 / specs/0036) — the name the agent answers to, chosen at install.
