@@ -125,8 +125,10 @@ def main():
     check("shell_hints OFF (default): no shell-rules line (byte-identical block)", "shell rules" not in off)
     on = envcontext.build_env_context("/w", now=fixed, shell_hints=True)
     if os.name == "nt":
-        check("shell_hints ON + PowerShell: the PS 5.1 rules line is present",
-              "shell rules (PowerShell 5.1)" in on and "New-Item" in on and "&&" in on and "/dev/null" in on)
+        check("shell_hints ON + PowerShell: the PS 5.1 rules line is present + covers the Unix->PS mappings",
+              "shell rules (PowerShell 5.1)" in on and "New-Item" in on and "&&" in on and "/dev/null" in on
+              and "Get-ChildItem" in on and "Select-String" in on
+              and "Stop-Process -Name python" in on)   # self-kill warning (specs/0050 pairing)
     else:
         check("shell_hints ON + non-Windows shell: no PS rules (PowerShell-specific)", "shell rules" not in on)
     _s = os.environ.pop("CODE_SHELL_HINTS", None)

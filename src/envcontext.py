@@ -59,11 +59,13 @@ def build_env_context(cwd, granted_dirs=None, include_git=False, git_status_fn=N
     # its syntax differs from POSIX in ways a bash-trained model gets wrong. Gated, so OFF is byte-identical.
     if shell_hints and os.name == "nt":
         lines.append(
-            "- shell rules (PowerShell 5.1): chain commands with `;` — `&&` / `||` are NOT valid; make "
-            "directories with `New-Item -ItemType Directory -Force <path>`, NOT `mkdir -p`; discard output "
-            "with `$null` / `Out-Null`, NOT `/dev/null`; `curl` and `wget` are aliases for Invoke-WebRequest "
-            "— for real curl call `curl.exe` and drop `-o /dev/null`; prefer `Invoke-WebRequest ... | "
-            "Select-Object` for HTTP checks.")
+            "- shell rules (PowerShell 5.1): chain with `;` (`&&` / `||` are NOT valid); list files with "
+            "`Get-ChildItem` (`ls` / `dir` take NO Unix flags like `-la`); read with `Get-Content` (not "
+            "`cat`); search with `Select-String` (not `grep`); delete with `Remove-Item` (not `rm -rf`); make "
+            "directories with `New-Item -ItemType Directory -Force` (not `mkdir -p`); discard output with "
+            "`$null` / `Out-Null` (not `/dev/null`); `curl` / `wget` are Invoke-WebRequest aliases — call "
+            "`curl.exe` for real curl; stop a background process by its PID (`Stop-Process -Id N`), NEVER by "
+            "name — `Stop-Process -Name python` / `taskkill /IM python*` kills THIS agent.")
     dirs = [d for d in (granted_dirs or []) if d]
     if dirs:
         shown = dirs[:_MAX_DIRS]
