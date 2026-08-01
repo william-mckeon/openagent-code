@@ -143,7 +143,7 @@ def _one_shot(task, perms):
     ctx = make_context(workspace, perms, traj.session_id,
                        depth=0, verbose=config.VERBOSE, interactive=False)
     print(f"{config.agent_name()} | model={config.display_model()} | tool_mode={config.TOOL_MODE} | "
-          f"mode={perms.mode} | effort={config.REASONING_EFFORT or 'default'} | workspace={workspace}")
+          f"mode={perms.mode} | effort={config.display_effort()} | workspace={workspace}")
     log.info("one-shot start | model=%s mode=%s workspace=%s", config.display_model(), perms.mode, workspace)
     log.info("task: %s", task)
     _warn_if_empty_workspace(workspace)
@@ -263,7 +263,7 @@ def _repl_set_mode(ctx, name):
 def _run_session(traj, agent, ctx):
     """The interactive chat loop, shared by a fresh REPL and a resumed session."""
     print(f"{config.agent_name()} REPL | model={config.display_model()} | mode={ctx.permissions.mode} | "
-          f"effort={config.REASONING_EFFORT or 'default'} | workspace={ctx.cwd}")
+          f"effort={config.display_effort()} | workspace={ctx.cwd}")
     cmds = "/exit  /plan  /add-dir <path>  /mode <name>"
     if config.WORKFLOWS_ASYNC:
         cmds += "  /tasks  /result <id>"

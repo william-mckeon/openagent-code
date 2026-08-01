@@ -97,6 +97,18 @@ def main():
     # json.loads(ValueError) -> literal path). Prove the legacy effort machinery is untouched:
     check("_EFFORTS unchanged (legacy allowlist intact)", config._EFFORTS == {"low", "medium", "high"})
 
+    # ---- display_effort(): the banner reflects the pass-through, not the stale legacy value ------------
+    config.REASONING_VALUE, config.REASONING_PARAM, config.REASONING_EFFORT = "xhigh", "reasoning_effort", "high"
+    check("display_effort: shows the pass-through value (xhigh), not the stale legacy 'high'",
+          config.display_effort() == "xhigh")
+    config.REASONING_PARAM, config.REASONING_VALUE = "thinking", {"budget_tokens": 2048}
+    check("display_effort: a custom pass-through param shows key=value",
+          config.display_effort() == "thinking={'budget_tokens': 2048}")
+    config.REASONING_VALUE, config.REASONING_EFFORT = "", "high"
+    check("display_effort: no pass-through -> the legacy effort ('high')", config.display_effort() == "high")
+    config.REASONING_EFFORT = ""
+    check("display_effort: nothing set -> 'default'", config.display_effort() == "default")
+
     config.MODEL, config.REASONING_EFFORT, config.REASONING_VALUE, config.REASONING_PARAM, config.REASONING_TOPLEVEL = saved
 
     # ---- provenance: pass-through does NOT leak into the recorded effort field -------------------------

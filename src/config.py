@@ -939,3 +939,12 @@ def display_model() -> str:
     value used for calls and logged to the trajectory.
     """
     return MODEL.split("/", 1)[1] if "/" in MODEL else MODEL
+
+
+def display_effort() -> str:
+    """The reasoning setting shown in the REPL / one-shot banner. Reflects the specs/0044 pass-through
+    (CODE_REASONING_VALUE) when it is set — the value ACTUALLY sent — else the legacy CODE_REASONING_EFFORT,
+    else 'default'. Cosmetic only; the request shaping lives in model._reasoning_kwargs."""
+    if REASONING_VALUE not in (None, ""):
+        return str(REASONING_VALUE) if REASONING_PARAM == "reasoning_effort" else f"{REASONING_PARAM}={REASONING_VALUE}"
+    return REASONING_EFFORT or "default"
