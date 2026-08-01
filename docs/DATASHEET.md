@@ -206,6 +206,7 @@ Full reference in the README and `.env.example`. Contract-relevant values:
 | `CODE_AUTO_APPROVE` | `true` | Yes — back-compat shim for permission mode (true→`bypass`, false→`default`) |
 | `CODE_PERMISSION_MODE` | (derived) | Yes — `default`/`acceptEdits`/`plan`/`bypass`/`propose` (specs/0001-permissions.md) |
 | `CODE_PROPOSE_RUN_AFTER_APPROVAL` / `_EXTEND_AFTER_APPROVAL` / `_PERSIST_APPROVAL` | `false` | Reference — propose follow-through after first approval (specs/0048); deny+fence still win; safety-fingerprint: No |
+| `CODE_GUARD_SELF_KILL` | `false` | Reference — self-preservation (specs/0050): hard-deny a name-based kill of the agent's own `python` process in every mode; safety-fingerprint: No |
 | `CODE_PERMISSIONS_CONFIG` | (empty) | Yes — JSON allow/ask/deny rules; `deny` always wins |
 | `CODE_ADD_DIRS` | (empty) | Yes — extra roots the file tools may touch (widens the fence) |
 | `CODE_TRUST_USER_DIRS` | `false` | Yes (specs/0035) — a user-typed absolute dir becomes a **read** grant; `request_dir` auto-grants under bypass at depth 0 into a read-only tier writes can't reach |

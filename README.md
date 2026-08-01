@@ -247,6 +247,7 @@ there, documented in `.env.example`). There is no YAML config file. Key ones:
 | `CODE_AUTO_APPROVE` | `true` | Back-compat shim for permission mode (true→`bypass`, false→`default`) |
 | `CODE_PERMISSION_MODE` | (derived) | `default` / `acceptEdits` / `plan` / `bypass` / `propose` (Phase 4 #6) |
 | `CODE_PROPOSE_RUN_AFTER_APPROVAL` / `_EXTEND_AFTER_APPROVAL` / `_PERSIST_APPROVAL` | `false` | Propose follow-through (specs/0048): run/test, prompted-extend, or scoped-bypass after the first approval; deny+fence always win |
+| `CODE_GUARD_SELF_KILL` | `false` | Self-preservation (specs/0050): hard-deny a name-based process kill that would end the agent's own `python` process, in every mode incl. bypass |
 | `CODE_PERMISSIONS_CONFIG` | (empty) | JSON allow/ask/deny rules; `deny` always wins (see `permissions.json.example`) |
 | `CODE_ADD_DIRS` | (empty) | Dirs the file tools may touch beyond the workspace (widens the fence) |
 | `CODE_TRUST_USER_DIRS` | `false` | Treat a dir the user literally types as a **read** grant, and auto-grant `request_dir` for an existing dir under bypass at depth 0 (into a read-only tier writes can't reach) |

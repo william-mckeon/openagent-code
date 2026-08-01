@@ -37,6 +37,19 @@ def _shell_name():
     return "powershell" if os.name == "nt" else "bash"
 
 
+# Self-preservation (specs/0050): a kill verb followed by `python` WITHIN one command segment (a ; && || |
+# boundary stops the match, so `Stop-Process -Name foo; python x` is NOT flagged). The agent runs as
+# `python -m src`, so any NAME-based python kill takes the agent down with it; kill-by-PID carries no
+# `python` token and is intentionally not matched.
+_SELF_KILL = re.compile(r"\b(?:stop-process|taskkill|pkill|killall|kill)\b[^|;&\n]*\bpython\b", re.I)
+
+
+def _is_self_kill(command):
+    """True when `command` is a name-based process kill that would terminate the agent's own interpreter
+    (Stop-Process -Name python / taskkill /IM python.exe / pkill python / killall python / kill ... python)."""
+    return bool(_SELF_KILL.search(command or ""))
+
+
 def _flush_stdin():
     """Drain any typed-ahead input so a permission prompt raised mid-turn doesn't swallow the user's NEXT
     query as its y/N answer (seen live: 'allow delete_file...? [y/N] what project is this?y' — the query
@@ -174,6 +187,16 @@ class Permissions:
         """The permission ladder itself (deny -> fence -> read-only -> propose -> plan -> ask -> allow ->
         baseline). Split out of decide() so the PreToolUse hook-ask / off-plan escalation can post-process
         its result uniformly, whether it came from here or the execpolicy command path."""
+        # Self-preservation (specs/0050): a name-based process-kill that would catch the agent's OWN
+        # interpreter (Stop-Process -Name python / taskkill /IM python* / pkill / killall python) is
+        # HARD-DENIED in EVERY mode — including bypass — because killing yourself is never a legitimate agent
+        # action and it aborts the run mid-task (a live run self-terminated this way stopping a test server).
+        # Runs before the mode ladder + execpolicy routing, so it wins like a deny rule. Kill-by-PID is
+        # untouched. Flag-gated -> OFF (default) never runs -> byte-identical.
+        if config.GUARD_SELF_KILL and tool == "run_command" and _is_self_kill(t.raw):
+            return Decision(False, "run_command", t.raw, "deny",
+                            "self-preservation: refusing a name-based kill that would terminate the agent's own process",
+                            None, self.mode)
         # run_command gated on the PARSED command (execpolicy, Phase 16): deny/ask/allow rules match ANY
         # segment (the `rm` inside `cd x && rm y`) and a wholly read-only command is allowed like a read
         # tool. OFF (default) -> decide() never consults execpolicy and the prefix path below is unchanged.

@@ -405,6 +405,14 @@ VERIFY_TIMEOUT = int(os.environ.get("CODE_VERIFY_TIMEOUT", "60"))
 # default -> permissions.decide() never consults execpolicy and the prefix matcher path is unchanged.
 EXECPOLICY = _as_bool(os.environ.get("CODE_EXECPOLICY", "false"))
 
+# CODE_GUARD_SELF_KILL (specs/0050) — self-preservation. The agent runs as `python -m src`, so a NAME-based
+# process kill (Stop-Process -Name python / taskkill /IM python* / pkill python / killall python) terminates
+# the agent's OWN interpreter and aborts the run mid-task (a live run self-killed this way trying to stop a
+# test http.server). When on, such a command is HARD-DENIED in EVERY mode — including bypass — like the deny
+# rules and the workspace fence; kill-by-PID (Stop-Process -Id N) is untouched. OFF (default) -> byte-identical
+# (the guard never runs).
+GUARD_SELF_KILL = _as_bool(os.environ.get("CODE_GUARD_SELF_KILL", "false"))
+
 # sandbox — FS confinement (Phase 17 / specs/0017). Extend the workspace fence to run_command's WRITES:
 # a command whose output redirect or write-command destination resolves OUTSIDE cwd + CODE_ADD_DIRS is
 # REFUSED, so it can't write past the fence even under an allow rule / bypass. Off by default ->
