@@ -12,8 +12,10 @@
 ## What this is
 
 A terminal coding agent — read files, edit them, run commands, verify — that
-runs on a model **you** host (gpt-oss-120b on RunPod, or Bedrock) and captures
-every session as structured training data. The bet: a large share of a coding
+runs on a model **you** control behind any OpenAI-compatible endpoint (currently
+Inkling-Small on Thinking Machines' Tinker; self-hosted vLLM, Bedrock, and
+Together work the same way) and captures every session as structured training
+data. The bet: a large share of a coding
 agent's proficiency lives in the *harness*, not the model. So openagent-code
 puts a sharp harness around a model you own, and logs each run so the model can
 get better at *your* tools and *your* tasks over time.
@@ -32,9 +34,9 @@ Each layer talks to the next through a stable interface, so any one can be
 swapped without touching the others.
 
 ```text
-  serving        your model behind an OpenAI-compatible endpoint (vLLM / Bedrock)
+  serving        your model behind an OpenAI-compatible endpoint (vLLM / Bedrock / Together / Tinker)
      │
-  src/model.py   LiteLLM gateway — swap RunPod <-> Bedrock via CODE_* env, never code
+  src/model.py   LiteLLM gateway — swap vLLM <-> Bedrock <-> Together <-> Tinker via CODE_* env, never code
      │
   src/tools.py   the tool boundary: read (line numbers), edit (exact-match-or-fail),
      │           grep, glob, run_command — ergonomics that make the agent proficient
@@ -265,8 +267,10 @@ there, documented in `.env.example`). There is no YAML config file. Key ones:
 ## Data sovereignty
 
 Self-hosted vLLM: prompts/code never reach a model vendor. Bedrock: stays in
-your AWS account/region, not used to train anyone's model. Switch between them
-by editing `.env` only. `.gitignore` keeps `.env` and captured trajectories out
+your AWS account/region, not used to train anyone's model. A hosted third-party
+endpoint (Together, or Thinking Machines' Tinker) is the convenience/sovereignty
+trade-off — your prompts leave your infra, so weigh it per use. Switch between
+any of them by editing `.env` only. `.gitignore` keeps `.env` and captured trajectories out
 of git by default — but trajectories can contain source from the repos you work
 on, so treat `trajectories/` and `train/` data with the same care as secrets.
 
@@ -281,11 +285,12 @@ untrusted-content fence + grounding ledger as the native tools (specs/0029).
 
 ## Status & honest gaps
 
-Validated end-to-end on self-hosted **gpt-oss-120b** with native tool-calling: the
-agent runs the investigate→fix→verify loop and the eval passes **13/13**. Built and
-working — the eight tools, LiteLLM gateway, trajectory capture (schema 0.4.0), the
-eval harness, the SFT converter (`python -m train.convert`), **context compaction**,
-**subagents** (`spawn_agent`), and **planning** (`update_plan`).
+Last measured at **13/13** end-to-end on self-hosted **gpt-oss-120b** with native
+tool-calling (that model's baseline). The runtime has since moved to **Inkling-Small
+on Thinking Machines' Tinker** (OpenAI-compatible, 256k window) — an env-only swap.
+Built and working — the **19 tools**, LiteLLM gateway, trajectory capture
+(schema 0.13.0), the eval harness, the SFT converter (`python -m train.convert`),
+**context compaction**, **subagents** (`spawn_agent`), and **planning** (`update_plan`).
 
 The eval now spans two tiers: an **easy regression tier** (8 single-edit tasks) and
 a **discriminating tier** (5 harder tasks — multi-file rename, coordinated two-edit,
@@ -296,10 +301,9 @@ an ignored boundary). The model clears the harder tier too (13/13), but it visib
 discriminating by design; finding the model's actual ceiling needs a still-harder
 tier — the next eval calibration, see [`ROADMAP.md`](ROADMAP.md).
 
-Not yet built (see [`ROADMAP.md`](ROADMAP.md), Phase 4): permission **hooks** (the
-programmable `PreToolUse`/`PostToolUse` second pass — the Core engine of
-modes/rules/fence is built), and the accept/reject capture that fills `user_label`.
-The harder eval
+Honest gap: the accept/reject capture that fills `user_label` is still a stub
+(reserved for a future UI). (Permission **hooks** — the programmable
+`PreToolUse`/`PostToolUse` pass — *are* built now, specs/0015.) The harder eval
 tier sharpened the verifies but the pass-rate is still pinned at 100% — a
 genuinely-hard tier (to find where the model breaks) is the next calibration so the
 number can finally move. Native tool-calling needs the vLLM worker launched with

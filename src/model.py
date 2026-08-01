@@ -8,18 +8,18 @@ a local Ollama) is a CODE_* env change, never a code change. That is the point
 of routing through LiteLLM: the data-sovereignty choice stays a one-line swap.
 
 CODE_MODEL / CODE_API_BASE examples (see src/config.py and .env.example):
+  Thinking Machines Lab / Tinker (OpenAI-compatible) — the CURRENT deployment:
+    CODE_MODEL=openai/thinkingmachines/Inkling-Small:peft:262144
+    CODE_API_BASE=https://tinker.thinkingmachines.dev/services/tinker-prod/oai/api/v1
+  Together (OpenAI-compatible):
+    CODE_MODEL=openai/thinkingmachines/Inkling
+    CODE_API_BASE=https://api.together.xyz/v1
   RunPod / self-hosted vLLM (gpt-oss-120b):
     CODE_MODEL=openai/gpt-oss-120b
     CODE_API_BASE=https://<your-pod>-8000.proxy.runpod.net/v1
   AWS Bedrock:
     CODE_MODEL=bedrock/openai.gpt-oss-120b-1:0
     CODE_API_BASE=            # unset; Bedrock uses AWS_* credentials
-  Together (OpenAI-compatible):
-    CODE_MODEL=openai/thinkingmachines/Inkling
-    CODE_API_BASE=https://api.together.xyz/v1
-  Thinking Machines Lab / Tinker (OpenAI-compatible; verify the exact URL + model id in Tinker's docs):
-    CODE_MODEL=openai/<inkling-small-model-id>
-    CODE_API_BASE=https://tinker.thinkingmachines.dev/services/tinker-prod/oai/api/v1
 """
 import os
 import random

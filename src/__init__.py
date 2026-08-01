@@ -7,7 +7,7 @@ model gateway (LiteLLM -> any OpenAI-compatible / BYOC endpoint) and writes its
 own training-data capture as local JSONL.
 
 Four layers, each a stable interface to the next:
-  1. serving       your model behind an OpenAI-compatible endpoint (vLLM / Bedrock)
+  1. serving       your model behind any OpenAI-compatible endpoint (vLLM / Bedrock / Together / Tinker)
   2. model.py      LiteLLM gateway — swap providers via CODE_* env, never code
   3. tools.py      the tool boundary — ergonomics that make the agent proficient
                    AND emit ok/fail + retry signal

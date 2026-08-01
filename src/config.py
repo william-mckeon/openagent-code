@@ -81,9 +81,9 @@ def looks_like_dep_cache(path: str) -> bool:
 # -----------------------------------------------------------------------------
 # Model gateway (the swappable boundary)
 #
-# CODE_MODEL      LiteLLM model string. RunPod/vLLM: "openai/gpt-oss-120b".
-#                 Bedrock: "bedrock/openai.gpt-oss-120b-1:0".
-# CODE_API_BASE   OpenAI-compatible endpoint URL (self-hosted vLLM / RunPod).
+# CODE_MODEL      LiteLLM model string. Tinker (current): "openai/thinkingmachines/Inkling-Small:peft:262144".
+#                 Self-host vLLM: "openai/gpt-oss-120b". Bedrock: "bedrock/openai.gpt-oss-120b-1:0".
+# CODE_API_BASE   OpenAI-compatible endpoint URL (Tinker / Together / self-hosted vLLM / RunPod).
 #                 Leave empty for Bedrock (it uses AWS_* credentials instead).
 # CODE_API_KEY    Bearer/key for the endpoint. vLLM's --api-key, or "EMPTY".
 # CODE_TEMPERATURE  Sampling temperature for the agent loop.

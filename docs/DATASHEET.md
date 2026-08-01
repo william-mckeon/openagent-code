@@ -7,7 +7,7 @@
 | Field | Value |
 |---|---|
 | **Service name** | `openagent-code` |
-| **Version** | 0.1.0 |
+| **Version** | 0.6.0 |
 | **Role** | Self-hosted coding agent instrumented for training data |
 | **Kind** | One-shot CLI (not an HTTP service; not on openagent-network) |
 | **Base image** | `python:3.12-slim` |
@@ -37,7 +37,7 @@
 
 | Concern | Owner | Notes |
 |---|---|---|
-| Model serving | Your provider | vLLM on RunPod / Bedrock; reached via `CODE_API_BASE` |
+| Model serving | Your provider | any OpenAI-compatible endpoint via `CODE_API_BASE` — self-hosted vLLM (RunPod), AWS Bedrock, Together, or Thinking Machines Tinker (current deployment: **Inkling-Small**, 256k) |
 | Model weights | Your provider | Nothing is loaded or stored locally |
 | Training / fine-tuning | `train/` (out of scope at runtime) | The agent only *captures*; training is a separate offline step |
 | Secret management | The operator | `.env`, never committed |
@@ -125,7 +125,7 @@ LiteLLM.
 | Property | Value |
 |---|---|
 | Protocol | OpenAI Chat Completions (`tools`, `tool_choice="auto"`) |
-| Endpoint | `CODE_API_BASE` (e.g. vLLM on RunPod) or Bedrock via `CODE_MODEL` |
+| Endpoint | `CODE_API_BASE` — any OpenAI-compatible endpoint (self-hosted vLLM, Together, Tinker) or Bedrock via `CODE_MODEL` |
 | Auth | `CODE_API_KEY` (Bearer), or AWS credentials for Bedrock |
 | Hard requirement | The model **must** support reliable tool-calling — the agent is ~90% tool calls |
 
@@ -149,7 +149,7 @@ There is no cross-task state in the process. Each invocation is independent.
 ### 4.2 Durable state — the trajectory file
 
 One session == one JSONL file at `CODE_TRAJECTORY_DIR/<session_id>.jsonl`
-(`schema_version` 0.5.0). Record types, in order of appearance:
+(`schema_version` 0.13.0). Record types, in order of appearance:
 
 | `type` | Emitted | Key fields |
 |---|---|---|
@@ -182,11 +182,11 @@ Full reference in the README and `.env.example`. Contract-relevant values:
 | `CODE_API_KEY` | `EMPTY` | Yes — endpoint auth |
 | `CODE_TOOL_MODE` | `native` | Yes — `native` (server tool-calls) or `json` (prompt fallback) |
 | `CODE_WORKSPACE` | cwd / `/workspace` | Yes — what the agent edits |
-| `CODE_MAX_STEPS` | `25` | Reference — loop cap |
-| `CODE_MODEL_RETRIES` | `3` | Reference — retry transient errors + dropped tool calls (0 = off) |
+| `CODE_MAX_STEPS` | `50` | Reference — loop cap |
+| `CODE_MODEL_RETRIES` | `5` | Reference — retry transient errors + dropped tool calls (0 = off) |
 | `CODE_REQUEST_TIMEOUT` | `600` | Reference — per-call read timeout; generous to absorb cold starts |
-| `CODE_WARMUP` | `true` | Reference — probe-until-warm before the first task (off for Bedrock) |
-| `CODE_WARMUP_BUDGET` | `120` | Reference — max seconds to wait for a cold worker to warm |
+| `CODE_WARMUP` | `true` | Reference — probe-until-warm before the first task (no-op for Bedrock; unnecessary on a managed endpoint like Tinker) |
+| `CODE_WARMUP_BUDGET` | `600` | Reference — max seconds to wait for a cold worker to warm |
 | `CODE_STREAM` | `false` | Reference — stream the primary model turn (specs/0043); off = byte-identical single call; safety-fingerprint: No |
 | `CODE_SHELL_HINTS` | `false` | Reference — PowerShell 5.1 command rules in the env block on Windows (specs/0046); needs `CODE_SITUATIONAL_CONTEXT`; safety-fingerprint: No |
 | `CODE_GROUND_SKIP_GREENFIELD` / `CODE_GROUND_GREENFIELD_MAX` | `false` / `0` | Reference — skip path-grounding on an empty (specs/0042) or small early-stage (specs/0047) workspace; safety-fingerprint: No |
@@ -195,7 +195,7 @@ Full reference in the README and `.env.example`. Contract-relevant values:
 | `CODE_COMPACT_AT_TOKENS` | `12000` | Reference — live-context compaction budget (0 = off) |
 | `CODE_MODEL_MAX_TOKENS` | `131072` | Reference — model HARD context window; sent context compacted under it (specs/0034); `auto` resolves at startup (specs/0045) |
 | `CODE_MODEL_MAX_OUTPUT_TOKENS` / `CODE_OUTPUT_MARGIN_TOKENS` | (empty) / `4096` | Reference — optional per-request output cap (specs/0045); empty = no cap; safety-fingerprint: No |
-| `CODE_MAX_SUBAGENT_DEPTH` | `1` | Reference — spawn_agent nesting cap (0 = off) |
+| `CODE_MAX_SUBAGENT_DEPTH` | `2` | Reference — spawn_agent nesting cap (0 = off) |
 | `CODE_ENABLE_WEB` | `false` | Yes — master switch for web_fetch/web_search (off = no egress, tools hidden) |
 | `CODE_SEARCH_PROVIDER` | `generic` | Yes — `generic` \| `tavily` \| `searxng` (data-sovereign) \| `brave` \| `module:func` |
 | `CODE_SEARCH_URL` | (empty) | Yes — endpoint for the generic / searxng providers |
@@ -300,6 +300,7 @@ These are **expectations**, not guarantees. Measure in your own deployment.
 | Version | Notes |
 |---|---|
 | 0.1.0 | Initial scaffold. Agent loop, six tools (exact-match edit), LiteLLM gateway (RunPod/Bedrock), schema-versioned trajectory capture, mandated verification, eval harness. Standalone CLI; not on openagent-network. Pre-production. |
+| 0.6.0 | Trajectory schema `0.13.0`; 19 tools. Feature build-out through specs/0050: fuzzy edit + apply_patch, hooks (0015), execpolicy (0016), sandbox (0017), grounding + verified completion, guardian, skills, workflows, propose mode + follow-through (0022/0048), situational context (0012), naming (0036), streaming (0043), reasoning pass-through (0044), auto-max-tokens (0045), shell-hints (0046), grounding-early-stage (0047), extra-body (0049), self-preservation (0050). Model migration: gpt-oss-120b (Bedrock / self-host vLLM) → Together → **Inkling-Small on Tinker** (OpenAI-compatible, 256k window) — still an env-only swap. See `CHANGELOG.md` for the per-phase record. |
 
 ---
 
