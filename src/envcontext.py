@@ -61,11 +61,15 @@ def build_env_context(cwd, granted_dirs=None, include_git=False, git_status_fn=N
         lines.append(
             "- shell rules (PowerShell 5.1): chain with `;` (`&&` / `||` are NOT valid); list files with "
             "`Get-ChildItem` (`ls` / `dir` take NO Unix flags like `-la`); read with `Get-Content` (not "
-            "`cat`); search with `Select-String` (not `grep`); delete with `Remove-Item` (not `rm -rf`); make "
-            "directories with `New-Item -ItemType Directory -Force` (not `mkdir -p`); discard output with "
-            "`$null` / `Out-Null` (not `/dev/null`); `curl` / `wget` are Invoke-WebRequest aliases — call "
-            "`curl.exe` for real curl; stop a background process by its PID (`Stop-Process -Id N`), NEVER by "
-            "name — `Stop-Process -Name python` / `taskkill /IM python*` kills THIS agent.")
+            "`cat`); search with `Select-String` (not `grep`); take the first/last N with "
+            "`Select-Object -First N` / `-Last N` (NOT `head` / `tail` — they do not exist here); delete with "
+            "`Remove-Item` (not `rm -rf`); make directories with `New-Item -ItemType Directory -Force` (not "
+            "`mkdir -p`); discard output with `$null` / `Out-Null` (not `/dev/null`); `curl` / `wget` are "
+            "Invoke-WebRequest aliases — call `curl.exe` for real curl; a tree view is `Get-ChildItem "
+            "-Recurse` (`tree` takes NO `-Depth` flag); `$?` is a BOOLEAN (True/False), NOT an exit code — use "
+            "`$LASTEXITCODE` for a native command's numeric exit; stop a background process by its PID "
+            "(`Stop-Process -Id N`), NEVER by name — `Stop-Process -Name python` / `taskkill /IM python*` "
+            "kills THIS agent.")
     dirs = [d for d in (granted_dirs or []) if d]
     if dirs:
         shown = dirs[:_MAX_DIRS]

@@ -309,6 +309,24 @@ def build_system_prompt(mode, tools, memory=None, todos=None, spec=None, granted
                  "it was given on; it does NOT carry to later turns unless the user repeats it - so a later, "
                  "open-ended question gets a full, normal answer.")
 
+    # Prompt hygiene (specs/0051): one note that closes four failure modes a small model showed on a live
+    # Centpilot run — persona parroting, arguing with the user, never calling propose_changes, and a false
+    # "plumbing fixed" while the app was down. Gated on CODE_PROMPT_HYGIENE so a flag-off prompt is
+    # byte-identical.
+    if config.PROMPT_HYGIENE:
+        note += ("\n\nHYGIENE: (identity) Your name and persona are a STYLE to embody, never a subject to "
+                 "announce — do NOT open a reply by stating who you are or restating your persona, and do not "
+                 "repeat the same self-description across turns; just answer the request. (no arguing) If the "
+                 "user says you repeated yourself, misread them, or got something wrong, ADJUST — never argue "
+                 "about what they said or insist you did not repeat; a defensive rebuttal wastes the turn. "
+                 "(propose recovery) In propose mode you MUST call propose_changes BEFORE any edit OR any "
+                 "state-changing command — a build / run / restart / deploy counts, so list those actions in "
+                 "the plan too; if an edit or command is DENIED as read-only, that means you skipped this "
+                 "step: call propose_changes with the plan NOW, do not retry the raw edit or command. "
+                 "(service honesty) Never say a service, server, container, or app is up / running / serving / "
+                 "'plumbed' unless you actually REACHED it this turn (e.g. an HTTP request returned 2xx); if "
+                 "your last check failed or you ran none, report it unverified or down — not fixed.")
+
     # Cross-session memory (Phase 4 #7): prior-session notes about THIS repo. Lands in
     # the system prompt, which is logged as the first raw turn -> self-containment holds.
     mem = ""

@@ -371,6 +371,18 @@ TRUST_USER_DIRS = _as_bool(os.environ.get("CODE_TRUST_USER_DIRS", "false"))
 # into later turns. OFF by default -> no prompt paragraph, neutral pin, empty caveat (byte-identical).
 REPLY_SHAPE = _as_bool(os.environ.get("CODE_REPLY_SHAPE", "false"))
 
+# Prompt hygiene (Phase 51 / specs/0051). When on, appends ONE behavioral note to the system prompt that
+# closes four failure modes a small model (Inkling-Small) showed on a live Centpilot run: (1) IDENTITY
+# DISCIPLINE — the persona (CODE_AGENT_PERSONA) is a STYLE to embody silently, never a thing to announce or
+# restate; the model had parroted "Arcus: sharp, direct, quietly funny..." on nearly every turn; (2)
+# ANTI-ARGUMENT — never argue with the user about whether it repeated itself or what they said; it had
+# gaslit the user ("I'm not repeating - you are"); (3) PROPOSE RECOVERY — in propose mode, call
+# propose_changes before ANY edit OR state-changing command, and if an op is denied read-only, PROPOSE it
+# rather than retrying the raw op (the model never called propose_changes and dead-ended on denials); (4)
+# SERVICE-UP HONESTY — never claim a service/app is up unless it actually reached it (it declared "plumbing
+# fixed" while :8080 was refused). OFF by default -> no note appended (byte-identical prompt).
+PROMPT_HYGIENE = _as_bool(os.environ.get("CODE_PROMPT_HYGIENE", "false"))
+
 # Edit-layer (Phase 13 / specs/0013). CODE_EDIT_FUZZY: a SAFE fuzzy fallback UNDER exact-match edit_file
 # - when the exact old_string isn't found, editmatch.resolve locates it (whitespace-insensitive, then
 # most-similar chunk) and applies ONLY a UNIQUE, above-threshold match; any ambiguity refuses, so
