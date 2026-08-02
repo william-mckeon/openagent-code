@@ -15,8 +15,20 @@ below was a `.env` change, never a code change:
 - **thinkingmachines/Inkling on Together** — `https://api.together.xyz/v1`, OpenAI-compatible.
 - **gpt-oss-120b on AWS Bedrock / self-hosted vLLM (RunPod)** — the original baseline; last measured eval 13/13.
 
-## Features (specs/0022–0050)
+## Features (specs/0022–0054)
 
+- `0054` **auto-window probe UA** — `_fetch_context_length` sends a browser `User-Agent` so the
+  `CODE_MODEL_MAX_TOKENS=auto` context-window probe isn't 403/1010-blocked by Cloudflare on Tinker (which is
+  why "auto window unresolved" kept the 131072 fallback). No new flag; pinning the window is still preferred.
+- `0053` **runtime-done honesty** — `CODE_VERIFY_RUNTIME_DONE`: flag a "service is up / serving / plumbed"
+  claim when no health-check (curl / http-get / port probe) returned ok this turn; the runtime twin of the
+  unverified-success net. Closes a live false "Done — plumbing fixed" while `curl :8080` was refused.
+- `0052` **propose first-approval backstop** — `CODE_PROPOSE_AUTOPLAN`: a read-only deny in propose mode
+  becomes an interactive "approve + unlock? [y/N]", plus a `/approve` REPL command, so propose is never a
+  dead-end when the model doesn't call `propose_changes`. Under deny-rules + the fence.
+- `0051` **prompt hygiene** — `CODE_PROMPT_HYGIENE`: one system-prompt note — persona is a silent style, no
+  arguing with the user, propose-first-with-recovery, service-up honesty — plus the PowerShell 5.1 shell-hint
+  gaps (`head`/`tail` → `Select-Object`, `$?` → `$LASTEXITCODE`, `tree` has no `-Depth`).
 - `0050` **self-preservation** — `CODE_GUARD_SELF_KILL`: hard-deny a name-based process kill that would end
   the agent's own `python` process (e.g. `Stop-Process -Name python`), in every mode incl. bypass.
 - `0049` **extra-body** — `CODE_EXTRA_BODY`: merge arbitrary JSON params into the request `extra_body`.
