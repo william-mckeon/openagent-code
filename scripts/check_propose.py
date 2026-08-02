@@ -81,13 +81,16 @@ def _end(outcome="completed"):
 def main():
     ws = os.path.realpath(tempfile.mkdtemp(prefix="propose-ws-"))
     _saved = {k: getattr(config, k) for k in ("PROPOSE", "EXECPOLICY", "HOOKS", "GUARDIAN",
-              "PROPOSE_RUN_AFTER_APPROVAL", "PROPOSE_EXTEND_AFTER_APPROVAL", "PROPOSE_PERSIST_APPROVAL")}
+              "PROPOSE_RUN_AFTER_APPROVAL", "PROPOSE_EXTEND_AFTER_APPROVAL", "PROPOSE_PERSIST_APPROVAL",
+              "PROPOSE_AUTOPLAN")}
     config.HOOKS = config.GUARDIAN = False   # isolate the propose logic from hooks/guardian
     config.EXECPOLICY = False
-    # isolate the specs/0048 relaxations from the live .env so the specs/0022 assertions stay deterministic
+    # isolate the specs/0048 relaxations + the specs/0052 autoplan from the live .env so the specs/0022
+    # assertions stay deterministic (a live .env may enable them; an un-isolated read would flip a deny)
     config.PROPOSE_RUN_AFTER_APPROVAL = False
     config.PROPOSE_EXTEND_AFTER_APPROVAL = False
     config.PROPOSE_PERSIST_APPROVAL = False
+    config.PROPOSE_AUTOPLAN = False
 
     # =====================================================================================================
     # 1. the tool: propose_changes validation + approval + headless

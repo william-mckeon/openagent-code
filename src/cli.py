@@ -260,11 +260,31 @@ def _repl_set_mode(ctx, name):
               "with --mode propose (or CODE_PROPOSE=true) to use propose mode.")
 
 
+def _repl_approve(ctx):
+    """`/approve` (specs/0052) — manually unlock a propose-mode session when the model never called
+    propose_changes. Sets ctx.propose_graduated so the specs/0048 + autoplan relaxations let further edits /
+    commands fall to per-op [y/N] approval instead of a read-only dead-end (deny-rules + the workspace fence
+    still gate every op). Only meaningful in propose mode with CODE_PROPOSE_AUTOPLAN on; says so otherwise,
+    never strands."""
+    if getattr(ctx.permissions, "mode", None) != "propose":
+        print(f"  /approve applies only in propose mode (current: {ctx.permissions.mode}).")
+        return
+    if not config.PROPOSE_AUTOPLAN:
+        print("  note: this session launched without CODE_PROPOSE_AUTOPLAN, so /approve can't unlock it - "
+              "set CODE_PROPOSE_AUTOPLAN=true (and restart) to use it.")
+        return
+    ctx.propose_graduated = True
+    print("  approved - session unlocked. Edits and commands now fall to per-op [y/N] approval "
+          "(deny-rules and the workspace fence still apply).")
+
+
 def _run_session(traj, agent, ctx):
     """The interactive chat loop, shared by a fresh REPL and a resumed session."""
     print(f"{config.agent_name()} REPL | model={config.display_model()} | mode={ctx.permissions.mode} | "
           f"effort={config.display_effort()} | workspace={ctx.cwd}")
     cmds = "/exit  /plan  /add-dir <path>  /mode <name>"
+    if config.PROPOSE and config.PROPOSE_AUTOPLAN:
+        cmds += "  /approve"   # specs/0052: unlock a propose session the model didn't propose in
     if config.WORKFLOWS_ASYNC:
         cmds += "  /tasks  /result <id>"
     print("Type a task and press enter. Commands: " + cmds)
@@ -302,6 +322,9 @@ def _run_session(traj, agent, ctx):
                 continue
             if user.startswith("/mode"):
                 _repl_set_mode(ctx, user[len("/mode"):])
+                continue
+            if user == "/approve":   # specs/0052: unlock a propose-mode session directly
+                _repl_approve(ctx)
                 continue
             if reg is not None and user == "/tasks":   # specs/0040: list background tasks
                 print(reg.render())

@@ -541,6 +541,16 @@ PROPOSE = _as_bool(os.environ.get("CODE_PROPOSE", "false"))
 PROPOSE_RUN_AFTER_APPROVAL = _as_bool(os.environ.get("CODE_PROPOSE_RUN_AFTER_APPROVAL", "false"))
 PROPOSE_EXTEND_AFTER_APPROVAL = _as_bool(os.environ.get("CODE_PROPOSE_EXTEND_AFTER_APPROVAL", "false"))
 PROPOSE_PERSIST_APPROVAL = _as_bool(os.environ.get("CODE_PROPOSE_PERSIST_APPROVAL", "false"))
+# Propose first-approval backstop (Phase 52 / specs/0052). The three relaxations above all gate on
+# ctx.propose_graduated, which is set ONLY when the model calls propose_changes and the user approves — so a
+# weak model that never proposes leaves the user with NO way to approve and propose collapses to a read-only
+# dead-end (the live Inkling Centpilot run: every docker command denied, no approval prompt ever shown). When
+# CODE_PROPOSE_AUTOPLAN is on: (1) a mutating op denied in the investigate phase becomes an interactive
+# "approve this action and unlock the session? [y/N]" — a yes graduates the session (so the relaxations
+# apply) and allows the op; (2) the REPL gains `/approve` for the user to unlock directly; (3) a read-only
+# denial fed back to the model is annotated to coach it to call propose_changes. Off by default -> no prompt,
+# no graduation path, the deny stands exactly as specs/0022/0048 (byte-identical).
+PROPOSE_AUTOPLAN = _as_bool(os.environ.get("CODE_PROPOSE_AUTOPLAN", "false"))
 
 # Completion & manifest honesty (Phase 26 / specs/0026). Two independent, default-OFF nets that close
 # seams where a "done" claim wasn't backed by a real change:

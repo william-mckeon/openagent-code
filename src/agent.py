@@ -453,7 +453,15 @@ class Agent:
                     if pd.allowed:
                         result = self.registry.run(name, args, ctx)
                     else:
-                        result = ToolResult(False, f"Permission denied: {pd.reason}")
+                        reason = pd.reason
+                        # specs/0052: a bare propose read-only denial is a dead-end message — the weak model
+                        # retries the raw op instead of proposing. When autoplan is on, coach it to propose
+                        # (or, in a REPL, the human can /approve). Gated -> OFF is byte-identical.
+                        if config.PROPOSE_AUTOPLAN and "read-only until the manifest is approved" in reason:
+                            reason += (". To proceed, call propose_changes with a plan of the files AND "
+                                       "commands you will change (a build / run / restart counts) so the user "
+                                       "can approve it — do NOT retry this raw edit or command.")
+                        result = ToolResult(False, f"Permission denied: {reason}")
                     tool_calls += 1
 
                     retry_index = consecutive_fail.get(name, 0)

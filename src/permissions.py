@@ -322,12 +322,47 @@ class Permissions:
                     return None
                 if t.kind == "path" and config.PROPOSE_EXTEND_AFTER_APPROVAL:
                     return None
+                if config.PROPOSE_AUTOPLAN:   # specs/0052: an autoplan-unlocked session relaxes every op
+                    return None
+            # specs/0052: turn the read-only dead-end into an approvable one-item plan (a yes graduates +
+            # allows). Returns None when autoplan can't apply -> the byte-identical deny below stands.
+            unlocked = self._propose_autoplan(tool, t, ctx, D)
+            if unlocked is not None:
+                return unlocked
             return D(False, "deny", "propose mode is read-only until the manifest is approved")
         if tool == "apply_patch":
             return D(True, "allow", "propose mode: approved (each patch op is re-gated per file)")
         if t.kind == "path" and self._on_manifest(ctx, t):
             return D(True, "allow", "on the approved manifest")
         return None
+
+    def _propose_autoplan(self, tool, t, ctx, D):
+        """specs/0052: turn the propose investigate-phase read-only DENY into an approvable one-item plan.
+        The first graduation can otherwise ONLY come from the model calling propose_changes; a weak model may
+        never do so, dead-ending the user with nothing to approve. When CODE_PROPOSE_AUTOPLAN is on AND a
+        human is present, prompt to approve THIS op and UNLOCK the session — a yes sets propose_graduated
+        (so the gate relaxations apply to every further op) and ALLOWS this op; a no denies it. Returns None
+        when autoplan cannot apply (flag OFF / already graduated / headless / no ask channel) so the caller's
+        normal read-only deny stands. OFF (default) -> returns None immediately -> byte-identical. The op has
+        already cleared the deny-rules + fence (steps 1-2) before any propose gate runs, so an autoplan allow
+        can never bypass a hard rule."""
+        if not config.PROPOSE_AUTOPLAN or getattr(ctx, "propose_graduated", False):
+            return None
+        ask = getattr(ctx, "ask", None)
+        if ask is None or not getattr(ctx, "interactive", False):
+            return None
+        shown = t.rel if getattr(t, "kind", None) == "path" else (t.raw or tool)
+        try:
+            ans = ask(f"  [propose] approve this action and unlock the session? {tool}: {shown} [y/N] ")
+        except Exception:  # noqa: BLE001 - a broken ask channel leaves the read-only deny in place
+            return None
+        if str(ans).strip().lower() in ("y", "yes"):
+            try:
+                ctx.propose_graduated = True
+            except Exception:  # noqa: BLE001 - a ctx that can't record graduation can't be unlocked
+                return None
+            return D(True, "allow", "propose auto-plan: approved by user (session unlocked)")
+        return D(False, "deny", "propose auto-plan: declined by user (still read-only)")
 
     def _offplan(self, tool, t, ctx):
         """True if a manifest was APPROVED this turn AND this mutating op is NOT on it — the graduated
@@ -545,8 +580,15 @@ class Permissions:
         if config.PROPOSE and self.mode == "propose" and getattr(ctx, "propose_phase", "investigate") != "approved":
             # specs/0048 (c): after a manifest was approved this session, a mutating command falls to the ask
             # ladder below instead of hard-deny (a command is never ON a file manifest, so gating run/test
-            # behind file approval was a category error). Off by default -> the original deny.
-            if not (config.PROPOSE_RUN_AFTER_APPROVAL and getattr(ctx, "propose_graduated", False)):
+            # behind file approval was a category error). specs/0052: an autoplan-unlocked session (graduated
+            # via /approve or an autoplan yes) relaxes too. Off by default -> the original deny.
+            graduated = getattr(ctx, "propose_graduated", False)
+            relaxed = graduated and (config.PROPOSE_RUN_AFTER_APPROVAL or config.PROPOSE_AUTOPLAN)
+            if not relaxed:
+                # specs/0052: offer to unlock instead of a bare dead-end (a yes graduates + allows this op).
+                unlocked = self._propose_autoplan("run_command", t, ctx, D)
+                if unlocked is not None:
+                    return unlocked
                 return D(False, "deny", "propose mode is read-only until the manifest is approved")
         for seg in candidates:                                   # ask — matches ANY segment
             r = self._match_command_rules(self.ask, seg)
@@ -603,7 +645,9 @@ class Permissions:
         if config.PROPOSE and self.mode == "propose":
             if getattr(ctx, "propose_phase", "investigate") != "approved":
                 # specs/0048 (b): a graduated off-manifest move falls to the ask ladder instead of hard-deny.
-                if not (config.PROPOSE_EXTEND_AFTER_APPROVAL and getattr(ctx, "propose_graduated", False)):
+                # specs/0052: an autoplan-unlocked session relaxes moves too.
+                graduated = getattr(ctx, "propose_graduated", False)
+                if not (graduated and (config.PROPOSE_EXTEND_AFTER_APPROVAL or config.PROPOSE_AUTOPLAN)):
                     return D(False, "deny", "propose mode is read-only until the manifest is approved", target=old_path)
             elif self._on_manifest_move(ctx, old_path, new_path):
                 return D(True, "allow", "move on the approved manifest", target=old_path)
