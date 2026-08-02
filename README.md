@@ -221,7 +221,7 @@ there, documented in `.env.example`). There is no YAML config file. Key ones:
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `CODE_MODEL` | `openai/gpt-oss-120b` | LiteLLM model string (RunPod / Bedrock / Together / Tinker) |
+| `CODE_MODEL` | `openai/thinkingmachines/Inkling-Small:peft:262144` | LiteLLM model string (Tinker default; also vLLM / Bedrock / Together) |
 | `CODE_API_BASE` | `http://localhost:8000/v1` | OpenAI-compatible endpoint (empty for Bedrock) |
 | `CODE_AGENT_NAME` | `OAC` | The name the agent answers to (identity line + banners); manage with `--set-name` / `--remove-name` |
 | `CODE_AGENT_PERSONA` | (empty) | Optional one-line persona appended to the system prompt; empty appends nothing |

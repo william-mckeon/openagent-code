@@ -175,8 +175,8 @@ Full reference in the README and `.env.example`. Contract-relevant values:
 
 | Variable | Default | Contractual? |
 |---|---|---|
-| `CODE_MODEL` | `openai/gpt-oss-120b` | Yes — selects model + provider (RunPod / Bedrock / Together / Tinker; swap is `.env`-only) |
-| `CODE_API_BASE` | `http://localhost:8000/v1` | Yes — the model endpoint |
+| `CODE_MODEL` | `openai/thinkingmachines/Inkling-Small:peft:262144` | Yes — selects model + provider (Tinker default; also vLLM / Bedrock / Together; swap is `.env`-only) |
+| `CODE_API_BASE` | Tinker OAI endpoint | Yes — the model endpoint (any OpenAI-compatible; empty for Bedrock) |
 | `CODE_AGENT_NAME` | `OAC` | Reference (specs/0036) — the agent's display name (identity line + banners); managed by `--set-name` / `--remove-name`. Package/import name unchanged |
 | `CODE_AGENT_PERSONA` | (empty) | Reference (specs/0036) — optional one-line persona appended to the system prompt; empty appends nothing |
 | `CODE_API_KEY` | `EMPTY` | Yes — endpoint auth |

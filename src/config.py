@@ -88,8 +88,8 @@ def looks_like_dep_cache(path: str) -> bool:
 # CODE_API_KEY    Bearer/key for the endpoint. vLLM's --api-key, or "EMPTY".
 # CODE_TEMPERATURE  Sampling temperature for the agent loop.
 # -----------------------------------------------------------------------------
-MODEL = os.environ.get("CODE_MODEL", "openai/gpt-oss-120b")
-API_BASE = os.environ.get("CODE_API_BASE", "")
+MODEL = os.environ.get("CODE_MODEL", "openai/thinkingmachines/Inkling-Small:peft:262144")
+API_BASE = os.environ.get("CODE_API_BASE", "https://tinker.thinkingmachines.dev/services/tinker-prod/oai/api/v1")
 API_KEY = os.environ.get("CODE_API_KEY", "")
 TEMPERATURE = float(os.environ.get("CODE_TEMPERATURE", "0.2"))
 
