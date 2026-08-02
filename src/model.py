@@ -320,7 +320,17 @@ def _fetch_context_length(model_id, api_base, api_key):
     import urllib.request
     served = model_id.split("/", 1)[1] if "/" in model_id else model_id
     try:
-        headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+        # A browser User-Agent (specs/0054): some endpoints (Tinker) are fronted by Cloudflare, which
+        # 403/1010-bans the default python-urllib UA on browser signature — the probe would silently fail and
+        # the auto window would never resolve. A normal UA clears that check (litellm's httpx client passes for
+        # the same reason). Harmless on endpoints without Cloudflare.
+        headers = {
+            "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                           "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
+            "Accept": "application/json",
+        }
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
         req = urllib.request.Request(api_base.rstrip("/") + "/models", headers=headers)
         with urllib.request.urlopen(req, timeout=15) as r:
             data = _json.load(r)
