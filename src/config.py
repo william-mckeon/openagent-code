@@ -383,6 +383,16 @@ REPLY_SHAPE = _as_bool(os.environ.get("CODE_REPLY_SHAPE", "false"))
 # fixed" while :8080 was refused). OFF by default -> no note appended (byte-identical prompt).
 PROMPT_HYGIENE = _as_bool(os.environ.get("CODE_PROMPT_HYGIENE", "false"))
 
+# Runtime-done honesty gate (Phase 53 / specs/0053). The existing unverified-success net (grounding._SUCCESS)
+# only knows test/build/lint "pass/green/clean" language — so a small model's "Done / plumbing fixed / the app
+# is serving" sailed through on a live Centpilot run while `curl localhost:8080` had just returned
+# connection-refused. When CODE_VERIFY_RUNTIME_DONE is on, a deterministic net flags a claim that a service /
+# app / server / container is UP / running / serving / "plumbed" when NO health-check (curl / http-get / port
+# probe) SUCCEEDED this turn (ctx._runtime_ok) — the runtime twin of the unverified-success net. Per-sentence
+# and hedge-guarded, so an honest "the app is NOT up" / "run curl to confirm" is not flagged. OFF by default
+# -> the net never runs and _runtime_ok is never set (byte-identical).
+VERIFY_RUNTIME_DONE = _as_bool(os.environ.get("CODE_VERIFY_RUNTIME_DONE", "false"))
+
 # Edit-layer (Phase 13 / specs/0013). CODE_EDIT_FUZZY: a SAFE fuzzy fallback UNDER exact-match edit_file
 # - when the exact old_string isn't found, editmatch.resolve locates it (whitespace-insensitive, then
 # most-similar chunk) and applies ONLY a UNIQUE, above-threshold match; any ambiguity refuses, so

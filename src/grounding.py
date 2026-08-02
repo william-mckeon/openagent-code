@@ -117,6 +117,61 @@ def ran_check(command):
     return bool(_CHECK_CMD.search(command or ""))
 
 
+# A run_command that is a HEALTH / LIVENESS probe (specs/0053) — a curl / http-get / port check whose
+# SUCCESS (exit 0) is real evidence a "the service is up / serving" claim can rest on. Deliberately NARROW:
+# only true HTTP/port probes count. `docker ps` / `docker compose up` exit 0 whether or not the app actually
+# serves, so they are NOT liveness proof and are excluded — the honest signal is an actual request that
+# connected. A connection-refused curl exits non-zero, so it does NOT flip _runtime_ok (the observed case).
+_HEALTHCHECK_CMD = re.compile(
+    r"\b(?:curl(?:\.exe)?|wget|iwr|invoke-webrequest|invoke-restmethod|irm|httpie|https?-get|"
+    r"nc|ncat|telnet|test-netconnection|tnc)\b"
+    r"|\bhttp[s]?://|\blocalhost:\d|\b127\.0\.0\.1:\d|\b0\.0\.0\.0:\d",
+    re.I)
+
+
+def ran_healthcheck(command):
+    """True if a run_command is a HEALTH/LIVENESS probe (curl / http-get / port check) — the agent flips
+    ctx._runtime_ok when one of these returns ok (specs/0053)."""
+    return bool(_HEALTHCHECK_CMD.search(command or ""))
+
+
+# An UNCONDITIONAL assertion that a SERVICE is UP / running / serving / "plumbed" — the "Done, plumbing
+# fixed" / "the app is serving on :8080" class, where the model asserts a RUNTIME state it never confirmed.
+# Runtime liveness is not a file-content claim (the semantic verifier waves it through) and it is not a
+# test/build pass (the _SUCCESS net misses this vocabulary), so this is the dedicated net — flagged only when
+# NOTHING actually reached the service this turn (ctx._runtime_ok False). "works" is intentionally left to
+# _SUCCESS; this covers up/serving/reachable/plumbed language _SUCCESS does not.
+_RUNTIME_SUCCESS = re.compile(
+    r"\b(?:the\s+)?(?:server|service|app(?:lication)?|site|website|web\s*server|container|deployment|"
+    r"endpoint|api|frontend|backend|nginx|stack)\b"
+    r"[^.\n]{0,32}?(?:\b(?:is|are|now|'?s|be)\b\s*)?[^.\n]{0,8}?"
+    r"\b(?:up|live|running|serving|listening|reachable|respond(?:s|ing)?|healthy|deployed|accessible|online)\b"
+    r"|\beverything\s+(?:is\s+)?(?:plumbed|wired(?:\s+up)?|connected|hooked\s+up)\b"
+    r"|\bplumbing\s+(?:is\s+)?(?:fixed|correct|good|right|working|done|in\s+place)\b"
+    r"|\b(?:plumbed|wired(?:\s+up)?|hooked\s+up)\s+(?:correctly|right|up|properly)\b",
+    re.I)
+
+
+def unverified_runtime_claim(final_text, runtime_verified):
+    """DETERMINISTIC, model-free backstop (specs/0053): flag an UNCONDITIONAL claim that a service / app /
+    server / container is UP / serving / "plumbed" when NO health-check reached it this turn
+    (`runtime_verified` is False — no curl/http/port probe returned ok). The runtime twin of
+    unverified_success_claim: scoped PER SENTENCE and _HEDGED-guarded, so an honest "the app is NOT up yet",
+    "run curl to confirm", or "I could not reach it" is NOT flagged. Returns [] when runtime was actually
+    confirmed, so a real health-check pass is never second-guessed."""
+    if runtime_verified or not final_text:
+        return []
+    for sent in re.split(r"(?<=[.!?])\s+|\n+", final_text):
+        # _HEDGED catches future/conditional ("should", "to confirm"); _MUT_NEGATED catches negation ("the
+        # app is NOT up", "nothing is serving") — _HEDGED's own "not" only hedges test-pass words, so the
+        # runtime net needs the general negation guard too, or an honest "it is not up yet" would be flagged.
+        if _RUNTIME_SUCCESS.search(sent) and not _HEDGED.search(sent) and not _MUT_NEGATED.search(sent):
+            return ["you state a service/app is up, serving, or 'plumbed', but nothing reached it this run - "
+                    "actually probe it (curl / an http request to its URL and read the status), or say "
+                    "plainly that it is NOT verified / not up. Do not assert a runtime state you did not observe."]
+    return []
+
+
 def unverified_success_claim(final_text, verified):
     """DETERMINISTIC, model-free backstop: flag an UNCONDITIONAL claim that a build/test/check PASSES when
     NOTHING confirmed it this turn (`verified` is False — no goal bar met, no auto-verify pass, no passing
@@ -588,6 +643,11 @@ def problems(final_text, ctx):
     # model that asserts success from reading code instead of running the check). Model-free, so it runs
     # alongside the semantic verifier — which mis-clears it, since "the tests pass" cites no file.
     det += unverified_success_claim(final_text, bool(getattr(ctx, "_verified_ok", False)))
+    # ...and the RUNTIME twin (specs/0053): a "the service is up / serving / plumbed" claim when no
+    # health-check reached it this turn. Model-free; gated on its own flag so a flag-off run is byte-identical
+    # (the net never runs and ctx._runtime_ok is never set).
+    if config.VERIFY_RUNTIME_DONE:
+        det += unverified_runtime_claim(final_text, bool(getattr(ctx, "_runtime_ok", False)))
     # Web citations (specs/0024): a cited URL the run never put on the read-ledger is a phantom web source.
     # Gated on web_grounding_active() (native CODE_ENABLE_WEB OR a web-marked MCP server, specs/0029) so a
     # web-off run is byte-identical (ctx.fetched is empty and would flag every URL).

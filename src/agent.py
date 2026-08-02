@@ -216,6 +216,7 @@ class Agent:
         ctx._turn_id = getattr(ctx, "_turn_id", 0) + 1   # a stable per-turn id a hook can key its own budget on
         ctx.goal = None               # a PREVIOUS task's bar must never be pursued on this one (specs/0020)
         ctx._verified_ok = False      # did a CHECK actually confirm success this turn? (grounding's unverified-success net)
+        ctx._runtime_ok = False       # did a HEALTH-CHECK (curl/http/port probe) confirm a service is UP? (specs/0053)
         ctx.effort = None             # a prior turn's effort request must not carry over (specs/0021)
         # Propose mode (specs/0022): a change-list approved for one task must NEVER authorize edits on the
         # next (the same cross-turn-leak class the plan/goal resets above fix — and worse here, because it
@@ -473,6 +474,12 @@ class Agent:
                     # flag it even if the model verified manually instead of via `pursue`.
                     if name == "run_command" and result.ok and grounding.ran_check(args.get("command", "")):
                         ctx._verified_ok = True
+                    # specs/0053: a health-check (curl / http-get / port probe) that SUCCEEDED is real evidence
+                    # a "the service is up / serving / plumbed" claim can rest on. A connection-refused curl
+                    # exits non-zero (result.ok False), so a claim after it stays unbacked. Gated -> byte-identical.
+                    if (config.VERIFY_RUNTIME_DONE and name == "run_command" and result.ok
+                            and grounding.ran_healthcheck(args.get("command", ""))):
+                        ctx._runtime_ok = True
 
                     # PostToolUse hooks (Phase 15): observe the executed call (side effects / telemetry /
                     # trajectory annotation). Observe-only + fail-open — never alters `result`, never
