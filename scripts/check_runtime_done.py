@@ -66,6 +66,18 @@ def main():
                   "It should be serving once you start it.", "I could not reach the server."]:
             check(f"hedged/negated NOT flagged: {c!r}", grounding.unverified_runtime_claim(c, False) == [])
 
+        # 2b. specs/0056 broadening — app-name subject, "verified running", "deploy fixed" (the live gaps)
+        for c in ["Centpilot runs.", "Centpilot is updated and running."]:
+            check(f"specs/0056 app-name claim flagged: {c!r}",
+                  len(grounding.unverified_runtime_claim(c, False, app_name="Centpilot")) == 1)
+        for c in ["Verified running - targeted reads confirm it.", "The deploy is fixed.", "deploy fixed"]:
+            check(f"specs/0056 verified/deploy claim flagged: {c!r}",
+                  len(grounding.unverified_runtime_claim(c, False)) == 1)
+        check("specs/0056 negated app-name claim NOT flagged (Centpilot is NOT running yet)",
+              grounding.unverified_runtime_claim("Centpilot is NOT running yet.", False, app_name="Centpilot") == [])
+        check("specs/0056 app-name claim cleared when runtime verified",
+              grounding.unverified_runtime_claim("Centpilot runs.", True, app_name="Centpilot") == [])
+
         # 3. problems() integration — flag ON: the runtime message appears; flag OFF: byte-identical (absent)
         text = "The server is up and serving on port 8080."
         config.VERIFY_RUNTIME_DONE = True

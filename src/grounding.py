@@ -148,24 +148,48 @@ _RUNTIME_SUCCESS = re.compile(
     r"\b(?:up|live|running|serving|listening|reachable|respond(?:s|ing)?|healthy|deployed|accessible|online)\b"
     r"|\beverything\s+(?:is\s+)?(?:plumbed|wired(?:\s+up)?|connected|hooked\s+up)\b"
     r"|\bplumbing\s+(?:is\s+)?(?:fixed|correct|good|right|working|done|in\s+place)\b"
-    r"|\b(?:plumbed|wired(?:\s+up)?|hooked\s+up)\s+(?:correctly|right|up|properly)\b",
+    r"|\b(?:plumbed|wired(?:\s+up)?|hooked\s+up)\s+(?:correctly|right|up|properly)\b"
+    # specs/0056: "verified/confirmed running" — a subjectless success assertion the run showed ("verified
+    # running", "review complete — targeted reads confirm it runs").
+    r"|\b(?:verif(?:y|ied|ies)|confirm(?:ed|s)?)\b[^.\n]{0,20}?"
+    r"\b(?:running|serving|built|building|up|live|deployed|working|reachable)\b"
+    # specs/0056: a DEPLOY / BUILD success claim ("deploy fixed", "the build works") — the run claimed
+    # "deploy fixed" while it had reverted the compose to a config that will not build.
+    r"|\b(?:deploy(?:ment)?|the\s+build|build)\s+(?:is\s+)?"
+    r"(?:fixed|correct|working|works|done|builds|built|succeeds|passes|good)\b",
     re.I)
 
 
-def unverified_runtime_claim(final_text, runtime_verified):
-    """DETERMINISTIC, model-free backstop (specs/0053): flag an UNCONDITIONAL claim that a service / app /
-    server / container is UP / serving / "plumbed" when NO health-check reached it this turn
+def _app_runtime_re(app_name):
+    """specs/0056: a per-call matcher for a runtime claim about THIS project by NAME ("Centpilot runs",
+    "Centpilot is updated and running") — the workspace basename as subject, which the generic _RUNTIME_SUCCESS
+    subjects (server/app/service/...) miss. Precise to the current project, so it does not false-flag a
+    generic "Docker runs the container" in prose. None when there is no usable name."""
+    if not app_name or len(app_name) < 3:
+        return None
+    return re.compile(
+        r"\b" + re.escape(app_name) + r"\b[^.\n]{0,20}?\b(?:runs?|builds?|"
+        r"is\s+(?:running|up|built|live|serving|working|deployed|fixed)|"
+        r"(?:now\s+)?(?:running|up|serving|working|deployed|built|live))\b", re.I)
+
+
+def unverified_runtime_claim(final_text, runtime_verified, app_name=None):
+    """DETERMINISTIC, model-free backstop (specs/0053, broadened specs/0056): flag an UNCONDITIONAL claim that
+    a service / app / server / container is UP / serving / built / "plumbed" — or that the deploy/build is
+    fixed, or that THIS project (by name, `app_name`) runs — when NO health-check reached it this turn
     (`runtime_verified` is False — no curl/http/port probe returned ok). The runtime twin of
-    unverified_success_claim: scoped PER SENTENCE and _HEDGED-guarded, so an honest "the app is NOT up yet",
-    "run curl to confirm", or "I could not reach it" is NOT flagged. Returns [] when runtime was actually
-    confirmed, so a real health-check pass is never second-guessed."""
+    unverified_success_claim: scoped PER SENTENCE and _HEDGED- + _MUT_NEGATED-guarded, so an honest "the app is
+    NOT up yet", "run curl to confirm", or "I could not reach it" is NOT flagged. Returns [] when runtime was
+    actually confirmed, so a real health-check pass is never second-guessed."""
     if runtime_verified or not final_text:
         return []
+    app_re = _app_runtime_re(app_name)
     for sent in re.split(r"(?<=[.!?])\s+|\n+", final_text):
         # _HEDGED catches future/conditional ("should", "to confirm"); _MUT_NEGATED catches negation ("the
         # app is NOT up", "nothing is serving") — _HEDGED's own "not" only hedges test-pass words, so the
         # runtime net needs the general negation guard too, or an honest "it is not up yet" would be flagged.
-        if _RUNTIME_SUCCESS.search(sent) and not _HEDGED.search(sent) and not _MUT_NEGATED.search(sent):
+        hit = _RUNTIME_SUCCESS.search(sent) or (app_re and app_re.search(sent))
+        if hit and not _HEDGED.search(sent) and not _MUT_NEGATED.search(sent):
             return ["you state a service/app is up, serving, or 'plumbed', but nothing reached it this run - "
                     "actually probe it (curl / an http request to its URL and read the status), or say "
                     "plainly that it is NOT verified / not up. Do not assert a runtime state you did not observe."]
@@ -647,7 +671,8 @@ def problems(final_text, ctx):
     # health-check reached it this turn. Model-free; gated on its own flag so a flag-off run is byte-identical
     # (the net never runs and ctx._runtime_ok is never set).
     if config.VERIFY_RUNTIME_DONE:
-        det += unverified_runtime_claim(final_text, bool(getattr(ctx, "_runtime_ok", False)))
+        _app = os.path.basename((getattr(ctx, "cwd", "") or "").rstrip("/\\"))
+        det += unverified_runtime_claim(final_text, bool(getattr(ctx, "_runtime_ok", False)), app_name=_app)
     # Web citations (specs/0024): a cited URL the run never put on the read-ledger is a phantom web source.
     # Gated on web_grounding_active() (native CODE_ENABLE_WEB OR a web-marked MCP server, specs/0029) so a
     # web-off run is byte-identical (ctx.fetched is empty and would flag every URL).
