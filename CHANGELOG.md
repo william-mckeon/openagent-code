@@ -15,8 +15,12 @@ below was a `.env` change, never a code change:
 - **thinkingmachines/Inkling on Together** — `https://api.together.xyz/v1`, OpenAI-compatible.
 - **gpt-oss-120b on AWS Bedrock / self-hosted vLLM (RunPod)** — the original baseline; last measured eval 13/13.
 
-## Features (specs/0022–0058)
+## Features (specs/0022–0059)
 
+- `0059` **trajectory scrubbing** — `CODE_SCRUB_TRAJECTORY`: scrub secrets (private keys, JWTs, provider API
+  keys, bearer/CSRF/session tokens, emails) and financial PII (currency amounts, account IDs, cards/SSNs)
+  from each trajectory record at the single write choke point, before it hits disk — so a pasted budget or
+  session token never enters the training corpus. Persisted copy only; the live agent is unaffected.
 - `0058` **greenfield absence** — on a STRICTLY-empty workspace, an absence claim ("the workspace is empty",
   "no X here") no longer spawns the Tier-2 verifier (it's trivially true), killing the re-listing loop where
   the empty-Centpilot run re-ran `Get-ChildItem` turn after turn. A non-empty scaffold still verifies. Rides

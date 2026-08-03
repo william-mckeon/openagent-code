@@ -400,6 +400,15 @@ PROMPT_HYGIENE = _as_bool(os.environ.get("CODE_PROMPT_HYGIENE", "false"))
 # -> the net never runs and _runtime_ok is never set (byte-identical).
 VERIFY_RUNTIME_DONE = _as_bool(os.environ.get("CODE_VERIFY_RUNTIME_DONE", "false"))
 
+# Trajectory PII/secret scrubbing (Phase 59 / specs/0059). Anything the agent reads or writes lands in the
+# trajectory verbatim — so a pasted budget or an authenticated page puts bank balances + a session token
+# straight into the training corpus. When on, each record is scrubbed at the single write choke point
+# (trajectory._write) before it hits disk: high-confidence SECRETS (private keys, JWTs, provider API keys,
+# bearer/CSRF/session tokens, emails) and FINANCIAL PII (currency amounts, user/account IDs, card/SSN). Only
+# the PERSISTED copy is scrubbed — the live context the agent works from this turn is untouched. OFF by
+# default -> scrub_record is never called and the trajectory is byte-identical.
+SCRUB_TRAJECTORY = _as_bool(os.environ.get("CODE_SCRUB_TRAJECTORY", "false"))
+
 # Edit-layer (Phase 13 / specs/0013). CODE_EDIT_FUZZY: a SAFE fuzzy fallback UNDER exact-match edit_file
 # - when the exact old_string isn't found, editmatch.resolve locates it (whitespace-insensitive, then
 # most-similar chunk) and applies ONLY a UNIQUE, above-threshold match; any ambiguity refuses, so

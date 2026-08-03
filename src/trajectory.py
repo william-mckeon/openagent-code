@@ -138,6 +138,12 @@ class Trajectory:
         self._write(rec)
 
     def _write(self, rec):
+        # specs/0059: scrub secrets / PII from the PERSISTED record before it hits disk, so the flywheel never
+        # ingests a pasted token or budget. Gated + lazy -> OFF is byte-identical (scrub is never imported).
+        from . import config
+        if config.SCRUB_TRAJECTORY:
+            from . import scrub
+            rec = scrub.scrub_record(rec)
         self.f.write(json.dumps(rec, ensure_ascii=False) + "\n")
         self.f.flush()
 

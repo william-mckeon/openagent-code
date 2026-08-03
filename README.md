@@ -254,6 +254,8 @@ there, documented in `.env.example`). There is no YAML config file. Key ones:
 | `CODE_PROPOSE_AUTOPLAN` | `false` | Propose first-approval backstop (specs/0052): a read-only deny becomes an interactive approve+unlock, plus a `/approve` REPL command; under deny+fence |
 | `CODE_VERIFY_RUNTIME_DONE` | `false` | Runtime-done honesty (specs/0053, broadened 0056): flag a "service is up/serving/plumbed", "<app> runs", "verified running", or "deploy fixed" claim when no health-check returned ok this turn |
 | `CODE_SHELL_NONINTERACTIVE` | `false` | Non-interactive `run_command` (specs/0055): PowerShell `-NonInteractive` + child stdin `DEVNULL`, so a command that reads stdin (bare `echo` / Read-Host) fails fast instead of hanging the REPL |
+| `CODE_GUARDIAN_INTERACTIVE` | `false` | Interactive guardian (specs/0057): the AI guardian adjudicates ask-tier commands in the REPL — auto-approves the clearly-safe, defers the rest to your `[y/N]`; needs `CODE_GUARDIAN` |
+| `CODE_SCRUB_TRAJECTORY` | `false` | Trajectory PII/secret scrubbing (specs/0059): redact keys/tokens/emails + financial PII (amounts, account IDs, cards) from each persisted record before it hits disk; live context untouched |
 | `CODE_PERMISSIONS_CONFIG` | (empty) | JSON allow/ask/deny rules; `deny` always wins (see `permissions.json.example`) |
 | `CODE_ADD_DIRS` | (empty) | Dirs the file tools may touch beyond the workspace (widens the fence) |
 | `CODE_TRUST_USER_DIRS` | `false` | Treat a dir the user literally types as a **read** grant, and auto-grant `request_dir` for an existing dir under bypass at depth 0 (into a read-only tier writes can't reach) |
