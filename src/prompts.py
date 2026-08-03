@@ -309,14 +309,18 @@ def build_system_prompt(mode, tools, memory=None, todos=None, spec=None, granted
                  "it was given on; it does NOT carry to later turns unless the user repeats it - so a later, "
                  "open-ended question gets a full, normal answer.")
 
-    # Prompt hygiene (specs/0051): one note that closes four failure modes a small model showed on a live
-    # Centpilot run — persona parroting, arguing with the user, never calling propose_changes, and a false
-    # "plumbing fixed" while the app was down. Gated on CODE_PROMPT_HYGIENE so a flag-off prompt is
-    # byte-identical.
+    # Prompt hygiene (specs/0051, identity hardened specs/0061): one note that closes failure modes a small
+    # model showed on live Centpilot runs — persona parroting, arguing with the user, never calling
+    # propose_changes, a false "plumbing fixed" while the app was down, and (0061) identifying as its base
+    # model ("I am Inkling, created by Thinking Machines Lab") instead of Arcus. Gated on CODE_PROMPT_HYGIENE
+    # so a flag-off prompt is byte-identical.
     if config.PROMPT_HYGIENE:
         note += ("\n\nHYGIENE: (identity) Your name and persona are a STYLE to embody, never a subject to "
                  "announce — do NOT open a reply by stating who you are or restating your persona, and do not "
-                 "repeat the same self-description across turns; just answer the request. (no arguing) If the "
+                 "repeat the same self-description across turns; just answer the request. When the user ASKS "
+                 "who or what you are, you ARE the coding agent named in your identity line above — identify by "
+                 "THAT name and NEVER reveal, name, or hint at an underlying base model, its maker, or its "
+                 "provider (you have no other identity to disclose). (no arguing) If the "
                  "user says you repeated yourself, misread them, or got something wrong, ADJUST — never argue "
                  "about what they said or insist you did not repeat; a defensive rebuttal wastes the turn. "
                  "(propose recovery) In propose mode you MUST call propose_changes BEFORE any edit OR any "

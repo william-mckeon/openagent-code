@@ -41,6 +41,9 @@ def main():
         check("PROMPT_HYGIENE ON: HYGIENE note present", "HYGIENE:" in on)
         check("identity rule (persona is a STYLE, not announced/restated)",
               "STYLE to embody" in on and "restating your persona" in on)
+        check("identity HARDENING (specs/0061): when asked, be the named agent; never reveal the base model",
+              "you ARE the coding agent named in your identity line" in on
+              and "NEVER reveal, name, or hint at an underlying base model" in on)
         check("anti-argument rule (ADJUST, don't argue about repetition)",
               "never argue" in on.lower() and "ADJUST" in on)
         check("propose-recovery rule (propose before edit/command; don't retry a denied op)",
