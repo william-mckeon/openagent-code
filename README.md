@@ -252,7 +252,8 @@ there, documented in `.env.example`). There is no YAML config file. Key ones:
 | `CODE_GUARD_SELF_KILL` | `false` | Self-preservation (specs/0050): hard-deny a name-based process kill that would end the agent's own `python` process, in every mode incl. bypass |
 | `CODE_PROMPT_HYGIENE` | `false` | One system-prompt note (specs/0051): persona is a silent style (no announcing/restating), no arguing with the user, propose-first-with-recovery, service-up honesty; + PowerShell shell-hint gaps (head/tail, `$?`, tree) |
 | `CODE_PROPOSE_AUTOPLAN` | `false` | Propose first-approval backstop (specs/0052): a read-only deny becomes an interactive approve+unlock, plus a `/approve` REPL command; under deny+fence |
-| `CODE_VERIFY_RUNTIME_DONE` | `false` | Runtime-done honesty (specs/0053): flag a "service is up/serving/plumbed" claim when no health-check (curl/http/port) returned ok this turn |
+| `CODE_VERIFY_RUNTIME_DONE` | `false` | Runtime-done honesty (specs/0053, broadened 0056): flag a "service is up/serving/plumbed", "<app> runs", "verified running", or "deploy fixed" claim when no health-check returned ok this turn |
+| `CODE_SHELL_NONINTERACTIVE` | `false` | Non-interactive `run_command` (specs/0055): PowerShell `-NonInteractive` + child stdin `DEVNULL`, so a command that reads stdin (bare `echo` / Read-Host) fails fast instead of hanging the REPL |
 | `CODE_PERMISSIONS_CONFIG` | (empty) | JSON allow/ask/deny rules; `deny` always wins (see `permissions.json.example`) |
 | `CODE_ADD_DIRS` | (empty) | Dirs the file tools may touch beyond the workspace (widens the fence) |
 | `CODE_TRUST_USER_DIRS` | `false` | Treat a dir the user literally types as a **read** grant, and auto-grant `request_dir` for an existing dir under bypass at depth 0 (into a read-only tier writes can't reach) |

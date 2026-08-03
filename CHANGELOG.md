@@ -15,8 +15,14 @@ below was a `.env` change, never a code change:
 - **thinkingmachines/Inkling on Together** — `https://api.together.xyz/v1`, OpenAI-compatible.
 - **gpt-oss-120b on AWS Bedrock / self-hosted vLLM (RunPod)** — the original baseline; last measured eval 13/13.
 
-## Features (specs/0022–0054)
+## Features (specs/0022–0056)
 
+- `0056` **runtime-done broaden** — widens the `CODE_VERIFY_RUNTIME_DONE` net to catch "Centpilot runs",
+  "verified running", and "deploy fixed" (workspace-name subject + verified/deploy vocabulary) that 0053
+  missed on a live run. No new flag.
+- `0055` **non-interactive shell** — `CODE_SHELL_NONINTERACTIVE`: `run_command` runs PowerShell with
+  `-NonInteractive` and the child's stdin as DEVNULL, so a command that reads stdin (a bare `echo` /
+  Read-Host / a foreground prompt) fails fast instead of HANGING the REPL. Paired shell-hint against bare `echo`.
 - `0054` **auto-window probe UA** — `_fetch_context_length` sends a browser `User-Agent` so the
   `CODE_MODEL_MAX_TOKENS=auto` context-window probe isn't 403/1010-blocked by Cloudflare on Tinker (which is
   why "auto window unresolved" kept the 131072 fallback). No new flag; pinning the window is still preferred.
