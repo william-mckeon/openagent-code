@@ -107,6 +107,10 @@ def main():
     _g = (config.VERIFY_COMPLETION, config.VERIFY_GROUNDING, config.VERIFY_TOUCHED)
     config.VERIFY_COMPLETION = config.VERIFY_GROUNDING = config.VERIFY_TOUCHED = False
     config.EFFORT_THRESHOLD, config.EFFORT_FLOOR, config.EFFORT_MAX = 2, "medium", "high"
+    # isolate the specs/0060 pin from the live .env — CODE_REASONING_VALUE=xhigh would (correctly) suppress
+    # adaptive escalation, breaking the ladder tests below; the 0060 block sets it deliberately.
+    _rv0 = config.REASONING_VALUE
+    config.REASONING_VALUE = ""
 
     # -- the ladder + pure helpers -----------------------------------------------------------------------
     check("ladder is ORDERED (rank low<medium<high)", effort.rank("low") < effort.rank("medium") < effort.rank("high"))
@@ -145,6 +149,26 @@ def main():
     p = _Planner(fails=3)
     _agent(p, _Traj()).run("fix the tangled bug", _ctx())
     check("ADAPTIVE on: repeated tool failures auto-escalate the model to 'high'", p.model.effort == "high")
+
+    # -- specs/0060: a REASONING pass-through that OUTRANKS the ladder (xhigh) makes adaptive a NO-OP -------
+    def _pin(v):
+        _old = config.REASONING_VALUE
+        config.REASONING_VALUE = v
+        try:
+            return config.reasoning_pin_overrides_ladder()
+        finally:
+            config.REASONING_VALUE = _old
+    check("pin helper: empty / a ladder value ('high') -> False (adaptive runs as before)",
+          _pin("") is False and _pin("high") is False)
+    check("pin helper: xhigh / an int budget / an object -> True (ladder can't represent or exceed it)",
+          _pin("xhigh") is True and _pin(8000) is True and _pin({"budget": 1}) is True)
+    _rv = config.REASONING_VALUE
+    config.REASONING_VALUE = "xhigh"
+    p_pin = _Planner(fails=3)   # the SAME struggle that escalated to 'high' just above
+    _agent(p_pin, _Traj()).run("fix the tangled bug", _ctx())
+    check("specs/0060: with xhigh pinned, a struggling turn does NOT escalate — the pass-through is preserved",
+          p_pin.model.effort is None)
+    config.REASONING_VALUE = _rv
 
     # -- depth-0 ONLY: a subagent's effort is never clobbered -------------------------------------------
     p2 = _Planner(fails=3, effort="low")   # a child built with its own effort (e.g. GUARDIAN_EFFORT)
@@ -187,6 +211,7 @@ def main():
 
     config.ADAPTIVE_EFFORT, config.EFFORT_POLICY, config.EFFORT_THRESHOLD, config.EFFORT_FLOOR, config.EFFORT_MAX = _saved
     config.VERIFY_COMPLETION, config.VERIFY_GROUNDING, config.VERIFY_TOUCHED = _g
+    config.REASONING_VALUE = _rv0
 
     passed, total = sum(_results), len(_results)
     print(f"\nVERDICT: {passed}/{total} {'[OK]' if passed == total else '[FAIL]'}")

@@ -118,6 +118,19 @@ except (ValueError, TypeError):
     REASONING_VALUE = _reasoning_value_raw   # not JSON -> literal string (e.g. "xhigh"); never raises at import
 REASONING_TOPLEVEL = _as_bool(os.environ.get("CODE_REASONING_TOPLEVEL", "false"))
 
+
+def reasoning_pin_overrides_ladder():
+    """specs/0060: True when a REASONING pass-through value (specs/0044) is pinned that the adaptive-effort
+    ladder (low/medium/high) cannot represent or exceed — 'xhigh', a numeric budget, or an object. Adaptive
+    effort (specs/0021) caps at EFFORT_MAX='high' and takes precedence over the pass-through in
+    _reasoning_kwargs, so when it 'escalates' it would actually DOWNGRADE such a pin (e.g. xhigh -> high). It
+    must therefore be a NO-OP when this returns True. A plain ladder value ('low'/'medium'/'high') or an empty
+    pin returns False, so adaptive effort runs exactly as before (byte-identical)."""
+    v = REASONING_VALUE
+    if v in (None, ""):
+        return False
+    return not (isinstance(v, str) and v in _EFFORTS)
+
 # CODE_EXTRA_BODY (specs/0049) — a JSON object of provider params merged into the request's `extra_body`,
 # so the operator can send WHATEVER an OpenAI-compatible endpoint accepts (e.g. Tinker's `separate_reasoning`)
 # ALONGSIDE the reasoning knob, without a code change. The single-key reasoning pass-through (above) cannot

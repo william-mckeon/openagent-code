@@ -266,7 +266,12 @@ class Agent:
                 # baseline floor on the model's sticky request (ctx.effort) or the accumulated struggle
                 # (signals tracked below); escalate-only, capped, reset to baseline each task.
                 _mdl = getattr(self.planner, "model", None)
-                if config.ADAPTIVE_EFFORT and _mdl is not None and getattr(ctx, "depth", 0) == 0:
+                # specs/0060: skip adaptive effort entirely when a REASONING pass-through OUTRANKS the ladder
+                # (e.g. CODE_REASONING_VALUE=xhigh). The ladder caps at EFFORT_MAX='high' and its effort takes
+                # precedence in _reasoning_kwargs, so "escalating" here would DOWNGRADE the pin (xhigh->high)
+                # exactly when the run is struggling. Leaving _mdl.effort at baseline keeps the pass-through.
+                if (config.ADAPTIVE_EFFORT and _mdl is not None and getattr(ctx, "depth", 0) == 0
+                        and not config.reasoning_pin_overrides_ladder()):
                     if self._effort_policy is None:
                         self._effort_policy = effort.load_policy()
                     _base = effort.resolve_baseline(self._baseline_effort)
