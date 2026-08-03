@@ -139,6 +139,20 @@ def main():
         os.environ["CODE_SHELL_HINTS"] = _s
     check("CODE_SHELL_HINTS defaults False when unset (opt-in)", hints_default_off)
 
+    # 10. self-state (specs/0062): the reasoning effort is appended when passed; without it the block is
+    #     byte-identical, and the model id is NEVER present (specs/0061 — never reveal the base model).
+    off_ss = envcontext.build_env_context("/w", now=fixed)
+    check("self-state OFF (no reasoning_effort): no 'reasoning effort' line (byte-identical)",
+          "reasoning effort" not in off_ss)
+    on_ss = envcontext.build_env_context("/w", now=fixed, reasoning_effort="xhigh")
+    check("self-state ON: the reasoning-effort line is present with the value",
+          "- reasoning effort: xhigh" in on_ss and "Inkling" not in on_ss)
+    _c = os.environ.pop("CODE_CONTEXT_SELF_STATE", None)
+    ss_default_off = config._as_bool(os.environ.get("CODE_CONTEXT_SELF_STATE", "false")) is False
+    if _c is not None:
+        os.environ["CODE_CONTEXT_SELF_STATE"] = _c
+    check("CODE_CONTEXT_SELF_STATE defaults False when unset (opt-in)", ss_default_off)
+
     passed, total = sum(_results), len(_results)
     print(f"\nVERDICT: {passed}/{total} {'[OK]' if passed == total else '[FAIL]'}")
     return 0 if passed == total else 1

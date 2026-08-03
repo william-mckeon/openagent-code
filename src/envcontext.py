@@ -35,7 +35,8 @@ def _shell_name():
     return os.environ.get("SHELL") or "bash"
 
 
-def build_env_context(cwd, granted_dirs=None, include_git=False, git_status_fn=None, now=None, shell_hints=False):
+def build_env_context(cwd, granted_dirs=None, include_git=False, git_status_fn=None, now=None,
+                      shell_hints=False, reasoning_effort=None):
     """Return a bounded, plain-text environment block (never None, never raises).
 
     Pure + injectable: `now` (a datetime) and `git_status_fn` are injected by the acceptance harness so
@@ -55,6 +56,11 @@ def build_env_context(cwd, granted_dirs=None, include_git=False, git_status_fn=N
         f"- shell: {_shell_name()}",
         f"- date: {when.strftime('%Y-%m-%d')}",
     ]
+    # Self-state (specs/0062): the agent's current reasoning effort, so it reports the real value when asked
+    # instead of confabulating "I have no fixed level". The MODEL id is deliberately omitted — specs/0061
+    # forbids revealing the base model. OFF (reasoning_effort None/empty) -> byte-identical.
+    if reasoning_effort:
+        lines.append(f"- reasoning effort: {reasoning_effort}")
     # PowerShell 5.1 command rules (specs/0046), only when opted in AND the shell is actually PowerShell —
     # its syntax differs from POSIX in ways a bash-trained model gets wrong. Gated, so OFF is byte-identical.
     if shell_hints and os.name == "nt":

@@ -366,6 +366,11 @@ SHELL_HINTS = _as_bool(os.environ.get("CODE_SHELL_HINTS", "false"))
 # fast instead of hanging. OFF -> the prior argv + inherited stdin (byte-identical for every command that does
 # not read stdin, which is all of them in practice).
 SHELL_NONINTERACTIVE = _as_bool(os.environ.get("CODE_SHELL_NONINTERACTIVE", "false"))
+# Self-state in context (Phase 62 / specs/0062). Add the agent's current REASONING EFFORT to the per-turn
+# situational block (needs CODE_SITUATIONAL_CONTEXT), so when asked "what reasoning level are you at" it
+# reports the real value (e.g. xhigh) instead of confabulating "I don't have a fixed level." Deliberately does
+# NOT inject the model id — specs/0061 forbids revealing the base model. OFF -> the block is byte-identical.
+CONTEXT_SELF_STATE = _as_bool(os.environ.get("CODE_CONTEXT_SELF_STATE", "false"))
 
 # Working-directory prompt (Phase 30 / specs/0030). Pin the ABSOLUTE workspace path in the DURABLE system
 # prompt (never compacted), and teach that a granted reference dir is a READ SOURCE while a copy/create

@@ -15,8 +15,11 @@ below was a `.env` change, never a code change:
 - **thinkingmachines/Inkling on Together** — `https://api.together.xyz/v1`, OpenAI-compatible.
 - **gpt-oss-120b on AWS Bedrock / self-hosted vLLM (RunPod)** — the original baseline; last measured eval 13/13.
 
-## Features (specs/0022–0061)
+## Features (specs/0022–0062)
 
+- `0062` **context self-state** — `CODE_CONTEXT_SELF_STATE`: append the agent's current reasoning effort
+  (`config.display_effort()`, e.g. `xhigh`) to the per-turn situational block, so when asked "what reasoning
+  level are you at" it reports the real value instead of confabulating. Model id deliberately omitted (0061).
 - `0061` **identity hardening** — extends the `CODE_PROMPT_HYGIENE` identity clause so that when asked who/what
   it is, the agent identifies as its configured name (Arcus) and NEVER reveals the underlying base model or
   provider. Fixes a live "I am Inkling, created by Thinking Machines Lab" — a name-and-sovereignty leak. No
