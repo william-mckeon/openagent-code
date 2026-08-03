@@ -15,8 +15,12 @@ below was a `.env` change, never a code change:
 - **thinkingmachines/Inkling on Together** — `https://api.together.xyz/v1`, OpenAI-compatible.
 - **gpt-oss-120b on AWS Bedrock / self-hosted vLLM (RunPod)** — the original baseline; last measured eval 13/13.
 
-## Features (specs/0022–0056)
+## Features (specs/0022–0057)
 
+- `0057` **interactive guardian** — `CODE_GUARDIAN_INTERACTIVE`: the AI guardian adjudicates ask-tier commands
+  in the REPL too — auto-approves the clearly-safe, on-request ones (a curl health-check, node -c, a build
+  step), and defers anything it won't clear to the human `[y/N]`. Deny-rules / fence / mass-destruction cap /
+  self-kill guard still apply. Makes "verify it runs" flow without a prompt for every probe.
 - `0056` **runtime-done broaden** — widens the `CODE_VERIFY_RUNTIME_DONE` net to catch "Centpilot runs",
   "verified running", and "deploy fixed" (workspace-name subject + verified/deploy vocabulary) that 0053
   missed on a live run. No new flag.

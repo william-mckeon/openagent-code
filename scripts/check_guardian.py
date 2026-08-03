@@ -91,8 +91,10 @@ def main():
 
     # -- permissions integration: the guardian decides the ASK tier, HEADLESS ----------------------------
     _saved = config.GUARDIAN
+    _saved_gi = config.GUARDIAN_INTERACTIVE
     config.HOOKS = False   # hermetic: no PermissionRequest hook shadowing the guardian in the ask chain
     config.GUARDIAN = True
+    config.GUARDIAN_INTERACTIVE = False   # isolate specs/0057 from the live .env for the headless-only assertions
     p = Permissions("default", {"ask": ["edit_file(.env)"]}, [])
     calls = []
     d = p.decide("edit_file", {"path": ".env"}, _Ctx(_spawn("APPROVE: safe config edit", calls), depth=0))
@@ -107,8 +109,22 @@ def main():
     calls = []
     tgt = p._target("edit_file", {"path": ".env"}, _Ctx())
     g_int = p._guardian("edit_file", tgt, "ask rule", _Ctx(_spawn("APPROVE", calls), depth=0, interactive=True))
-    check("headless-only: interactive -> guardian returns None (not consulted), no spawn",
+    check("headless-only (GUARDIAN_INTERACTIVE off): interactive -> guardian returns None (not consulted), no spawn",
           g_int is None and calls == [])
+
+    # -- specs/0057: interactive guardian — auto-approve the safe, DEFER the rest to the human ------------
+    config.GUARDIAN_INTERACTIVE = True
+    calls = []
+    g_ap = p._guardian("edit_file", tgt, "ask rule", _Ctx(_spawn("APPROVE: safe", calls), depth=0, interactive=True))
+    check("GUARDIAN_INTERACTIVE on: the guardian IS consulted when interactive (spawns + returns a verdict)",
+          g_ap is not None and g_ap.approved is True and len(calls) == 1)
+    ap = p._ask_approver("edit_file", tgt, "ask rule", _Ctx(_spawn("APPROVE: safe", []), depth=0, interactive=True))
+    check("GUARDIAN_INTERACTIVE on + APPROVE: _ask_approver auto-approves (no human prompt needed)",
+          ap is not None and ap[0] is True)
+    dn = p._ask_approver("edit_file", tgt, "ask rule", _Ctx(_spawn("DENY: risky", []), depth=0, interactive=True))
+    check("GUARDIAN_INTERACTIVE on + DENY: _ask_approver returns None -> DEFERS to the human [y/N] (not a hard deny)",
+          dn is None)
+    config.GUARDIAN_INTERACTIVE = False
 
     # per-turn cache: the SAME (tool, target) is reviewed once, even across two decide() calls
     calls = []
@@ -175,6 +191,7 @@ def main():
     check("GUARDIAN off: the reviewer is never consulted; a headless ask-tier call blocks (unchanged)",
           (not d.allowed) and calls == [])
     config.GUARDIAN = _saved
+    config.GUARDIAN_INTERACTIVE = _saved_gi
 
     passed, total = sum(_results), len(_results)
     print(f"\nVERDICT: {passed}/{total} {'[OK]' if passed == total else '[FAIL]'}")

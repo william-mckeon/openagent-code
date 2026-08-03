@@ -453,6 +453,13 @@ SANDBOX = _as_bool(os.environ.get("CODE_SANDBOX", "false"))
 # unattended run can proceed on a REVIEWED ask-tier action instead of just blocking). Fail-closed - any
 # error / ambiguous verdict DENIES. Off by default -> the human-prompt / headless-block path is unchanged.
 GUARDIAN = _as_bool(os.environ.get("CODE_GUARDIAN", "false"))
+# Interactive guardian (Phase 57 / specs/0057). By default the guardian only adjudicates HEADLESS (a human
+# present gets the [y/N] prompt). When on, it ALSO adjudicates in the REPL: it AUTO-APPROVES the clearly-safe,
+# on-request ask-tier calls (a curl health-check, node -c, a build step) so the agent flows without pestering
+# you, and anything it will NOT approve falls through to the human [y/N] (you stay the backstop). The
+# deny-rules, workspace fence, mass-destruction cap, and self-kill guard still apply on top. Off by default ->
+# the guardian is headless-only, byte-identical to specs/0019.
+GUARDIAN_INTERACTIVE = _as_bool(os.environ.get("CODE_GUARDIAN_INTERACTIVE", "false"))
 _gd_effort = os.environ.get("CODE_GUARDIAN_EFFORT", "").strip().lower()
 GUARDIAN_EFFORT = _gd_effort if _gd_effort in _EFFORTS else ""
 # Mass-destruction backstop (ride-5): a HARD per-turn ceiling on DESTRUCTIVE ops (delete / move /

@@ -484,7 +484,12 @@ class Permissions:
         before. OFF / interactive -> None, so every ask/prompt site is byte-identical to today. Identical
         (tool, target) calls are reviewed once per turn (a cache on ctx), so a repeated command isn't
         re-litigated. Governs the ASK tier ONLY."""
-        if not (config.GUARDIAN and getattr(ctx, "depth", 0) == 0 and not getattr(ctx, "interactive", False)):
+        # specs/0057: with CODE_GUARDIAN_INTERACTIVE the guardian ALSO adjudicates when a human is present
+        # (the REPL) — it auto-approves the clearly-safe, on-request calls; _ask_approver defers anything it
+        # won't approve to the human [y/N]. Default off -> headless-only, byte-identical to specs/0019.
+        interactive = getattr(ctx, "interactive", False)
+        if not (config.GUARDIAN and getattr(ctx, "depth", 0) == 0
+                and (not interactive or config.GUARDIAN_INTERACTIVE)):
             return None
         from . import guardian   # lazy: only needed when the flag is on; keeps permissions low-level
         shown = t.rel if getattr(t, "kind", None) == "path" else (t.raw or tool)
@@ -529,6 +534,11 @@ class Permissions:
         else:
             gv = self._guardian(tool, t, reason, ctx)   # reads len(ctx._destructive_targets) for breadth
             if gv is None:
+                return None
+            # specs/0057: an INTERACTIVE guardian only AUTO-APPROVES; anything it will not clear falls through
+            # to the human [y/N] (return None) rather than a hard deny — the human stays the backstop. Headless
+            # keeps the fail-closed deny (an unattended run must not proceed on an unreviewed action).
+            if not gv.approved and getattr(ctx, "interactive", False):
                 return None
             verdict = (gv.approved, f"guardian {'approved' if gv.approved else 'denied'}: {gv.reason}")
         if destructive and verdict[0]:                  # a destructive op was APPROVED -> it counts toward the cap
