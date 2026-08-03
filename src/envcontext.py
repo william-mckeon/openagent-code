@@ -67,7 +67,9 @@ def build_env_context(cwd, granted_dirs=None, include_git=False, git_status_fn=N
             "`mkdir -p`); discard output with `$null` / `Out-Null` (not `/dev/null`); `curl` / `wget` are "
             "Invoke-WebRequest aliases — call `curl.exe` for real curl; a tree view is `Get-ChildItem "
             "-Recurse` (`tree` takes NO `-Depth` flag); `$?` is a BOOLEAN (True/False), NOT an exit code — use "
-            "`$LASTEXITCODE` for a native command's numeric exit; stop a background process by its PID "
+            "`$LASTEXITCODE` for a native command's numeric exit; NEVER run a bare `echo` / `Write-Output` with "
+            "no argument (it PROMPTS for input and HANGS) — write `Write-Output ''` for a blank line or omit it; "
+            "stop a background process by its PID "
             "(`Stop-Process -Id N`), NEVER by name — `Stop-Process -Name python` / `taskkill /IM python*` "
             "kills THIS agent.")
     dirs = [d for d in (granted_dirs or []) if d]

@@ -346,6 +346,13 @@ SITUATIONAL_GIT = _as_bool(os.environ.get("CODE_SITUATIONAL_GIT", "false"))
 # Centpilot run failed `mkdir -p`, `curl -o /dev/null`, and `a && b` before recovering. OFF by default ->
 # the env block is byte-identical; needs CODE_SITUATIONAL_CONTEXT on to have any effect.
 SHELL_HINTS = _as_bool(os.environ.get("CODE_SHELL_HINTS", "false"))
+# Non-interactive shell (Phase 55 / specs/0055). run_command runs one-shot commands, but a command that
+# READS STDIN blocks forever waiting for input the agent never sends — a live run HUNG the REPL when the model
+# emitted a bare PowerShell `echo` (Write-Output with no argument prompts for its InputObject and reads the
+# console). When on, PowerShell gets -NonInteractive and the child's stdin is DEVNULL, so any stdin read fails
+# fast instead of hanging. OFF -> the prior argv + inherited stdin (byte-identical for every command that does
+# not read stdin, which is all of them in practice).
+SHELL_NONINTERACTIVE = _as_bool(os.environ.get("CODE_SHELL_NONINTERACTIVE", "false"))
 
 # Working-directory prompt (Phase 30 / specs/0030). Pin the ABSOLUTE workspace path in the DURABLE system
 # prompt (never compacted), and teach that a granted reference dir is a READ SOURCE while a copy/create

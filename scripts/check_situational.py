@@ -129,7 +129,8 @@ def main():
               "shell rules (PowerShell 5.1)" in on and "New-Item" in on and "&&" in on and "/dev/null" in on
               and "Get-ChildItem" in on and "Select-String" in on
               and "Stop-Process -Name python" in on   # self-kill warning (specs/0050 pairing)
-              and "Select-Object -First" in on and "$LASTEXITCODE" in on)  # specs/0051 gap rules (head/tail, $?)
+              and "Select-Object -First" in on and "$LASTEXITCODE" in on  # specs/0051 gap rules (head/tail, $?)
+              and "PROMPTS for input" in on)  # specs/0055 bare-echo hang hint
     else:
         check("shell_hints ON + non-Windows shell: no PS rules (PowerShell-specific)", "shell rules" not in on)
     _s = os.environ.pop("CODE_SHELL_HINTS", None)

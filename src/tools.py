@@ -333,6 +333,21 @@ def edit_file(args, ctx):
     return ToolResult(True, f"Edited {path} ({count} replacement(s))")
 
 
+def _shell_invocation(cmd):
+    """The (argv, stdin) for run_command's subprocess. specs/0055: when CODE_SHELL_NONINTERACTIVE is on,
+    PowerShell gets -NonInteractive and the child's stdin is DEVNULL, so a command that reads stdin (a bare
+    `echo` / Write-Output, Read-Host, a foreground prompt) fails fast instead of HANGING the REPL waiting for
+    input the agent never sends. OFF -> the prior argv + inherited stdin (None), byte-identical for any command
+    that does not read stdin."""
+    ni = config.SHELL_NONINTERACTIVE
+    if os.name == "nt":
+        argv = (["powershell", "-NoProfile", "-NonInteractive", "-Command", cmd] if ni
+                else ["powershell", "-NoProfile", "-Command", cmd])
+    else:
+        argv = ["bash", "-lc", cmd]
+    return argv, (subprocess.DEVNULL if ni else None)
+
+
 def run_command(args, ctx):
     cmd = args["command"]
     # FS confinement (Phase 17 / specs/0017): extend the workspace fence to run_command's WRITES. A
@@ -346,14 +361,13 @@ def run_command(args, ctx):
             return ToolResult(False, "sandbox: this command writes outside your workspace "
                               f"({', '.join(esc)}) - refused. Write only inside the workspace "
                               "(or a folder granted with --add-dir).")
-    shell_cmd = (["powershell", "-NoProfile", "-Command", cmd] if os.name == "nt"
-                 else ["bash", "-lc", cmd])
+    shell_cmd, shell_stdin = _shell_invocation(cmd)
     try:
         # encoding='utf-8', errors='replace': the default text=True decodes command output with the
         # PLATFORM encoding (cp1252 on Windows), which RAISES on any byte undefined there and nulls
         # stdout while returncode stays 0 - silently dropping real output into the trajectory.
         p = subprocess.run(shell_cmd, cwd=ctx.cwd, capture_output=True,
-                           encoding="utf-8", errors="replace", timeout=120)
+                           encoding="utf-8", errors="replace", timeout=120, stdin=shell_stdin)
     except subprocess.TimeoutExpired:
         return ToolResult(False, "Command timed out after 120s")
     out = (p.stdout or "")
