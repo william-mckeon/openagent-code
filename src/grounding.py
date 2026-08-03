@@ -659,6 +659,12 @@ def problems(final_text, ctx):
     # This skips ONLY the path checks — the success-claim / absence / web nets still run. Short-circuits on
     # the flag, so OFF -> is_greenfield never runs -> byte-identical.
     greenfield = config.GROUND_SKIP_GREENFIELD and is_greenfield(getattr(ctx, "cwd", "") or "", config.GROUND_GREENFIELD_MAX)
+    # specs/0058: a STRICTLY-EMPTY workspace. An absence claim ("the workspace is empty", "no X here") is
+    # TRIVIALLY true when nothing exists, so spawning the Tier-2 verifier to check it is pure waste — it drove
+    # a re-listing loop (the empty-Centpilot run challenged "the workspace is empty" and re-ran Get-ChildItem
+    # turn after turn). Only evaluated when already greenfield (cheap: the strict walk bails on the first
+    # file); inherits the GROUND_SKIP_GREENFIELD gate, so OFF -> False -> byte-identical.
+    empty_ws = greenfield and is_greenfield(getattr(ctx, "cwd", "") or "", 0)
     # Deterministic absence contradiction (model-free, authoritative for the live workspace) runs FIRST
     # and ALONGSIDE the semantic verifier — the verifier can mis-read a tree and wrongly agree a path is
     # empty, so os.path.exists is the backstop (the src/auth/cmd main.go case).
@@ -695,8 +701,10 @@ def problems(final_text, ctx):
         if config.VERIFY_GROUNDING_PATHS and not greenfield:
             det += _present_path_problems(final_text, ctx, noext=True)
         # Spawn the verifier when the answer cites a path, makes an ABSENCE claim (which names its target
-        # only in prose, so it cites no path), OR cites a fetched web source to check against.
-        if paths or absence_claim(final_text) or web_srcs:
+        # only in prose, so it cites no path), OR cites a fetched web source to check against. specs/0058: on
+        # a strictly-EMPTY workspace an absence claim is trivially true, so it does NOT trigger a spawn (the
+        # deterministic absence_contradictions above still guards a populated dir).
+        if paths or (absence_claim(final_text) and not empty_ws) or web_srcs:
             return det + semantic_problems(final_text, paths, ctx.spawn, config.GROUNDING_EFFORT, fetched=web_srcs)
         return det
     # Semantic OFF (or no spawn): the deterministic present-path existence check is the only path check.

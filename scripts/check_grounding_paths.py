@@ -108,6 +108,39 @@ def main():
     check("config: CODE_VERIFY_GROUNDING_PATHS exists as a bool flag (hermetic - not asserting the .env value)",
           hasattr(config, "VERIFY_GROUNDING_PATHS") and isinstance(_saved["VERIFY_GROUNDING_PATHS"], bool))
 
+    # =====================================================================================================
+    # 5. specs/0058: a strictly-EMPTY workspace does not spawn the verifier for an absence claim (the
+    #    empty-Centpilot re-listing loop). A non-empty scaffold still verifies; flag-off is byte-identical.
+    # =====================================================================================================
+    config.VERIFY_GROUNDING_SEMANTIC = True
+    config.VERIFY_GROUNDING_PATHS = False
+    _saved_max = config.GROUND_GREENFIELD_MAX
+    config.GROUND_GREENFIELD_MAX = 15
+    empty = os.path.realpath(tempfile.mkdtemp(prefix="gpaths-empty-"))
+    absence = "The workspace is empty; no everydollar file exists here."
+
+    def _recorder():
+        seen = []
+        def s(task, effort=None, label=None):
+            seen.append(label or task); return "GROUNDED"
+        return seen, s
+
+    config.GROUND_SKIP_GREENFIELD = True
+    seen_e, spawn_e = _recorder()
+    r_empty = grounding.problems(absence, _Ctx(empty, spawn=spawn_e))
+    check("specs/0058: empty workspace + absence claim -> NO verifier spawn, no challenge",
+          seen_e == [] and r_empty == [])
+    seen_s, spawn_s = _recorder()
+    grounding.problems(absence, _Ctx(ws, spawn=spawn_s))   # ws has sub/real.py -> greenfield but NOT empty
+    check("specs/0058: a non-empty scaffold STILL spawns to verify an absence claim (only strictly-empty skips)",
+          len(seen_s) == 1)
+    config.GROUND_SKIP_GREENFIELD = False   # flag off -> empty_ws False -> spawns as before (byte-identical)
+    seen_o, spawn_o = _recorder()
+    grounding.problems(absence, _Ctx(empty, spawn=spawn_o))
+    check("specs/0058 OFF: flag off -> an empty-workspace absence claim still spawns (byte-identical)",
+          len(seen_o) == 1)
+    config.GROUND_GREENFIELD_MAX = _saved_max
+
     for k, v in _saved.items():
         setattr(config, k, v)
 

@@ -15,8 +15,12 @@ below was a `.env` change, never a code change:
 - **thinkingmachines/Inkling on Together** — `https://api.together.xyz/v1`, OpenAI-compatible.
 - **gpt-oss-120b on AWS Bedrock / self-hosted vLLM (RunPod)** — the original baseline; last measured eval 13/13.
 
-## Features (specs/0022–0057)
+## Features (specs/0022–0058)
 
+- `0058` **greenfield absence** — on a STRICTLY-empty workspace, an absence claim ("the workspace is empty",
+  "no X here") no longer spawns the Tier-2 verifier (it's trivially true), killing the re-listing loop where
+  the empty-Centpilot run re-ran `Get-ChildItem` turn after turn. A non-empty scaffold still verifies. Rides
+  `CODE_GROUND_SKIP_GREENFIELD`; no new flag.
 - `0057` **interactive guardian** — `CODE_GUARDIAN_INTERACTIVE`: the AI guardian adjudicates ask-tier commands
   in the REPL too — auto-approves the clearly-safe, on-request ones (a curl health-check, node -c, a build
   step), and defers anything it won't clear to the human `[y/N]`. Deny-rules / fence / mass-destruction cap /
