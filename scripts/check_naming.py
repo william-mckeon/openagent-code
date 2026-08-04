@@ -29,9 +29,11 @@ def prompt():
 
 
 def main():
-    saved = {k: getattr(config, k) for k in ("AGENT_NAME", "AGENT_PERSONA")}
+    saved = {k: getattr(config, k) for k in ("AGENT_NAME", "AGENT_PERSONA", "AGENT_IDENTITY_BLOCK")}
 
     # ---- label + persona in the system prompt ---------------------------------------------------------
+    config.AGENT_IDENTITY_BLOCK = False   # specs/0063: isolate from the live .env — its injected block would
+    #                                       break the "prompt starts with the UNTOUCHED BASE_PROMPT" assertion
     config.AGENT_NAME, config.AGENT_PERSONA = "OAC", ""
     p = prompt()
     check("default name renders 'You are OAC,' (and not the openagent-code literal)",

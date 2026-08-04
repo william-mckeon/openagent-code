@@ -157,6 +157,18 @@ AGENT_NAME = (os.environ.get("CODE_AGENT_NAME", "OAC").strip() or "OAC")
 PERSONA_MAX = 280
 AGENT_PERSONA = os.environ.get("CODE_AGENT_PERSONA", "").replace("\n", " ").replace("\r", " ").strip()[:PERSONA_MAX]
 
+# Agent identity block (Phase 63 / specs/0063). Inkling ships with a strong trained-in identity contract: a
+# <model_information> block + a "when asked about your identity, answer consistently with the above" directive
+# that the model treats as authoritative — which is why a soft "You are Arcus" line loses to "I am Inkling,
+# created by Thinking Machines Lab." When CODE_AGENT_IDENTITY_BLOCK is on, we speak the SAME format: a
+# structured <model_information> block for THIS agent is injected after the opening identity line, so the
+# model reports Arcus. The optional fields fill the block; an empty field is omitted. OFF (default) -> only
+# the specs/0036 name substitution, byte-identical.
+AGENT_IDENTITY_BLOCK = _as_bool(os.environ.get("CODE_AGENT_IDENTITY_BLOCK", "false"))
+AGENT_OVERVIEW = os.environ.get("CODE_AGENT_OVERVIEW", "").replace("\n", " ").replace("\r", " ").strip()[:240]
+AGENT_CREATOR = os.environ.get("CODE_AGENT_CREATOR", "").replace("\n", " ").replace("\r", " ").strip()[:120]
+AGENT_CONTEXT = os.environ.get("CODE_AGENT_CONTEXT", "").replace("\n", " ").replace("\r", " ").strip()[:60]
+
 
 def agent_name() -> str:
     """The display / launch name (specs/0036). The single normalization choke point; a blank name is the
@@ -167,6 +179,21 @@ def agent_name() -> str:
 def agent_persona() -> str:
     """The optional persona line, re-sanitized on READ (defense in depth): single-line, capped, may be ''."""
     return (AGENT_PERSONA or "").replace("\n", " ").replace("\r", " ").strip()[:PERSONA_MAX]
+
+
+def agent_overview() -> str:
+    """The <model_information> Overview line (specs/0063), re-sanitized single-line/capped; may be ''."""
+    return (AGENT_OVERVIEW or "").replace("\n", " ").replace("\r", " ").strip()[:240]
+
+
+def agent_creator() -> str:
+    """The <model_information> Creator line (specs/0063), re-sanitized; may be ''."""
+    return (AGENT_CREATOR or "").replace("\n", " ").replace("\r", " ").strip()[:120]
+
+
+def agent_context() -> str:
+    """The <model_information> Context-window line (specs/0063), re-sanitized; may be ''."""
+    return (AGENT_CONTEXT or "").replace("\n", " ").replace("\r", " ").strip()[:60]
 
 # CODE_TOOL_MODE — how the model invokes tools:
 #   "native" — OpenAI tool-calling. Default. Requires the serving stack to parse

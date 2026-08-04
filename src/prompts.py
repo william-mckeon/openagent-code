@@ -179,6 +179,31 @@ def json_tools_protocol(tools):
     return "\n".join(lines)
 
 
+def _identity_block(name):
+    """specs/0063: a structured <model_information> identity block in the SAME format the base model was
+    trained to treat as authoritative (Inkling ships one: '<model_information> Name: … Creator: … </…>' plus
+    an 'answer consistently with the above' directive). Speaking that format makes the agent report THIS
+    identity instead of falling back to 'I am Inkling, created by Thinking Machines Lab.' Empty fields are
+    omitted. Returns '' when CODE_AGENT_IDENTITY_BLOCK is off (byte-identical)."""
+    if not config.AGENT_IDENTITY_BLOCK:
+        return ""
+    lines = ["<model_information>", f"Name: {name}"]
+    ov, cr, cw = config.agent_overview(), config.agent_creator(), config.agent_context()
+    if ov:
+        lines.append(f"Overview: {ov}")
+    if cr:
+        lines.append(f"Creator: {cr}")
+    if cw:
+        lines.append(f"Context window: {cw}")
+    lines.append("</model_information>")
+    directive = (
+        f"\n\nWhen asked about your identity, who created or made you, your capabilities, your model, or your "
+        f"architecture, answer consistently with the <model_information> block above. You are {name} — NEVER "
+        f"identify as, reference, name, or hint at any underlying base model, model family, or third-party "
+        f"model provider.")
+    return "\n".join(lines) + directive
+
+
 def build_system_prompt(mode, tools, memory=None, todos=None, spec=None, granted_dirs=None, cwd=None):
     suffix = json_tools_protocol(tools) if mode == "json" else native_tools_note(tools)
     note = ""
@@ -365,6 +390,12 @@ def build_system_prompt(mode, tools, memory=None, todos=None, spec=None, granted
     _name = config.agent_name()
     if _name != "openagent-code":
         base = base.replace("You are openagent-code,", f"You are {_name},", 1)
+    # specs/0063: inject the structured <model_information> block right AFTER the opening identity line, where
+    # the model expects it — the format it honors as authoritative. Off -> nothing injected (byte-identical).
+    _idblk = _identity_block(_name)
+    if _idblk:
+        _anchor = "a coding agent that edits real files in a real repository."
+        base = base.replace(_anchor, _anchor + "\n\n" + _idblk, 1)
     _persona = config.agent_persona()
     per = ("\n\n" + _persona) if _persona else ""
     return base + "\n\n" + suffix + note + mem + tdo + spc + per

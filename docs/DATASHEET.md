@@ -178,6 +178,7 @@ Full reference in the README and `.env.example`. Contract-relevant values:
 | `CODE_MODEL` | `openai/thinkingmachines/Inkling-Small:peft:262144` | Yes — selects model + provider (Tinker default; also vLLM / Bedrock / Together; swap is `.env`-only) |
 | `CODE_API_BASE` | Tinker OAI endpoint | Yes — the model endpoint (any OpenAI-compatible; empty for Bedrock) |
 | `CODE_AGENT_NAME` | `OAC` | Reference (specs/0036) — the agent's display name (identity line + banners); managed by `--set-name` / `--remove-name`. Package/import name unchanged |
+| `CODE_AGENT_IDENTITY_BLOCK` | `false` | Reference (specs/0063) — inject a structured `<model_information>` block (Name/Overview/Creator/Context via `CODE_AGENT_OVERVIEW`/`_CREATOR`/`_CONTEXT`) so the agent reports its configured identity, never the base model/provider; safety-fingerprint: No |
 | `CODE_AGENT_PERSONA` | (empty) | Reference (specs/0036) — optional one-line persona appended to the system prompt; empty appends nothing |
 | `CODE_API_KEY` | `EMPTY` | Yes — endpoint auth |
 | `CODE_TOOL_MODE` | `native` | Yes — `native` (server tool-calls) or `json` (prompt fallback) |

@@ -15,8 +15,13 @@ below was a `.env` change, never a code change:
 - **thinkingmachines/Inkling on Together** — `https://api.together.xyz/v1`, OpenAI-compatible.
 - **gpt-oss-120b on AWS Bedrock / self-hosted vLLM (RunPod)** — the original baseline; last measured eval 13/13.
 
-## Features (specs/0022–0062)
+## Features (specs/0022–0063)
 
+- `0063` **agent identity block** — `CODE_AGENT_IDENTITY_BLOCK`: inject a structured `<model_information>`
+  block (Name / Overview / Creator / Context window) in the SAME format the base model treats as
+  authoritative, plus an "answer consistently with the above; never name an underlying model/provider"
+  directive — so the agent reports Arcus instead of "Inkling, created by Thinking Machines." Fixes the cause
+  (the trained-in identity contract) where the soft line (0036) and hygiene rule (0061) both failed.
 - `0062` **context self-state** — `CODE_CONTEXT_SELF_STATE`: append the agent's current reasoning effort
   (`config.display_effort()`, e.g. `xhigh`) to the per-turn situational block, so when asked "what reasoning
   level are you at" it reports the real value instead of confabulating. Model id deliberately omitted (0061).
