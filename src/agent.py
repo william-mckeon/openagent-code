@@ -30,6 +30,25 @@ from .logsetup import get_logger
 log = get_logger("agent")
 
 
+def _is_checkable_target(ctx, f):
+    """True only if a plan step's `file` names a real, verifiable FILE target: an actual file on disk
+    (an edit that should have landed), a path with a file extension, or a well-known EXTENSIONLESS file
+    (Dockerfile, Makefile, Gemfile, … — grounding's allowlist) — all create targets that should exist.
+    A directory ('Centpilot', 'src/') or a bare placeholder ('N/A', 'TBD', a free-text review label) is
+    NOT a file mutation: it can't match the fixed allowlist, so the completion gate never challenges it,
+    which is what stops a read-only review from trapping the gate into fabricated changes (specs/0065)."""
+    ab = _abs(ctx, f)
+    if os.path.isdir(ab):
+        return False
+    if os.path.isfile(ab):
+        return True
+    if os.path.splitext(os.path.basename(f))[1]:
+        return True
+    # A never-written 'create Dockerfile' / 'create Makefile' should still flag (the gate's honest job);
+    # reuse the fixed allowlist so an invented label ('N/A', 'review conversation') can never match it.
+    return bool(grounding._NOEXT_FILES.search("/" + f.replace(os.sep, "/")))
+
+
 def _unverified_items(ctx):
     """Plan steps marked completed whose named file shows NO real change this run (or a delete
     whose file still exists / an edit whose file is gone). Returns human-readable problems; empty
@@ -52,7 +71,13 @@ def _unverified_items(ctx):
         rel = _rel(ctx, _abs(ctx, it["file"]))
         action = muts_ci.get(os.path.normcase(rel))
         if action is None:
-            problems.append(f"'{it['file']}' - marked done but nothing changed it this session")
+            # Only a REAL file target can be "not backed" — a directory ('Centpilot'), a bare
+            # placeholder ('N/A', 'TBD'), or any non-path label is not a file mutation, and
+            # challenging it can NEVER be satisfied. That is the trap that turned a read-only review
+            # into a fabrication loop (the agent wrote junk files to feed an unsatisfiable gate,
+            # specs/0065). Skip it silently; a real create/edit that didn't land still flags.
+            if _is_checkable_target(ctx, it["file"]):
+                problems.append(f"'{it['file']}' - marked done but nothing changed it this session")
             continue
         exists = os.path.exists(_abs(ctx, it["file"]))
         if action == "delete" and exists:
@@ -65,8 +90,11 @@ def _unverified_items(ctx):
 def _completion_challenge(problems):
     return ("Do NOT report the task done yet - these plan steps are marked complete but the "
             "filesystem doesn't back them up:\n" + "\n".join(f"- {p}" for p in problems)
-            + "\nActually make each change with edit_file / write_file / delete_file (never rm), "
-            "then re-verify. Only mark a step completed AFTER its tool call succeeds.")
+            + "\nIf a step genuinely CHANGES a file, make the change with edit_file / write_file / "
+            "delete_file (never rm), then re-verify, and only mark it completed AFTER the tool call "
+            "succeeds. But if a step was a REVIEW / ANALYSIS / read-only task (nothing to write), it "
+            "should NOT carry a file — drop its file with update_plan instead. NEVER create, edit, or "
+            "delete a file just to satisfy this check.")
 
 
 def _unapplied_manifest(ctx):
@@ -86,6 +114,9 @@ def _unapplied_manifest(ctx):
     out = []
     for it in (m.get("items") or []):
         if _applied(it.get("path")) or _applied(it.get("from")):
+            continue
+        p = it.get("path")
+        if p and os.path.isdir(_abs(ctx, p)):   # a directory target is not a file mutation (specs/0065)
             continue
         out.append(f"{it.get('action', 'change')} {it.get('path', '?')} - approved but never applied this run")
     return out

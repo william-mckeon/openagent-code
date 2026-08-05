@@ -173,6 +173,56 @@ def main():
     check("completion-gate ledger match is case-insensitive on Windows / case-sensitive on POSIX",
           (_unverified_items(c) == []) == expect_backed)
 
+    # 8. read-only integrity (specs/0065): a review / placeholder step must NOT trap the gate, while a real
+    #    create/edit that didn't land STILL flags. The live failure: a read-only review carried plan steps
+    #    named 'N/A' / 'Centpilot' (never in the ledger), so the gate escalated the agent into writing junk
+    #    files to "back up" unsatisfiable steps.
+    from src.agent import _is_checkable_target, _completion_challenge, _unapplied_manifest
+    c = _ctx()
+    c.mutations = {}
+    os.makedirs(os.path.join(c.cwd, "subdir"), exist_ok=True)
+    open(os.path.join(c.cwd, "real.py"), "w").close()
+    check("_is_checkable_target: a directory target is NOT checkable ('Centpilot' / 'subdir')",
+          _is_checkable_target(c, "subdir") is False)
+    check("_is_checkable_target: a bare placeholder ('N/A' / 'TBD') is NOT checkable",
+          _is_checkable_target(c, "N/A") is False and _is_checkable_target(c, "TBD") is False)
+    check("_is_checkable_target: an existing file IS checkable (an edit that should have landed)",
+          _is_checkable_target(c, "real.py") is True)
+    check("_is_checkable_target: a foo.py create target (extension, not yet on disk) IS checkable",
+          _is_checkable_target(c, "brand_new.py") is True)
+    check("_is_checkable_target: a well-known EXTENSIONLESS create (Dockerfile / docker/Makefile) IS checkable",
+          _is_checkable_target(c, "Dockerfile") is True and _is_checkable_target(c, "docker/Makefile") is True)
+    check("_is_checkable_target: an extensionless free-text label is NOT checkable (can't match the allowlist)",
+          _is_checkable_target(c, "review conversation") is False)
+
+    c.plan_items = [{"content": "review conversation", "status": "completed", "file": "N/A"},
+                    {"content": "review folder", "status": "completed", "file": "Centpilot"},
+                    {"content": "review subdir", "status": "completed", "file": "subdir"}]
+    check("read-only review steps ('N/A' / 'Centpilot' / a subdir) do NOT trap the gate (returns [])",
+          _unverified_items(c) == [])
+
+    c.plan_items = [{"content": "create the module", "status": "completed", "file": "brand_new.py"}]
+    check("a create target that never appeared in the ledger STILL flags (the create didn't happen)",
+          _unverified_items(c) != [])
+    c.plan_items = [{"content": "edit the module", "status": "completed", "file": "real.py"}]
+    check("an existing-but-unmutated file step STILL flags (an edit that didn't land)",
+          _unverified_items(c) != [])
+    c.plan_items = [{"content": "add the Dockerfile", "status": "completed", "file": "Dockerfile"}]
+    check("a never-written Dockerfile create STILL flags (extensionless allowlist keeps the honest catch)",
+          _unverified_items(c) != [])
+
+    txt = _completion_challenge(["'N/A' - marked done but nothing changed it this session"])
+    check("the completion challenge offers the read-only exit (drop the file with update_plan; never fabricate)",
+          "update_plan" in txt and "NEVER create, edit, or delete a file" in txt)
+
+    c.manifest = {"approved": True, "items": [{"action": "add", "path": "subdir"}]}
+    c.mutations = {}
+    check("_unapplied_manifest: an approved DIRECTORY target is not reported unapplied (specs/0065)",
+          _unapplied_manifest(c) == [])
+    c.manifest = {"approved": True, "items": [{"action": "add", "path": "still_missing.py"}]}
+    check("_unapplied_manifest: an approved FILE target that never landed IS still reported unapplied",
+          _unapplied_manifest(c) != [])
+
     verify_edits.results = _orig
     config.VERIFY_TOUCHED = False
     config.VERIFY_TOUCHED_LABEL = True

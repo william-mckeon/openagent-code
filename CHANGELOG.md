@@ -15,8 +15,17 @@ below was a `.env` change, never a code change:
 - **thinkingmachines/Inkling on Together** — `https://api.together.xyz/v1`, OpenAI-compatible.
 - **gpt-oss-120b on AWS Bedrock / self-hosted vLLM (RunPod)** — the original baseline; last measured eval 13/13.
 
-## Features (specs/0022–0064)
+## Features (specs/0022–0065)
 
+- `0065` **read-only integrity** — the completion gate (specs/0007) no longer traps a READ-ONLY review into
+  fabricating file changes. A plan step whose `file` is a directory (`Centpilot`) or a bare placeholder
+  (`N/A`, `TBD`) is not a file mutation, so it can never be "not backed" — challenging it was unsatisfiable and
+  escalated the agent into writing junk files to feed the gate. `agent._is_checkable_target` gates the
+  challenge to REAL file targets (an existing file, or a path with an extension), so an edit-that-didn't-land
+  and a create-that-never-happened still flag while a review step does not. The challenge text now offers the
+  read-only exit (drop the file with `update_plan`; never create/edit/delete to satisfy the check), a
+  `CODE_PROMPT_HYGIENE` `(read-only integrity)` clause forbids fabrication-to-satisfy, and the sibling
+  `_unapplied_manifest` gets the same directory guard. No new flag. Caught live via `CODE_SHOW_REASONING`.
 - `0064` **show reasoning** — `CODE_SHOW_REASONING`: tee the model's separate reasoning channel to the console
   live (a dimmed "thinking" stream above the answer) so you can watch it reason. Top-level REPL only (subagents
   / eval stay silent by construction); needs `CODE_STREAM`; display-only (reasoning is already in the trajectory).
