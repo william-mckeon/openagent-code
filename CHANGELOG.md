@@ -15,8 +15,11 @@ below was a `.env` change, never a code change:
 - **thinkingmachines/Inkling on Together** — `https://api.together.xyz/v1`, OpenAI-compatible.
 - **gpt-oss-120b on AWS Bedrock / self-hosted vLLM (RunPod)** — the original baseline; last measured eval 13/13.
 
-## Features (specs/0022–0063)
+## Features (specs/0022–0064)
 
+- `0064` **show reasoning** — `CODE_SHOW_REASONING`: tee the model's separate reasoning channel to the console
+  live (a dimmed "thinking" stream above the answer) so you can watch it reason. Top-level REPL only (subagents
+  / eval stay silent by construction); needs `CODE_STREAM`; display-only (reasoning is already in the trajectory).
 - `0063` **agent identity block** — `CODE_AGENT_IDENTITY_BLOCK`: inject a structured `<model_information>`
   block (Name / Overview / Creator / Context window) in the SAME format the base model treats as
   authoritative, plus an "answer consistently with the above; never name an underlying model/provider"

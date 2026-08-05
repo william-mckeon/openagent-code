@@ -189,6 +189,7 @@ Full reference in the README and `.env.example`. Contract-relevant values:
 | `CODE_WARMUP` | `true` | Reference — probe-until-warm before the first task (no-op for Bedrock; unnecessary on a managed endpoint like Tinker) |
 | `CODE_WARMUP_BUDGET` | `600` | Reference — max seconds to wait for a cold worker to warm |
 | `CODE_STREAM` | `false` | Reference — stream the primary model turn (specs/0043); off = byte-identical single call; safety-fingerprint: No |
+| `CODE_SHOW_REASONING` | `false` | Reference — tee the model's reasoning channel to the console live (specs/0064): a dimmed "thinking" stream in the top-level REPL; needs `CODE_STREAM`; subagents/eval silent; display-only; safety-fingerprint: No |
 | `CODE_SHELL_HINTS` | `false` | Reference — PowerShell 5.1 command rules in the env block on Windows (specs/0046); needs `CODE_SITUATIONAL_CONTEXT`; safety-fingerprint: No |
 | `CODE_GROUND_SKIP_GREENFIELD` / `CODE_GROUND_GREENFIELD_MAX` | `false` / `0` | Reference — skip path-grounding on an empty (specs/0042) or small early-stage (specs/0047) workspace; safety-fingerprint: No |
 | `CODE_REASONING_PARAM` / `_VALUE` / `_TOPLEVEL` | `reasoning_effort` / (empty) / `false` | Reference — reasoning pass-through (specs/0044); VALUE empty = off; safety-fingerprint: No |

@@ -148,7 +148,8 @@ def _one_shot(task, perms):
     log.info("task: %s", task)
     _warn_if_empty_workspace(workspace)
     agent = build_agent(traj, memory=_load_memory(workspace), todos=_load_todos(workspace),
-                        spec=_load_spec(workspace), granted_dirs=perms.extra_roots, cwd=workspace)
+                        spec=_load_spec(workspace), granted_dirs=perms.extra_roots, cwd=workspace,
+                        show_reasoning=config.SHOW_REASONING)   # specs/0064: top-level tees the thinking live
     _show_todos(workspace)   # surface the backlog at startup (Phase 23; no-op when the flag is off)
     _show_spec(workspace)    # surface the active spec at startup (Phase 25; no-op when the flag is off)
 
@@ -423,7 +424,8 @@ def _repl(perms):
     ctx = make_context(workspace, perms, traj.session_id,
                        depth=0, verbose=config.VERBOSE, interactive=True)
     agent = build_agent(traj, memory=_load_memory(workspace), todos=_load_todos(workspace),
-                        spec=_load_spec(workspace), granted_dirs=perms.extra_roots, cwd=workspace)
+                        spec=_load_spec(workspace), granted_dirs=perms.extra_roots, cwd=workspace,
+                        show_reasoning=config.SHOW_REASONING)   # specs/0064: top-level tees the thinking live
     return _run_session(traj, agent, ctx)
 
 

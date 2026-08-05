@@ -79,6 +79,31 @@ def main():
     check("reassembly: usage from terminal chunk", resp.usage.prompt_tokens == 25 and resp.usage.completion_tokens == 42)
     check("reassembly: finish_reason captured", resp.choices[0].finish_reason == "tool_calls")
 
+    # ---- specs/0064: show_reasoning tees the thinking to stdout (display-only) ----------------------
+    import io
+    import contextlib
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        r_on = model._assemble_stream(iter(_full_stream()), show_reasoning=True)
+    printed = buf.getvalue()
+    check("show_reasoning ON: the reasoning is teed to stdout (with a 'thinking' marker)",
+          "Let me think." in printed and "thinking" in printed)
+    check("show_reasoning ON: the reassembled response is UNCHANGED (display-only)",
+          r_on.choices[0].message.content == "Hello world"
+          and r_on.choices[0].message.reasoning_content == "Let me think.")
+    buf2 = io.StringIO()
+    with contextlib.redirect_stdout(buf2):
+        model._assemble_stream(iter(_full_stream()))   # default show_reasoning=False
+    check("show_reasoning OFF (default): nothing printed (byte-identical)", buf2.getvalue() == "")
+    check("Model plumbs show_reasoning (default False)",
+          model.Model(None, None, show_reasoning=True).show_reasoning is True
+          and model.Model(None, None).show_reasoning is False)
+    _sr = os.environ.pop("CODE_SHOW_REASONING", None)
+    sr_off = config._as_bool(os.environ.get("CODE_SHOW_REASONING", "false")) is False
+    if _sr is not None:
+        os.environ["CODE_SHOW_REASONING"] = _sr
+    check("CODE_SHOW_REASONING defaults False when unset (opt-in)", sr_off)
+
     # ---- dropped-call detection (empty stream) -----------------------------------------------------
     empty = model._assemble_stream(iter([_chunk(_delta()),
                                          _chunk(usage=SimpleNamespace(prompt_tokens=1, completion_tokens=0),

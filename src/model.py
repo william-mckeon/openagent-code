@@ -101,16 +101,21 @@ def _reasoning_kwargs(effort=None):
     return _effort_kwargs(config.REASONING_EFFORT)       # legacy global effort, unchanged
 
 
-def _assemble_stream(chunks):
+def _assemble_stream(chunks, show_reasoning=False):
     """Reassemble a STREAMED litellm response (CODE_STREAM, specs/0043) into an attribute-shaped
     object EQUIVALENT to a non-streaming resp (resp.choices[0].message + resp.usage), so complete()'s
     dropped-call check, trajectory.log_model_call, and the planner reasoning fold consume it UNCHANGED.
     Hand-rolled (not litellm.stream_chunk_builder) so the reassembly is dep-free unit-testable with a
     fake chunk iterator. Folds content and reasoning_content fragments, and tool-call fragments whose
     name/arguments arrive split across chunks (keyed by index); usage rides the terminal include_usage
-    chunk (stays None if the provider omits it — log_model_call tolerates a None usage)."""
+    chunk (stays None if the provider omits it — log_model_call tolerates a None usage).
+
+    specs/0064: when show_reasoning is True, the reasoning_content deltas are ALSO teed to the console live
+    (a dimmed 'thinking:' stream) as they arrive — display-only; the reassembled object is identical, and
+    with show_reasoning False nothing is printed (byte-identical to specs/0043)."""
     content, reasoning, usage, finish = [], [], None, None
     tools = {}   # index -> {"id", "name", "args": [fragments]}
+    shown = False   # specs/0064: have we started teeing the reasoning stream this call?
     for chunk in chunks:
         u = getattr(chunk, "usage", None)
         if u is not None:
@@ -127,7 +132,11 @@ def _assemble_stream(chunks):
         if getattr(delta, "content", None):
             content.append(delta.content)
         if getattr(delta, "reasoning_content", None):
-            reasoning.append(delta.reasoning_content)
+            _frag = delta.reasoning_content
+            reasoning.append(_frag)
+            if show_reasoning:   # specs/0064: tee the thinking to the console live (dimmed), display-only
+                print(("\n\x1b[2m  thinking: " if not shown else "") + _frag, end="", flush=True)
+                shown = True
         for td in (getattr(delta, "tool_calls", None) or []):
             slot = tools.setdefault(getattr(td, "index", 0) or 0, {"id": None, "name": None, "args": []})
             if getattr(td, "id", None):
@@ -138,6 +147,8 @@ def _assemble_stream(chunks):
                     slot["name"] = fn.name
                 if getattr(fn, "arguments", None):
                     slot["args"].append(fn.arguments)
+    if show_reasoning and shown:   # specs/0064: reset the dim style + newline so the answer prints clean below
+        print("\x1b[0m", flush=True)
     tool_calls = None
     if tools:
         tool_calls = [
@@ -169,9 +180,12 @@ def _output_cap(messages):
 
 
 class Model:
-    def __init__(self, trajectory, effort=None):
+    def __init__(self, trajectory, effort=None, show_reasoning=False):
         self.traj = trajectory
         self.effort = effort   # per-instance reasoning-effort override (None = inherit the global)
+        # specs/0064: tee the reasoning stream to the console for THIS model only (set True for the top-level
+        # REPL agent, left False for subagents/eval so their reasoning stays silent). Display-only.
+        self.show_reasoning = show_reasoning
 
     def _params(self):
         # timeout is generous on purpose (config.REQUEST_TIMEOUT, default 600s):
@@ -198,7 +212,7 @@ class Model:
         if not config.STREAM:
             return litellm.completion(**kwargs)
         streamed = {**kwargs, "stream": True, "stream_options": {"include_usage": True}}
-        return _assemble_stream(litellm.completion(**streamed))
+        return _assemble_stream(litellm.completion(**streamed), show_reasoning=self.show_reasoning)
 
     def summarize(self, messages):
         """Compress older turns into a briefing for the ContextManager.

@@ -235,6 +235,7 @@ there, documented in `.env.example`). There is no YAML config file. Key ones:
 | `CODE_WARMUP` | `true` | Probe-until-warm before the first task (no-op for Bedrock) |
 | `CODE_WARMUP_BUDGET` | `120` | Max seconds to wait for a cold worker to warm |
 | `CODE_STREAM` | `false` | Stream the primary model turn (specs/0043); off = byte-identical single call |
+| `CODE_SHOW_REASONING` | `false` | Tee the model's reasoning to the console live (specs/0064): a dimmed "thinking" stream in the top-level REPL; needs `CODE_STREAM`; subagents/eval stay silent |
 | `CODE_SHELL_HINTS` | `false` | Append PowerShell 5.1 command rules to the env block on Windows (specs/0046); needs `CODE_SITUATIONAL_CONTEXT` |
 | `CODE_GROUND_SKIP_GREENFIELD` / `CODE_GROUND_GREENFIELD_MAX` | `false` / `0` | Skip path-grounding on an empty (specs/0042) or small early-stage (specs/0047) workspace; `MAX` = file-count threshold |
 | `CODE_REASONING_PARAM` / `_VALUE` / `_TOPLEVEL` | `reasoning_effort` / (empty) / `false` | Reasoning pass-through (specs/0044); VALUE empty = off (legacy `CODE_REASONING_EFFORT` path) |

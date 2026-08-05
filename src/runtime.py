@@ -15,7 +15,7 @@ from .agent import Agent
 
 
 def build_agent(trajectory, initial_working=None, pinned_plan=None, memory=None, todos=None, spec=None,
-                granted_dirs=None, effort=None, cwd=None):
+                granted_dirs=None, effort=None, cwd=None, show_reasoning=False):
     """Build an agent. For resume, pass `initial_working` (the rehydrated history)
     and `pinned_plan` (restored from the trajectory) — see src/session.py. `memory`
     is the loaded cross-session project memory (Phase 4 #7) and `todos` the loaded
@@ -24,7 +24,7 @@ def build_agent(trajectory, initial_working=None, pinned_plan=None, memory=None,
     advertised in the prompt so the agent uses them. `effort` overrides the model's
     reasoning effort for this whole agent (None = the global CODE_REASONING_EFFORT) —
     used to run a grounding verifier subagent at CODE_GROUNDING_EFFORT independent of the parent."""
-    model = Model(trajectory, effort=effort)
+    model = Model(trajectory, effort=effort, show_reasoning=show_reasoning)   # specs/0064: top-level REPL only
     tools = active_tools()   # base + memory + todos + web (+ MCP) — the dynamic toolset for this run
     planner = make_planner(config.TOOL_MODE, model, openai_schemas(tools))
     system_prompt = build_system_prompt(config.TOOL_MODE, tools, memory=memory, todos=todos, spec=spec,

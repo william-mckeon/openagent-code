@@ -248,6 +248,14 @@ WARMUP_BUDGET = float(os.environ.get("CODE_WARMUP_BUDGET", "600"))
 # log_model_call, the planner reasoning fold) is unchanged. warm_up() and summarize() never stream.
 STREAM = _as_bool(os.environ.get("CODE_STREAM", "false"))
 
+# Show reasoning (Phase 64 / specs/0064). When on, the TOP-LEVEL REPL agent tees the model's separate
+# reasoning channel (reasoning_content) to the console live — a dimmed "thinking" stream above the answer, so
+# you can watch it reason. Needs CODE_STREAM on (the reasoning arrives as stream deltas). Scoped to the
+# top-level agent only (subagents / eval never pass the flag, so their reasoning stays silent) and is
+# display-only — the reasoning is already captured in the trajectory either way. OFF by default -> nothing is
+# printed, byte-identical.
+SHOW_REASONING = _as_bool(os.environ.get("CODE_SHOW_REASONING", "false"))
+
 # -----------------------------------------------------------------------------
 # Agent loop
 #
