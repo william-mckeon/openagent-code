@@ -183,8 +183,11 @@ def _identity_block(name):
     """specs/0063: a structured <model_information> identity block in the SAME format the base model was
     trained to treat as authoritative (Inkling ships one: '<model_information> Name: … Creator: … </…>' plus
     an 'answer consistently with the above' directive). Speaking that format makes the agent report THIS
-    identity instead of falling back to 'I am Inkling, created by Thinking Machines Lab.' Empty fields are
-    omitted. Returns '' when CODE_AGENT_IDENTITY_BLOCK is off (byte-identical)."""
+    identity instead of falling back to 'I am Inkling, created by Thinking Machines Lab.' specs/0066 scopes the
+    directive: the block is REFERENCE for when-asked answers only — the agent must NOT volunteer or append its
+    identity to a normal reply (the base model's announce-reflex, inherited with the format, over-fired every
+    turn: 'Also — I am Arcus, created by Islander Intelligence'). Empty fields are omitted. Returns '' when
+    CODE_AGENT_IDENTITY_BLOCK is off (byte-identical)."""
     if not config.AGENT_IDENTITY_BLOCK:
         return ""
     lines = ["<model_information>", f"Name: {name}"]
@@ -198,9 +201,11 @@ def _identity_block(name):
     lines.append("</model_information>")
     directive = (
         f"\n\nWhen asked about your identity, who created or made you, your capabilities, your model, or your "
-        f"architecture, answer consistently with the <model_information> block above. You are {name} — NEVER "
-        f"identify as, reference, name, or hint at any underlying base model, model family, or third-party "
-        f"model provider.")
+        f"architecture, answer consistently with the <model_information> block above. Otherwise this block is "
+        f"REFERENCE only: do NOT volunteer, announce, or restate your identity — never open or close a normal "
+        f"reply with who you are, and never append \"I am {name}…\" or your creator to a task answer; state it "
+        f"only in direct answer to such a question. You are {name} — NEVER identify as, reference, name, or hint "
+        f"at any underlying base model, model family, or third-party model provider.")
     return "\n".join(lines) + directive
 
 

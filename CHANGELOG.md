@@ -15,8 +15,15 @@ below was a `.env` change, never a code change:
 - **thinkingmachines/Inkling on Together** — `https://api.together.xyz/v1`, OpenAI-compatible.
 - **gpt-oss-120b on AWS Bedrock / self-hosted vLLM (RunPod)** — the original baseline; last measured eval 13/13.
 
-## Features (specs/0022–0065)
+## Features (specs/0022–0066)
 
+- `0066` **identity scope** — the specs/0063 `<model_information>` directive is scoped so the agent states its
+  identity ONLY in direct answer to an identity question and NEVER volunteers it. Fixes a live over-correction
+  where the block's inherited announce-reflex appended "Also — I am Arcus, created by Islander Intelligence" to
+  ordinary replies — the soft `CODE_PROMPT_HYGIENE` "don't announce" rule kept losing to the concrete block, so
+  the constraint (REFERENCE only; never open/close/append the identity) now lives INSIDE the directive itself.
+  Byte-identity anchor unchanged (directive still ends at `…model provider.`). No new flag; a deterministic
+  strip is the reserved follow-up if the prompt fix doesn't hold live.
 - `0065` **read-only integrity** — the completion gate (specs/0007) no longer traps a READ-ONLY review into
   fabricating file changes. A plan step whose `file` is a directory (`Centpilot`) or a bare placeholder
   (`N/A`, `TBD`) is not a file mutation, so it can never be "not backed" — challenging it was unsatisfiable and

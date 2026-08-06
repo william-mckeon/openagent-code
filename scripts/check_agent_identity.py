@@ -50,6 +50,9 @@ def main():
         check("block ON: the 'answer consistently' directive + base-model ban are present",
               "answer consistently with the <model_information> block above" in on
               and "NEVER" in on and "underlying base model" in on)
+        check("block ON (specs/0066): the directive is scoped — REFERENCE only, never volunteer the identity",
+              "REFERENCE only" in on and "do NOT volunteer" in on
+              and "never append" in on and "state it only in direct answer" in on)
         check("block ON: it sits right after the opening identity line",
               "a real repository.\n\n<model_information>" in on)
         check("block ON: it names NO base model / provider (Inkling / Thinking Machines absent)",
