@@ -16,6 +16,7 @@ run() returns a RunResult so the caller can label the outcome HONESTLY: a run th
 made no tool calls, or stalled on the protocol, is not a success.
 """
 import os
+import re
 
 from . import config
 from . import effort
@@ -24,7 +25,7 @@ from . import grounding
 from . import envcontext
 from . import verify_edits
 from .tools import ToolResult, _abs, _rel
-from .prompts import SYNTHESIS_PROMPT, looks_degenerate
+from .prompts import SYNTHESIS_PROMPT, looks_degenerate, strip_volunteered_identity
 from .logsetup import get_logger
 
 log = get_logger("agent")
@@ -140,6 +141,25 @@ def _acceptance_challenge(unmet):
             "the task done once EVERY acceptance item is checked off.")
 
 
+# specs/0067: a pure side-effect-free print — `Write-Output "..."` / `echo '...'` / `Write-Host "..."` — with
+# no pipe, redirect, chain, or subshell. Conservative on purpose: only obvious status-narration busywork trips
+# it, never a command that reads, writes, or feeds another cmdlet.
+_NARRATION_CMD = re.compile(r"^\s*(?:write-output|write-host|echo)\s+['\"]", re.I)
+_NARRATION_META = re.compile(r"[|>&`]|;|\$\(")
+
+
+def _is_narration_command(cmd):
+    c = (cmd or "").strip()
+    return bool(_NARRATION_CMD.match(c)) and not _NARRATION_META.search(c)
+
+
+_NARRATION_NUDGE = (
+    "STOP. You have run several side-effect-free narration commands (Write-Output / echo) that change nothing "
+    "and make no progress. Do NOT call another tool to 'log' or 'narrate' status. If you have your answer, "
+    "write it now as your final reply. If you need a decision or input from me, ASK it directly in your final "
+    "reply (or call ask_user) — a question is a normal final answer, not something to narrate with a command.")
+
+
 def _reset_propose_for_turn(ctx):
     """Per-turn propose-mode reset (specs/0022 + 0048). DEFAULT: re-lock read-only and clear approved_paths,
     so an approval NEVER leaks past the turn it was granted (the cross-turn WRITE-leak guard). With
@@ -216,6 +236,11 @@ class Agent:
                 self._effort_policy.update(getattr(ctx, "request", "") or "", True, terminated == "final")
             except Exception:  # noqa: BLE001 - a learner must never break the run
                 pass
+        # specs/0068: strip a VOLUNTEERED "I am {name}, created by …" from the user-facing answer (the
+        # structural backstop to 0066), unless the user asked about identity this turn. Every run() exit routes
+        # through here, so it covers the synthesis path too. OFF (default) -> the answer is untouched.
+        if config.STRIP_VOLUNTEERED_IDENTITY:
+            final = strip_volunteered_identity(final, getattr(ctx, "request", ""), config.AGENT_NAME)
         return RunResult(final, terminated, tool_calls)
 
     def run(self, task, ctx):
@@ -248,6 +273,7 @@ class Agent:
         ctx.goal = None               # a PREVIOUS task's bar must never be pursued on this one (specs/0020)
         ctx._verified_ok = False      # did a CHECK actually confirm success this turn? (grounding's unverified-success net)
         ctx._runtime_ok = False       # did a HEALTH-CHECK (curl/http/port probe) confirm a service is UP? (specs/0053)
+        ctx._narration_streak = 0     # consecutive pure-narration steps (specs/0067): reset per task, no cross-turn leak
         ctx.effort = None             # a prior turn's effort request must not carry over (specs/0021)
         # Propose mode (specs/0022): a change-list approved for one task must NEVER authorize edits on the
         # next (the same cross-turn-leak class the plan/goal resets above fix — and worse here, because it
@@ -280,6 +306,7 @@ class Agent:
         edit_verify_retries = 0  # auto-verify-gate re-prompts used this run (Phase 14)
         ground_retries = 0     # grounding-gate re-prompts used this run (Phase 10)
         accept_retries = 0     # acceptance-gate re-prompts used this run (Phase 25)
+        narration_retries = 0  # narration-stall nudges used this run (specs/0067)
 
         try:
             for step in range(self.max_steps):
@@ -546,6 +573,31 @@ class Agent:
                              str(result.content)[:200].replace("\n", " "))
 
                     self.cm.add(self.planner.format_result(call, result))
+
+                # Narration-stall guard (specs/0067): if this step's ONLY action was pure Write-Output/echo
+                # narration, count it; N in a row means the model has finished but won't END the turn and is
+                # filling dead air with no-op prints (seen live: a review that just needed to ask "which next?"
+                # narrated it via Write-Output for dozens of steps). Nudge it to finalize (bounded), else end
+                # honestly as 'narration_stall'. OFF by default -> this whole block is skipped (byte-identical).
+                if config.GUARD_NARRATION_STALL:
+                    step_narration = bool(decision.calls) and all(
+                        c["name"] == "run_command" and _is_narration_command(c["args"].get("command", ""))
+                        for c in decision.calls)
+                    ctx._narration_streak = (getattr(ctx, "_narration_streak", 0) + 1) if step_narration else 0
+                    if ctx._narration_streak >= config.NARRATION_STALL_MAX:
+                        if narration_retries < config.NARRATION_STALL_RETRIES:
+                            narration_retries += 1
+                            ctx._narration_streak = 0
+                            if ctx.verbose:
+                                print(f"  [narration] {config.NARRATION_STALL_MAX} no-op narration commands "
+                                      f"— nudging to finalize")
+                            log.info("narration stall (retry %d) — nudging to finalize", narration_retries)
+                            self.cm.add({"role": "user", "content": _NARRATION_NUDGE})
+                            continue
+                        log.info("narration stall persisted — ending turn (outcome=narration_stall)")
+                        return self._finish(
+                            ctx, decision.final or "(Ended: I was repeating no-op narration instead of "
+                            "answering. Tell me how you'd like to proceed.)", "narration_stall", tool_calls)
         except Exception:
             # The live context must never be left ending in dangling tool-results. Roll
             # back this whole turn (capture is untouched) and re-raise so the caller

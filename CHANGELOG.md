@@ -15,8 +15,20 @@ below was a `.env` change, never a code change:
 - **thinkingmachines/Inkling on Together** — `https://api.together.xyz/v1`, OpenAI-compatible.
 - **gpt-oss-120b on AWS Bedrock / self-hosted vLLM (RunPod)** — the original baseline; last measured eval 13/13.
 
-## Features (specs/0022–0066)
+## Features (specs/0022–0068)
 
+- `0068` **volunteered-identity strip** — `CODE_STRIP_VOLUNTEERED_IDENTITY`: the structural backstop to 0066.
+  On a small model the `<model_information>` announce-reflex survives the "only when asked" prompt scoping and
+  bakes "**Identity:** I am Arcus, created by Islander Intelligence" into structured reports. The final answer
+  is post-filtered in `_finish` to remove a volunteered self-intro (and a dangling `**Identity:**` label),
+  UNLESS the user's turn actually asked about identity — then it's untouched. Display-facing; never blanks the
+  answer; keeps a mixed line's real content. Prompt-first, structure-if-it-survives (the 0063 pattern).
+- `0067` **narration-stall guard** — `CODE_GUARD_NARRATION_STALL`: a weak model that finished but won't END the
+  turn fills dead air with side-effect-free `run_command('Write-Output "Status…"')` — dozens in a row, burning
+  steps and poisoning the corpus (seen live on a review that just needed to ask "which next?"). N consecutive
+  narration-only steps trip a bounded nudge to finalize, then an honest new `narration_stall` outcome (added to
+  `GATE_OUTCOMES`, so it's never washed to completed). Conservative detector: a read/pipe/redirect/chain never
+  trips it. Cousin of the greenfield guard (0058) and the text-repetition degeneracy guard.
 - `0066` **identity scope** — the specs/0063 `<model_information>` directive is scoped so the agent states its
   identity ONLY in direct answer to an identity question and NEVER volunteers it. Fixes a live over-correction
   where the block's inherited announce-reflex appended "Also — I am Arcus, created by Islander Intelligence" to

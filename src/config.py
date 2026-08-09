@@ -169,6 +169,13 @@ AGENT_OVERVIEW = os.environ.get("CODE_AGENT_OVERVIEW", "").replace("\n", " ").re
 AGENT_CREATOR = os.environ.get("CODE_AGENT_CREATOR", "").replace("\n", " ").replace("\r", " ").strip()[:120]
 AGENT_CONTEXT = os.environ.get("CODE_AGENT_CONTEXT", "").replace("\n", " ").replace("\r", " ").strip()[:60]
 
+# Volunteered-identity strip (specs/0068). The structural backstop to the 0066 prompt scoping: on a small
+# model the <model_information> block's announce-reflex survives the "only when asked" directive and appends
+# "I am Arcus, created by Islander Intelligence" to ordinary answers. When on, the final user-facing answer is
+# post-filtered to remove a VOLUNTEERED self-intro — UNLESS the user's turn actually asked about identity (then
+# it's left untouched so the agent can answer). Display-facing; OFF (default) -> the answer is untouched.
+STRIP_VOLUNTEERED_IDENTITY = _as_bool(os.environ.get("CODE_STRIP_VOLUNTEERED_IDENTITY", "false"))
+
 
 def agent_name() -> str:
     """The display / launch name (specs/0036). The single normalization choke point; a blank name is the
@@ -370,6 +377,21 @@ try:
     GROUND_GREENFIELD_MAX = max(0, int(os.environ.get("CODE_GROUND_GREENFIELD_MAX", "0")))
 except ValueError:
     GROUND_GREENFIELD_MAX = 0
+
+# Narration-stall guard (specs/0067). A weak model that has finished its work but won't END the turn fills
+# dead air with side-effect-free shell narration — dozens of `run_command('Write-Output "Status..."')` — which
+# burns steps and poisons the corpus (seen live: a review that needed to just ask "which next?" narrated it via
+# Write-Output instead). When on, N consecutive steps whose ONLY action is a pure Write-Output/echo/Write-Host
+# print trip a nudge to finalize (bounded), then an honest 'narration_stall'. OFF (default) -> byte-identical.
+GUARD_NARRATION_STALL = _as_bool(os.environ.get("CODE_GUARD_NARRATION_STALL", "false"))
+try:
+    NARRATION_STALL_MAX = max(2, int(os.environ.get("CODE_NARRATION_STALL_MAX", "3")))
+except ValueError:
+    NARRATION_STALL_MAX = 3
+try:
+    NARRATION_STALL_RETRIES = max(0, int(os.environ.get("CODE_NARRATION_STALL_RETRIES", "1")))
+except ValueError:
+    NARRATION_STALL_RETRIES = 1
 
 # Corpus curation (Phase 11 / specs/0011). An OFFLINE batch pass (train/curate.py) over captured
 # trajectories that flags PHANTOM CITATIONS — a closing answer referencing a file the run never opened.
