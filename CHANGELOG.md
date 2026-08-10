@@ -15,8 +15,15 @@ below was a `.env` change, never a code change:
 - **thinkingmachines/Inkling on Together** — `https://api.together.xyz/v1`, OpenAI-compatible.
 - **gpt-oss-120b on AWS Bedrock / self-hosted vLLM (RunPod)** — the original baseline; last measured eval 13/13.
 
-## Features (specs/0022–0069)
+## Features (specs/0022–0070)
 
+- `0070` **REPL crash honesty** — the CRITICAL bug-hunt finding: a REPL turn that crashed mid-run (a Bedrock
+  503) logged no `turn_outcome`, so a crash-only session was stamped `session_end='completed'` and
+  `train/convert.py`'s legacy branch trained the truncated partial turn as a success (corpus poison). The
+  except branch now stamps the turn `error` (written directly, not via `classify`, which would wash it to
+  `completed`), routing convert to the per-turn path that drops it — one fix closing three findings (the legacy
+  misroute and the `to_rows` counter skew too). Also: `Ctrl-C` mid-turn (a `BaseException`) now ends the turn
+  and returns to the prompt instead of killing the whole REPL with a traceback. No new flag.
 - `0069` **narration detector: quoted text** — closes the hole that let a SECOND live narration loop through
   the 0067 guard: punctuation inside the quoted message (`;`, `|`, `>`, `$?`) misread as shell operators,
   resetting the consecutive streak so the guard never fired. Operators now only count OUTSIDE the quoted

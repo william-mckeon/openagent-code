@@ -238,6 +238,21 @@ def main():
           and outcomes.classify("manifest_unapplied", 3) == "manifest_unapplied"
           and outcomes.classify("no_output", 5) == "no_output")   # tool_calls>0 must NOT wash it to completed
 
+    # =====================================================================================================
+    # 8. specs/0070: a REPL turn that CRASHED (cli.py's except branch now stamps it 'error') is dropped, never
+    #    washed to 'completed'. Before the fix the crash logged NO turn_outcome, so the session had
+    #    tool_calls>0 -> session_end 'completed' and the legacy one-shot branch trained the truncated partial
+    #    turn as a success (corpus poison). The 'error' turn_outcome routes convert to the per-turn path.
+    # =====================================================================================================
+    crashed = [_ss(), _user("t1"), _mc("", calls=["read_file"]), _tout(1, "error"), _end("completed")]
+    check("convert: a crashed REPL turn (turn_outcome='error') is dropped, not trained as 'completed'",
+          convert.is_trainable(crashed) == (False, "no_trainable_turn"))
+    good_then_crash = [_ss(), _user("t1"), _mc("done", calls=["edit_file"]), _tout(1, "completed"),
+                       _user("t2"), _mc("", calls=["read_file"]), _tout(2, "error"), _end("completed")]
+    check("convert: a good turn SURVIVES beside a later crashed turn (per-turn honesty, counter aligned)",
+          convert.is_trainable(good_then_crash)[0]
+          and len(convert.to_rows(good_then_crash, "as_sent")) == 1)
+
     for k, v in _saved.items():
         setattr(config, k, v)
 

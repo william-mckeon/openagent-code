@@ -352,10 +352,27 @@ def _run_session(traj, agent, ctx):
             task_for_model = tasks.fold_result(pending_results, user) if (reg is not None and pending_results) else user
             try:
                 result = agent.run(task_for_model, ctx)
+            except KeyboardInterrupt:
+                # specs/0070: Ctrl-C mid-turn stops THIS turn, not the whole REPL (Ctrl-C is the standard way
+                # to stop the weak model when it loops). KeyboardInterrupt is a BaseException, so the
+                # `except Exception` below never caught it and it unwound the whole session with a traceback.
+                # Stamp the turn honestly (so it's dropped from the corpus, never washed to 'completed') and
+                # return to the you> prompt like a model error does.
+                log.warning("turn %d interrupted (Ctrl-C)", turns)
+                traj.log_turn_outcome(turns, "error", "interrupted", 0)
+                print("\n[interrupted] turn stopped — back at the prompt (/exit to quit).")
+                continue
             except Exception as e:
                 # A model error (500, context overflow, a flaky worker) must NOT kill the
                 # REPL — end the turn with a message and keep the session alive.
                 log.exception("turn %d FAILED: %s: %s", turns, type(e).__name__, e)
+                # specs/0070: stamp the CRASHED turn with an honest 'error' outcome (written directly, NOT via
+                # outcomes.classify — which would wash a tool_calls>0 crash to 'completed'). Without this the
+                # turn logged NO turn_outcome, so a session whose only turn crashed had traj.tool_calls>0 ->
+                # session_end 'completed', and train/convert.py's legacy one-shot branch kept the truncated
+                # partial turn as a trainable success (corpus poison). An 'error' turn_outcome instead routes
+                # convert to the per-turn path, which drops this turn and keeps the segment counter aligned.
+                traj.log_turn_outcome(turns, "error", type(e).__name__, 0)
                 print(f"\n[error] that turn failed: {type(e).__name__}: {str(e)[:200]}\n"
                       "(the session is still alive — try again, rephrase, or /exit)")
                 continue
