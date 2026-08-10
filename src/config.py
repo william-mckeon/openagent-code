@@ -169,13 +169,6 @@ AGENT_OVERVIEW = os.environ.get("CODE_AGENT_OVERVIEW", "").replace("\n", " ").re
 AGENT_CREATOR = os.environ.get("CODE_AGENT_CREATOR", "").replace("\n", " ").replace("\r", " ").strip()[:120]
 AGENT_CONTEXT = os.environ.get("CODE_AGENT_CONTEXT", "").replace("\n", " ").replace("\r", " ").strip()[:60]
 
-# Volunteered-identity strip (specs/0068). The structural backstop to the 0066 prompt scoping: on a small
-# model the <model_information> block's announce-reflex survives the "only when asked" directive and appends
-# "I am Arcus, created by Islander Intelligence" to ordinary answers. When on, the final user-facing answer is
-# post-filtered to remove a VOLUNTEERED self-intro — UNLESS the user's turn actually asked about identity (then
-# it's left untouched so the agent can answer). Display-facing; OFF (default) -> the answer is untouched.
-STRIP_VOLUNTEERED_IDENTITY = _as_bool(os.environ.get("CODE_STRIP_VOLUNTEERED_IDENTITY", "false"))
-
 
 def agent_name() -> str:
     """The display / launch name (specs/0036). The single normalization choke point; a blank name is the

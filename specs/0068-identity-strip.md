@@ -1,7 +1,12 @@
-# 0068 — volunteered-identity strip (the structural backstop)
+# 0068 — volunteered-identity strip (WITHDRAWN)
 
-Status: implemented
-Flag: `CODE_STRIP_VOLUNTEERED_IDENTITY` (default off)
+Status: **withdrawn** — the operator rejected the approach ("i do not agree with a identity scrubber"): the
+agent's identity must never be scrubbed/stripped from its output post-hoc. Identity behavior is fixed at the
+model-format level (the 0063 `<model_information>` block + the 0066 scoping directive) — and the next live run
+confirmed 0066 holds on its own (no volunteered announcements). The code, flag
+(`CODE_STRIP_VOLUNTEERED_IDENTITY`), and harness (`check_identity_strip.py`) were removed; this record stays
+as the point-in-time design + the reason it was withdrawn.
+Flag: `CODE_STRIP_VOLUNTEERED_IDENTITY` (removed)
 
 ## Goal
 

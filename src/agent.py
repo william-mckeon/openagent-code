@@ -25,7 +25,7 @@ from . import grounding
 from . import envcontext
 from . import verify_edits
 from .tools import ToolResult, _abs, _rel
-from .prompts import SYNTHESIS_PROMPT, looks_degenerate, strip_volunteered_identity
+from .prompts import SYNTHESIS_PROMPT, looks_degenerate
 from .logsetup import get_logger
 
 log = get_logger("agent")
@@ -245,11 +245,6 @@ class Agent:
                 self._effort_policy.update(getattr(ctx, "request", "") or "", True, terminated == "final")
             except Exception:  # noqa: BLE001 - a learner must never break the run
                 pass
-        # specs/0068: strip a VOLUNTEERED "I am {name}, created by …" from the user-facing answer (the
-        # structural backstop to 0066), unless the user asked about identity this turn. Every run() exit routes
-        # through here, so it covers the synthesis path too. OFF (default) -> the answer is untouched.
-        if config.STRIP_VOLUNTEERED_IDENTITY:
-            final = strip_volunteered_identity(final, getattr(ctx, "request", ""), config.AGENT_NAME)
         return RunResult(final, terminated, tool_calls)
 
     def run(self, task, ctx):

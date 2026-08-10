@@ -209,40 +209,6 @@ def _identity_block(name):
     return "\n".join(lines) + directive
 
 
-# specs/0068 — an identity QUESTION the user could ask this turn. When the current request matches, the
-# volunteered-identity strip stands down so the agent can actually answer "who are you / what model are you".
-_IDENTITY_Q = re.compile(
-    r"\b(who\s+(?:are|made|created|built|trained|owns?)\s+you|what\s+are\s+you|what'?s?\s+your\s+name|"
-    r"your\s+(?:name|identity|creator|maker)|what\s+(?:model|llm|ai)\b|which\s+model|introduce\s+yourself|"
-    r"who\s+do\s+you\s+work\s+for|tell\s+me\s+about\s+yourself)\b", re.I)
-
-
-def _asks_identity(request):
-    return bool(request and _IDENTITY_Q.search(request))
-
-
-def strip_volunteered_identity(text, request, name):
-    """specs/0068: best-effort removal of a VOLUNTEERED self-intro ("I am {name}, created by …") from a final
-    answer, the structural backstop to 0066's prompt scoping (which the small model overrides in structured
-    reports). Returns text UNCHANGED when: the caller's flag is off (it isn't called), the text is empty, no
-    name is set, the user actually ASKED about identity this turn, or nothing matches. Display-facing only —
-    the trajectory keeps the raw turn (a corpus-level scrub is a separate concern, specs/0059)."""
-    if not text or not name or _asks_identity(request):
-        return text
-    n = re.escape(name)
-    # the volunteered self-intro sentence itself (optionally led by "Also —"), non-greedy to its period, so a
-    # mixed line keeps whatever real content follows ("... I did not read every file."). Trailing whitespace is
-    # SAME-LINE only ([ \t], not \s) so it never swallows the newlines that separate it from the next paragraph.
-    intro = re.compile(
-        rf"(?i)(?:also\s*[—–:-]\s*)?\bI am {n}\b[^.\n]*?\b(?:created|made|built|developed)\s+by\b[^.\n]*?\.[ \t]*")
-    out = intro.sub("", text)
-    # a now-dangling bold "**Identity:**" label on its OWN line (nothing but stars/colon/space) — the char
-    # classes deliberately allow NO free text, so a line like "**Identity:** I did not read..." is NOT removed.
-    out = re.compile(r"(?im)^[ \t]*\*{0,2}\s*identity\b\s*:?\s*\*{0,2}[ \t]*$").sub("", out)
-    out = re.compile(r"\n{3,}").sub("\n\n", out).strip()
-    return out or text   # never blank the whole answer (if it was ONLY an identity line, keep the original)
-
-
 def build_system_prompt(mode, tools, memory=None, todos=None, spec=None, granted_dirs=None, cwd=None):
     suffix = json_tools_protocol(tools) if mode == "json" else native_tools_note(tools)
     note = ""

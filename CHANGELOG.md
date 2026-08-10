@@ -22,12 +22,11 @@ below was a `.env` change, never a code change:
   resetting the consecutive streak so the guard never fired. Operators now only count OUTSIDE the quoted
   spans; `$(` stays fatal anywhere (a PowerShell subexpression executes even inside double quotes);
   unbalanced quotes err conservative (guard doesn't fire). No new flag.
-- `0068` **volunteered-identity strip** — `CODE_STRIP_VOLUNTEERED_IDENTITY`: the structural backstop to 0066.
-  On a small model the `<model_information>` announce-reflex survives the "only when asked" prompt scoping and
-  bakes "**Identity:** I am Arcus, created by Islander Intelligence" into structured reports. The final answer
-  is post-filtered in `_finish` to remove a volunteered self-intro (and a dangling `**Identity:**` label),
-  UNLESS the user's turn actually asked about identity — then it's untouched. Display-facing; never blanks the
-  answer; keeps a mixed line's real content. Prompt-first, structure-if-it-survives (the 0063 pattern).
+- `0068` **volunteered-identity strip — WITHDRAWN** — post-filtered a volunteered "I am Arcus, created by …"
+  out of the final answer. Withdrawn same-week at the operator's direction: identity is never to be
+  scrubbed/stripped from output — it's fixed at the model-format level (0063 block + 0066 scoping, which the
+  next live run confirmed holds on its own). Code, flag, and harness removed; specs/0068 records the design
+  and the withdrawal.
 - `0067` **narration-stall guard** — `CODE_GUARD_NARRATION_STALL`: a weak model that finished but won't END the
   turn fills dead air with side-effect-free `run_command('Write-Output "Status…"')` — dozens in a row, burning
   steps and poisoning the corpus (seen live on a review that just needed to ask "which next?"). N consecutive
