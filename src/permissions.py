@@ -37,17 +37,33 @@ def _shell_name():
     return "powershell" if os.name == "nt" else "bash"
 
 
-# Self-preservation (specs/0050): a kill verb followed by `python` WITHIN one command segment (a ; && || |
-# boundary stops the match, so `Stop-Process -Name foo; python x` is NOT flagged). The agent runs as
-# `python -m src`, so any NAME-based python kill takes the agent down with it; kill-by-PID carries no
-# `python` token and is intentionally not matched.
-_SELF_KILL = re.compile(r"\b(?:stop-process|taskkill|pkill|killall|kill)\b[^|;&\n]*\bpython\b", re.I)
+# Self-preservation (specs/0050, hardened specs/0071): a kill verb AND a `python` token in the SAME statement,
+# in EITHER order. The agent runs as `python -m src`, so any NAME-based python kill takes it down. A STATEMENT
+# separator (; & newline && ||) ends a statement, so `Stop-Process -Name foo; python x` is two statements and
+# NOT flagged — but a PIPE stays within one statement, so the idiomatic PowerShell form
+# `Get-Process python | Stop-Process` IS flagged (the live bypass: the old regex required the verb BEFORE
+# python and stopped matching at `|`). kill-by-PID carries no `python` token and is intentionally not matched.
+_KILL_VERB = re.compile(r"\b(?:stop-process|spps|taskkill|pkill|killall|kill)\b", re.I)
+_PYTHON_TOK = re.compile(r"\bpython[3w]?\b", re.I)   # python / python3 / python3.x / pythonw / python.exe
+_STMT_SEP = re.compile(r"&&|\|\||[;&\n]")            # NOT a single '|': a pipe is one statement
 
 
 def _is_self_kill(command):
-    """True when `command` is a name-based process kill that would terminate the agent's own interpreter
-    (Stop-Process -Name python / taskkill /IM python.exe / pkill python / killall python / kill ... python)."""
-    return bool(_SELF_KILL.search(command or ""))
+    """True when `command` has a name-based process kill that would terminate the agent's own interpreter
+    (Stop-Process -Name python / `Get-Process python | Stop-Process` / taskkill /IM python.exe / pkill python).
+    Checked per STATEMENT so a kill of some OTHER process next to an unrelated `python` call isn't flagged."""
+    return any(_KILL_VERB.search(seg) and _PYTHON_TOK.search(seg)
+               for seg in _STMT_SEP.split(command or ""))
+
+
+def _canonical_tool(tool):
+    """specs/0071: resolve a tool alias (e.g. print_tree -> tree) to its REAL name so the permission gate
+    classifies and fences it correctly. Registry.run resolves the alias AFTER the gate, so without this a
+    read-only alias (`print_tree`) was treated as an unknown tool and got a fence-free read-only ALLOW —
+    letting it enumerate any directory on the host, outside the workspace fence. Lazy import avoids the
+    tools<->permissions module cycle."""
+    from .tools import _TOOL_ALIASES
+    return _TOOL_ALIASES.get(tool, tool)
 
 
 def _flush_stdin():
@@ -160,6 +176,7 @@ class Permissions:
     # -- the gate -------------------------------------------------------------
 
     def decide(self, tool, args, ctx):
+        tool = _canonical_tool(tool)   # specs/0071: alias -> real name BEFORE the fence (print_tree -> tree)
         t = self._target(tool, args, ctx)
         # PreToolUse hooks (Phase 15): an explicit hook DENY hard-blocks ANY tool BEFORE the engine runs,
         # so a policy can be about the EFFECT (a path / content pattern), not the tool NAME — this is what

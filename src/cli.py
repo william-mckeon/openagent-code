@@ -210,7 +210,12 @@ def _closest_mode(name):
 
 def _repl_add_dir(agent, ctx, path):
     """`/add-dir <path>` — grant a reference folder mid-session (0003 host access).
-    Widens the LIVE permission fence and tells the agent it can now read there."""
+    Widens the LIVE permission fence for READS and tells the agent it can now read there.
+
+    specs/0071: routes into read_only_roots, NOT extra_roots. It prints 'granted (read)' and tells the model
+    the folder is READ-only — but extra_roots is write-capable and the acceptEdits/bypass baseline auto-allows
+    write_file there, so the enforced grant was strictly WIDER than the one shown to operator and model (a
+    'read-only' reference repo could be silently edited). read_only_roots widens reads only."""
     path = path.strip().strip('"')
     if not path:
         print("usage: /add-dir <path>"); return
@@ -218,8 +223,8 @@ def _repl_add_dir(agent, ctx, path):
     if not os.path.isdir(ap):
         print(f"  not a directory: {ap}"); return
     real = os.path.realpath(ap)
-    if real not in ctx.permissions.extra_roots:
-        ctx.permissions.extra_roots.append(real)
+    if real not in ctx.permissions.read_only_roots:
+        ctx.permissions.read_only_roots.append(real)
     # Tell the agent (human-grant -> the model needs to KNOW the folder is readable).
     agent.cm.add({"role": "user", "content":
                   f"(system) Read access granted to: {ap}\n"

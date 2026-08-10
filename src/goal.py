@@ -18,6 +18,7 @@ apply), and execution with shell=False + cwd + timeout.
 Pure functions + an injected run_fn (so the harness is testable with no model, no network, no shell).
 Imports only config + logsetup + execpolicy — no cycle with permissions/agent. NEVER raises.
 """
+import re
 import subprocess
 
 from . import config
@@ -37,6 +38,10 @@ _SHELL_ARGV0 = {
 # by another name (`python -c "import os; os.system(...)"`).
 _INLINE_CODE_FLAGS = {"-c", "-e", "--eval", "--exec", "--command", "-Command", "-EncodedCommand"}
 _INTERPRETERS = {"python", "python3", "py", "node", "ruby", "perl", "php", "deno", "bun"}
+# specs/0071: match VERSIONED / alternate interpreter names too (python3.12, pythonw, python.exe, nodejs) — the
+# exact-set test let `['python3.12','-c', <code>]` slip past the inline-code filter, one of the four defense
+# layers for a model-proposed, unattended, re-run-every-iteration goal bar.
+_INTERPRETER_RE = re.compile(r"(?i)^(?:python[0-9.]*w?|py|node(?:js)?|ruby|perl|php|deno|bun)(?:\.exe)?$")
 
 
 def normalize_bar(bar):
@@ -78,7 +83,7 @@ def entry_ok(bar):
     tok = _argv0(argv)
     if tok in _SHELL_ARGV0:
         return False, f"a bar may not be a shell/interpreter ({tok!r}) - give the check's own argv"
-    if tok in _INTERPRETERS and any(f in _INLINE_CODE_FLAGS for f in argv[1:]):
+    if _INTERPRETER_RE.match(tok or "") and any(f in _INLINE_CODE_FLAGS for f in argv[1:]):
         return False, f"a bar may not run inline code ({tok} -c ...) - give the check's own argv"
     try:
         if execpolicy.assess(render(argv)).worst == execpolicy.DANGEROUS:

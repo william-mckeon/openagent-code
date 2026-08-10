@@ -15,8 +15,16 @@ below was a `.env` change, never a code change:
 - **thinkingmachines/Inkling on Together** — `https://api.together.xyz/v1`, OpenAI-compatible.
 - **gpt-oss-120b on AWS Bedrock / self-hosted vLLM (RunPod)** — the original baseline; last measured eval 13/13.
 
-## Features (specs/0022–0070)
+## Features (specs/0022–0071)
 
+- `0071` **security-boundary hardening** — four verified bug-hunt findings, all default-on: (1) `print_tree`
+  escaped the workspace fence because its `→tree` alias resolved AFTER the permission gate — now canonicalized
+  before it (`permissions._canonical_tool`); (2) the self-kill guard was bypassed by the idiomatic
+  `Get-Process python | Stop-Process` — now checked per-statement (kill-verb AND `python` token in either
+  order, pipe stays in-statement), also catching `taskkill /IM python3.exe`; (3) `/add-dir` said "granted
+  (read)" but appended to write-capable `extra_roots` — now routes to `read_only_roots` so writes are denied;
+  (4) the goal entry filter missed `python3.12 -c` / `pythonw` / `nodejs -e` — now matched via a regex. No new
+  flag.
 - `0070` **REPL crash honesty** — the CRITICAL bug-hunt finding: a REPL turn that crashed mid-run (a Bedrock
   503) logged no `turn_outcome`, so a crash-only session was stamped `session_end='completed'` and
   `train/convert.py`'s legacy branch trained the truncated partial turn as a success (corpus poison). The
