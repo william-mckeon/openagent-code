@@ -333,6 +333,11 @@ def edit_file(args, ctx):
     return ToolResult(True, f"Edited {path} ({count} replacement(s))")
 
 
+# specs/0072: set PowerShell's console output encoding to UTF-8 (no BOM) so native-command / Get-Content output
+# is emitted as UTF-8 and matches run_command's utf-8 decode (default cp1252/OEM garbled em-dashes & arrows).
+_PS_UTF8_PRELUDE = "$OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); "
+
+
 def _shell_invocation(cmd):
     """The (argv, stdin) for run_command's subprocess. specs/0055: when CODE_SHELL_NONINTERACTIVE is on,
     PowerShell gets -NonInteractive and the child's stdin is DEVNULL, so a command that reads stdin (a bare
@@ -341,6 +346,11 @@ def _shell_invocation(cmd):
     that does not read stdin."""
     ni = config.SHELL_NONINTERACTIVE
     if os.name == "nt":
+        # specs/0072: force PowerShell's console output to UTF-8 (no BOM) so it MATCHES the utf-8 decode in
+        # run_command. PowerShell 5.1 defaults to the OEM/cp1252 code page, so em-dashes/arrows in tool output
+        # came back as mojibake (`�?"`) and the agent then false-diagnosed "copy corruption". Prepended as a
+        # statement so the actual command runs unchanged.
+        cmd = _PS_UTF8_PRELUDE + cmd
         argv = (["powershell", "-NoProfile", "-NonInteractive", "-Command", cmd] if ni
                 else ["powershell", "-NoProfile", "-Command", cmd])
     else:
@@ -1342,6 +1352,17 @@ class Registry:
         t = self.tools.get(name) or self.tools.get(_TOOL_ALIASES.get(name, ""))
         if not t:
             return ToolResult(False, f"Unknown tool: {name}")
+        # specs/0072: validate the schema's required args BEFORE dispatch. Without this a missing arg made the
+        # tool do args["path"] and raise a raw KeyError, which the except below surfaced as
+        # "Tool error: KeyError: 'path'" — a cryptic Python error the model couldn't self-correct from. Also
+        # defends the non-dict-args case (a JSON-valid string/None argument) by treating it as no args given.
+        a = args if isinstance(args, dict) else {}
+        required = ((t.get("parameters") or {}).get("required")) or []
+        missing = [k for k in required if k not in a]
+        if missing:
+            return ToolResult(False, "missing required argument"
+                              + ("s" if len(missing) > 1 else "") + ": "
+                              + ", ".join(f"'{m}'" for m in missing))
         try:
             return t["fn"](args, ctx)
         except Exception as e:  # never let a tool crash the loop

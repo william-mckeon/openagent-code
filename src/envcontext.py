@@ -77,7 +77,9 @@ def build_env_context(cwd, granted_dirs=None, include_git=False, git_status_fn=N
             "no argument (it PROMPTS for input and HANGS) — write `Write-Output ''` for a blank line or omit it; "
             "stop a background process by its PID "
             "(`Stop-Process -Id N`), NEVER by name — `Stop-Process -Name python` / `taskkill /IM python*` "
-            "kills THIS agent.")
+            "kills THIS agent; do NOT append `2>&1` to a native exe (docker / git / curl / npm) — PowerShell "
+            "wraps its stderr as a NativeCommandError and returns a NON-zero exit even on success, so the call "
+            "is mislabeled failed; let stderr flow (it is captured for you) or use `-ErrorAction`.")
     dirs = [d for d in (granted_dirs or []) if d]
     if dirs:
         shown = dirs[:_MAX_DIRS]

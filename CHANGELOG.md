@@ -15,8 +15,15 @@ below was a `.env` change, never a code change:
 - **thinkingmachines/Inkling on Together** — `https://api.together.xyz/v1`, OpenAI-compatible.
 - **gpt-oss-120b on AWS Bedrock / self-hosted vLLM (RunPod)** — the original baseline; last measured eval 13/13.
 
-## Features (specs/0022–0071)
+## Features (specs/0022–0072)
 
+- `0072` **log-review fixes** — four NOVEL bugs a full `logs/*.log` review surfaced: (N1) a missing required
+  tool arg leaked a raw `KeyError` to the model — `Registry.run` now validates schema `required` args and
+  returns "missing required argument: 'path'"; (N2) a subagent under propose mode was deadlocked (can't mutate,
+  can't approve) with a misleading deny — the propose deny is now depth-aware and tells a child to report up;
+  (N3) Windows `run_command` output mojibake (cp1252 decoded as utf-8) — a UTF-8 prelude forces PowerShell
+  output to match the decode; (N4) `2>&1` on a native exe flips the exit code so success reads `[FAIL]` — a
+  `CODE_SHELL_HINTS` clause warns against it. No new flag.
 - `0071` **security-boundary hardening** — four verified bug-hunt findings, all default-on: (1) `print_tree`
   escaped the workspace fence because its `→tree` alias resolved AFTER the permission gate — now canonicalized
   before it (`permissions._canonical_tool`); (2) the self-kill guard was bypassed by the idiomatic

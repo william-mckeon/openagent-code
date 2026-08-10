@@ -34,8 +34,11 @@ def main():
         config.SHELL_NONINTERACTIVE = False
         argv, stdin = tools_mod._shell_invocation("echo hi")
         if os.name == "nt":
-            check("OFF: prior 'powershell -NoProfile -Command'; stdin inherited (None) - byte-identical",
-                  argv == ["powershell", "-NoProfile", "-Command", "echo hi"] and stdin is None)
+            # specs/0072: an unconditional UTF-8 prelude is now prepended to the -Command string on nt (present
+            # in both OFF and ON). The 0055 contract here is about -NonInteractive/stdin, not the prelude.
+            check("OFF: 'powershell -NoProfile -Command <utf8-prelude>echo hi'; stdin inherited (None)",
+                  argv[:3] == ["powershell", "-NoProfile", "-Command"]
+                  and argv[3] == tools_mod._PS_UTF8_PRELUDE + "echo hi" and stdin is None)
         else:
             check("OFF (non-nt): 'bash -lc'; stdin inherited (None) - byte-identical",
                   argv == ["bash", "-lc", "echo hi"] and stdin is None)
@@ -44,9 +47,9 @@ def main():
         config.SHELL_NONINTERACTIVE = True
         argv, stdin = tools_mod._shell_invocation("echo hi")
         if os.name == "nt":
-            check("ON: powershell gets -NonInteractive; stdin is DEVNULL",
-                  argv == ["powershell", "-NoProfile", "-NonInteractive", "-Command", "echo hi"]
-                  and stdin == subprocess.DEVNULL)
+            check("ON: powershell gets -NonInteractive + the utf8 prelude; stdin is DEVNULL",
+                  argv[:4] == ["powershell", "-NoProfile", "-NonInteractive", "-Command"]
+                  and argv[4] == tools_mod._PS_UTF8_PRELUDE + "echo hi" and stdin == subprocess.DEVNULL)
         else:
             check("ON (non-nt): bash argv unchanged; stdin is DEVNULL",
                   argv == ["bash", "-lc", "echo hi"] and stdin == subprocess.DEVNULL)

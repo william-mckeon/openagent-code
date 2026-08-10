@@ -323,6 +323,17 @@ class Permissions:
         return (self.norm_path(old_path, ctx.cwd) in approved
                 and self.norm_path(new_path, ctx.cwd) in approved)
 
+    def _propose_ro_msg(self, ctx):
+        """specs/0072: propose-mode read-only deny text, DEPTH-AWARE. A subagent (depth>0) inherits propose
+        mode (subagent.py) but propose_changes / manifest approval are top-level-only, so a child can NEITHER
+        mutate NOR approve — the plain 'read-only until the manifest is approved' text is unsatisfiable for it
+        and drove dozens of retry steps (seen live). Tell a child the truth: stop and report up."""
+        if getattr(ctx, "depth", 0) > 0:
+            return ("propose mode is read-only and a SUBAGENT cannot approve a change-list — do NOT retry this "
+                    "edit/command. Finish investigating and RETURN your findings and proposed plan to the "
+                    "top-level agent, which will propose and apply the changes.")
+        return "propose mode is read-only until the manifest is approved"
+
     def _propose_gate(self, tool, t, ctx, D):
         """Propose mode's read-only-until-approved gate, consulted for a MUTATING tool (called after the
         read-only allow). Investigate phase -> DENY (nothing is edited before the user approves). Approved
@@ -346,7 +357,7 @@ class Permissions:
             unlocked = self._propose_autoplan(tool, t, ctx, D)
             if unlocked is not None:
                 return unlocked
-            return D(False, "deny", "propose mode is read-only until the manifest is approved")
+            return D(False, "deny", self._propose_ro_msg(ctx))
         if tool == "apply_patch":
             return D(True, "allow", "propose mode: approved (each patch op is re-gated per file)")
         if t.kind == "path" and self._on_manifest(ctx, t):
@@ -616,7 +627,7 @@ class Permissions:
                 unlocked = self._propose_autoplan("run_command", t, ctx, D)
                 if unlocked is not None:
                     return unlocked
-                return D(False, "deny", "propose mode is read-only until the manifest is approved")
+                return D(False, "deny", self._propose_ro_msg(ctx))
         for seg in candidates:                                   # ask — matches ANY segment
             r = self._match_command_rules(self.ask, seg)
             if r:
@@ -675,7 +686,7 @@ class Permissions:
                 # specs/0052: an autoplan-unlocked session relaxes moves too.
                 graduated = getattr(ctx, "propose_graduated", False)
                 if not (graduated and (config.PROPOSE_EXTEND_AFTER_APPROVAL or config.PROPOSE_AUTOPLAN)):
-                    return D(False, "deny", "propose mode is read-only until the manifest is approved", target=old_path)
+                    return D(False, "deny", self._propose_ro_msg(ctx), target=old_path)
             elif self._on_manifest_move(ctx, old_path, new_path):
                 return D(True, "allow", "move on the approved manifest", target=old_path)
         if self.mode == "plan":
