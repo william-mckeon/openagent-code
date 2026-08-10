@@ -146,11 +146,20 @@ def _acceptance_challenge(unmet):
 # it, never a command that reads, writes, or feeds another cmdlet.
 _NARRATION_CMD = re.compile(r"^\s*(?:write-output|write-host|echo)\s+['\"]", re.I)
 _NARRATION_META = re.compile(r"[|>&`]|;|\$\(")
+_QUOTED_SPAN = re.compile(r"'[^']*'|\"[^\"]*\"")
 
 
 def _is_narration_command(cmd):
     c = (cmd or "").strip()
-    return bool(_NARRATION_CMD.match(c)) and not _NARRATION_META.search(c)
+    if not _NARRATION_CMD.match(c):
+        return False
+    if "$(" in c:   # a $() subexpression EXECUTES even inside double quotes — real work, never narration
+        return False
+    # specs/0069: check for shell operators only OUTSIDE the quoted message text. Punctuation INSIDE the
+    # quotes ("use $LASTEXITCODE not $?; files: a | b > c") is just prose being printed — the live miss:
+    # recap narration containing ';' and '|' in its text read as "real commands", reset the consecutive
+    # streak, and the guard never reached its threshold while the model narrated 30 steps straight.
+    return not _NARRATION_META.search(_QUOTED_SPAN.sub("", c))
 
 
 _NARRATION_NUDGE = (

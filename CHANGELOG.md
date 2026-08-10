@@ -15,8 +15,13 @@ below was a `.env` change, never a code change:
 - **thinkingmachines/Inkling on Together** — `https://api.together.xyz/v1`, OpenAI-compatible.
 - **gpt-oss-120b on AWS Bedrock / self-hosted vLLM (RunPod)** — the original baseline; last measured eval 13/13.
 
-## Features (specs/0022–0068)
+## Features (specs/0022–0069)
 
+- `0069` **narration detector: quoted text** — closes the hole that let a SECOND live narration loop through
+  the 0067 guard: punctuation inside the quoted message (`;`, `|`, `>`, `$?`) misread as shell operators,
+  resetting the consecutive streak so the guard never fired. Operators now only count OUTSIDE the quoted
+  spans; `$(` stays fatal anywhere (a PowerShell subexpression executes even inside double quotes);
+  unbalanced quotes err conservative (guard doesn't fire). No new flag.
 - `0068` **volunteered-identity strip** — `CODE_STRIP_VOLUNTEERED_IDENTITY`: the structural backstop to 0066.
   On a small model the `<model_information>` announce-reflex survives the "only when asked" prompt scoping and
   bakes "**Identity:** I am Arcus, created by Islander Intelligence" into structured reports. The final answer

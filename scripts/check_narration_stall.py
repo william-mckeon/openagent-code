@@ -108,6 +108,17 @@ def main():
           and not _is_narration_command('Write-Output "x" > f.txt')
           and not _is_narration_command('Write-Output (Get-Content f)')
           and not _is_narration_command('Write-Output "a"; Remove-Item b'))
+    # specs/0069: operators INSIDE the quoted message are prose, not shell — the live recap loop used
+    # exactly these shapes (';', '|', '>', '$?' in the text) and the streak kept resetting.
+    check("specs/0069: punctuation INSIDE the quotes is still narration (the live miss)",
+          _is_narration_command('Write-Output "unread: specs/, tests/; internal src/ | done > next"')
+          and _is_narration_command('Write-Output "SHELL: use $LASTEXITCODE not $?, Stop-Process -Id not -Name."')
+          and _is_narration_command('Write-Output "STATUS: files edited: NONE. Identity announced: NO (not asked)."'))
+    check("specs/0069: a REAL operator outside the quotes still disqualifies (pipe/chain/redirect/subexpr)",
+          not _is_narration_command('Write-Output "a | b" | Set-Content f.txt')
+          and not _is_narration_command('Write-Output "done"; Remove-Item b')
+          and not _is_narration_command('Write-Output "x; y" > out.txt')
+          and not _is_narration_command('Write-Output "$(Get-Content secret.txt)"'))
 
     # 2. the outcome is registered as an honest gate outcome (never washed to completed / success)
     check("outcomes: 'narration_stall' is a gate outcome, returned as-is (not washed to completed)",
@@ -118,6 +129,13 @@ def main():
     config.GUARD_NARRATION_STALL = True
     r = _agent(_Traj(), _NarrPlanner(), _Reg()).run("review then wait for my next instruction", _ctx())
     check("flag ON: a pure-narration loop ends as 'narration_stall' (not max_steps, not completed)",
+          r.terminated == "narration_stall")
+
+    # 3b. specs/0069 end-to-end: the punctuation-heavy narration from the LIVE loop also trips the guard
+    r = _agent(_Traj(), _NarrPlanner(
+        'Write-Output "WHERE LEFT OFF: ideas delivered; nothing built | user picks section > next"'),
+        _Reg()).run("tell me where we left off", _ctx())
+    check("flag ON: punctuation-heavy narration (the live-log shape) also ends as 'narration_stall'",
           r.terminated == "narration_stall")
 
     # 4. flag OFF: byte-identical — the guard never runs, the loop just spends its steps -> 'max_steps'
