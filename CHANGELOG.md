@@ -15,8 +15,15 @@ below was a `.env` change, never a code change:
 - **thinkingmachines/Inkling on Together** — `https://api.together.xyz/v1`, OpenAI-compatible.
 - **gpt-oss-120b on AWS Bedrock / self-hosted vLLM (RunPod)** — the original baseline; last measured eval 13/13.
 
-## Features (specs/0022–0072)
+## Features (specs/0022–0073)
 
+- `0073` **gate-honesty** — six corpus-poison / gate-bypass fixes: `ran_check` no longer flips "verified" on
+  `mkdir build`/`git checkout build`/`npm run dev` (matches only real tools / `<tool> <verb>`); `ran_healthcheck`
+  no longer flips "service up" on any URL like `git clone https://…` (only a real probe tool counts); a
+  timed-out verifier now records a FAILED check instead of a PASS; grounding sees Windows `src\main.py`
+  citations (backslash added to `_QUOTED`); the scrubber redacts UNQUOTED `.env`/export secrets
+  (`API_KEY=…`, `password: …`); and the card regex requires the grouped 4-4-4-4 form so a 16-digit epoch/id no
+  longer false-matches. No new flag.
 - `0072` **log-review fixes** — four NOVEL bugs a full `logs/*.log` review surfaced: (N1) a missing required
   tool arg leaked a raw `KeyError` to the model — `Registry.run` now validates schema `required` args and
   returns "missing required argument: 'path'"; (N2) a subagent under propose mode was deadlocked (can't mutate,
