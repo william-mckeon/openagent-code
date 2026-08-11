@@ -522,6 +522,11 @@ _SECRET_GLOBS_DEFAULT = (".env,.env.*,*.pem,*.key,id_rsa,id_rsa.*,id_ed25519,id_
 SECRET_PATH_GLOBS = [g.strip() for g in
                      os.environ.get("CODE_SECRET_PATH_GLOBS", _SECRET_GLOBS_DEFAULT).split(",") if g.strip()]
 
+# Net-fence / SSRF guard (specs/0079), default OFF. When on, web_fetch validates the URL's host (and EVERY
+# redirect hop) and refuses any that resolves to a non-public address (loopback / RFC1918 / 169.254 metadata /
+# CGNAT / ULA), fail-closed on an unresolvable host. OFF -> web_fetch is byte-identical (single follow_redirects call).
+NETFENCE = _as_bool(os.environ.get("CODE_NETFENCE", "false"))
+
 
 def is_secret_path(rel):
     """specs/0078: True if `rel` (a workspace-relative path) names a designated SECRET file — matched on the

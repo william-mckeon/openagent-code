@@ -623,8 +623,27 @@ def web_fetch(args, ctx):
         return ToolResult(False, "web_fetch requires a 'url'.")
     try:
         import httpx
-        r = httpx.get(url, timeout=30, follow_redirects=True,
-                      headers={"User-Agent": "openagent-code"})
+        if config.NETFENCE:
+            # specs/0079: follow redirects MANUALLY, re-checking each hop's host, so a public URL that 302s to
+            # an internal/metadata address (or a DNS rebind) can't slip past the initial check.
+            from . import netfence
+            cur = url
+            for _hop in range(6):
+                err = netfence.check_url(cur)
+                if err:
+                    return ToolResult(False, err)
+                r = httpx.get(cur, timeout=30, follow_redirects=False,
+                              headers={"User-Agent": "openagent-code"})
+                loc = r.headers.get("location")
+                if r.status_code in (301, 302, 303, 307, 308) and loc:
+                    cur = str(httpx.URL(str(r.url)).join(loc))
+                    continue
+                break
+            else:
+                return ToolResult(False, "netfence: too many redirects — blocked")
+        else:
+            r = httpx.get(url, timeout=30, follow_redirects=True,
+                          headers={"User-Agent": "openagent-code"})
     except Exception as e:
         return ToolResult(False, f"fetch error: {type(e).__name__}: {e}")
     if r.status_code != 200:

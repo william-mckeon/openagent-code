@@ -15,8 +15,14 @@ below was a `.env` change, never a code change:
 - **thinkingmachines/Inkling on Together** — `https://api.together.xyz/v1`, OpenAI-compatible.
 - **gpt-oss-120b on AWS Bedrock / self-hosted vLLM (RunPod)** — the original baseline; last measured eval 13/13.
 
-## Features (specs/0022–0078)
+## Features (specs/0022–0079)
 
+- `0079` **net-fence (SSRF guard)** — `CODE_NETFENCE`: `web_fetch` did `httpx.get(follow_redirects=True)` with
+  no host validation, so a URL or a redirect to `169.254.169.254` (cloud-metadata), `localhost`, or an RFC1918
+  host reached the machine's own network. `src/netfence.py` now refuses any host resolving to a non-public IP
+  (loopback/RFC1918/link-local/metadata/CGNAT/ULA), fail-closed on an unresolvable host, re-checked at EVERY
+  redirect hop (redirects followed manually). Byte-identical when off. `run_command` egress stays advisory
+  (Phase 2) — Windows has no netns for a pure-Python kernel boundary.
 - `0078` **secret-exfil hardening** — Phase 1 of adopting Codex's security posture (a Codex-vs-OAC review found
   secrets were freely exfiltrable). Three default-off flags: `CODE_ENV_SCRUB` spawns `run_command` children with
   an allowlisted env (drops `CODE_*` + `*api_key*`/`*secret*`/`*token*` vars) so a child can't
