@@ -15,8 +15,13 @@ below was a `.env` change, never a code change:
 - **thinkingmachines/Inkling on Together** — `https://api.together.xyz/v1`, OpenAI-compatible.
 - **gpt-oss-120b on AWS Bedrock / self-hosted vLLM (RunPod)** — the original baseline; last measured eval 13/13.
 
-## Features (specs/0022–0076)
+## Features (specs/0022–0077)
 
+- `0077` **train / harness-audit** — the final bug-hunt batch: `train/curate.py` `_seen_blob` normalizes
+  backslashes so a Windows-discovered file (`src\main.py`) grounds its `/`-normalized citation instead of being
+  dropped as a phantom; and three harness weaknesses are fixed — `check_scrub`'s opt-in check was a tautology
+  (now asserts the config source default), and two `check_verify_gate` assertions were vacuous (now prove the
+  only-log-the-final-result rule and that the gate actually ran with label off). No new flag.
 - `0076` **fan-out & robustness** — six fixes: the hook timeout is now enforceable on Windows (Popen +
   process-group + `_kill_tree`, so a hung grandchild is actually killed); `_balance_plan`'s review-coverage
   check is exact per folder (a folder whose name was a SUBSTRING of an area label no longer falsely counts as

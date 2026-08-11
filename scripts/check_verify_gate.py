@@ -107,8 +107,9 @@ def main():
     r = _agent(traj).run("fix a.py", _ctx())
     check("verify fails once then passes -> the run does NOT end verify_failed_edits",
           r.terminated != "verify_failed_edits")
-    check("a PASSING check is also logged as a reward (the positive signal)",
-          any(ok is True for _, ok, _ in traj.verifs))
+    check("only the FINAL passing check is logged — the intermediate FAILURE is NOT (specs/0014 corpus rule)",
+          any(ok is True for _, ok, _ in traj.verifs)
+          and all(ok is True for _, ok, _ in traj.verifs))   # no failing record survived the reflection loop
 
     # 3. flag OFF -> the gate is skipped entirely (no verify, no reward), byte-identical to today
     config.VERIFY_TOUCHED = False
@@ -118,14 +119,17 @@ def main():
     check("CODE_VERIFY_TOUCHED off -> gate skipped (no verify_failed_edits, no reward records)",
           r.terminated != "verify_failed_edits" and traj.verifs == [])
 
-    # 4. label OFF -> the gate still runs but records no reward
+    # 4. label OFF -> the gate still RUNS (sets ctx._verified_ok) but records no reward. Asserting BOTH proves
+    #    the gate ran, not that it was skipped — with canned _PASS results an empty verifs list alone is
+    #    observationally identical to a skipped gate (specs/0077: the check was vacuous without _verified_ok).
     config.VERIFY_TOUCHED = True
     config.VERIFY_TOUCHED_LABEL = False
     verify_edits.results = lambda ctx, run_fn=None: _PASS
     traj = _Traj()
-    _agent(traj).run("do a thing", _ctx())
-    check("CODE_VERIFY_TOUCHED_LABEL off -> no reward records emitted",
-          traj.verifs == [])
+    ctx4 = _ctx()
+    _agent(traj).run("do a thing", ctx4)
+    check("CODE_VERIFY_TOUCHED_LABEL off -> the gate RAN (ctx._verified_ok set) but logged NO reward",
+          traj.verifs == [] and getattr(ctx4, "_verified_ok", False) is True)
 
     # 5. cross-turn hijack fix: a stale completed-but-unbacked plan step left over from a PRIOR task is
     #    reset at the start of the next run, so the completion gate can't hijack the new, unrelated turn

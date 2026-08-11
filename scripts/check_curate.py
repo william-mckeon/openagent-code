@@ -61,6 +61,13 @@ def main():
                                                [_tc("glob", ".", result="app/main.py\nconfig/settings.py\n")]))
     check("conservative: a path seen only in a tool listing is not flagged", ok and ung == [])
 
+    # specs/0077: a file discovered via a WINDOWS-style (backslash) listing grounds a '/'-normalized citation
+    ok_bs, _ung_bs = curate.curation_verdict(_session(
+        "The entry point is `src/main.py`.",
+        [_tc("run_command", ".", result="Directory: C:\\ws\\src\n  src\\main.py\n  src\\util.py\n")]))
+    check("normalization: a backslash listing (src\\main.py) grounds a forward-slash citation (not a phantom)",
+          ok_bs)
+
     check("normalization: a ./-prefixed citation matches the read path",
           curate.curation_verdict(_session("Updated `./docker/README.md`.",
                                            [_tc("read_file", "docker/README.md")]))[0])

@@ -92,12 +92,12 @@ def main():
     finally:
         config.SCRUB_TRAJECTORY = _saved
 
-    # 7. flag is opt-in
-    _s = os.environ.pop("CODE_SCRUB_TRAJECTORY", None)
-    default_off = config._as_bool(os.environ.get("CODE_SCRUB_TRAJECTORY", "false")) is False
-    if _s is not None:
-        os.environ["CODE_SCRUB_TRAJECTORY"] = _s
-    check("CODE_SCRUB_TRAJECTORY defaults False when unset (opt-in)", default_off)
+    # 7. flag is opt-in. specs/0077: the old check hardcoded "false" as the os.environ.get default and
+    #    asserted _as_bool of it is False — a TAUTOLOGY that never touched config and would still pass if
+    #    config.py flipped the default to "true". Assert the config SOURCE default literal is "false" instead.
+    _cfg = open(os.path.join(ROOT, "src", "config.py"), encoding="utf-8").read()
+    check("CODE_SCRUB_TRAJECTORY is opt-in — config.py defaults it to 'false' (not a tautology)",
+          'SCRUB_TRAJECTORY = _as_bool(os.environ.get("CODE_SCRUB_TRAJECTORY", "false"))' in _cfg)
 
     passed, total = sum(_results), len(_results)
     print(f"\nVERDICT: {passed}/{total} {'[OK]' if passed == total else '[FAIL]'}")

@@ -60,8 +60,11 @@ def _seen_blob(records):
     """Lowercased concatenation of every tool RESULT (the [:4000]-capped listings from tree/glob/grep
     and read_file). Used ONLY for conservatism: a cited path that appears here — even in a directory
     listing the agent never opened — is treated as grounded, so discovery-without-read is not a phantom."""
+    # specs/0077: normalize backslashes to '/' so a PowerShell listing (`src\main.py`) matches a cited path
+    # (grounding normalizes citations to '/'). Without this, a file DISCOVERED only via a Windows-style tool
+    # listing was falsely flagged a phantom citation and its whole session dropped from the corpus.
     return "\n".join(str(r.get("result") or "") for r in records
-                     if r.get("type") == "tool_call").lower()
+                     if r.get("type") == "tool_call").replace("\\", "/").lower()
 
 
 def curation_verdict(records):
