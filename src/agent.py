@@ -145,7 +145,7 @@ def _acceptance_challenge(unmet):
 # no pipe, redirect, chain, or subshell. Conservative on purpose: only obvious status-narration busywork trips
 # it, never a command that reads, writes, or feeds another cmdlet.
 _NARRATION_CMD = re.compile(r"^\s*(?:write-output|write-host|echo)\s+['\"]", re.I)
-_NARRATION_META = re.compile(r"[|>&`]|;|\$\(")
+_NARRATION_META = re.compile(r"[|>&`\n]|;|\$\(")   # specs/0076: a NEWLINE outside quotes = a 2nd statement
 _QUOTED_SPAN = re.compile(r"'[^']*'|\"[^\"]*\"")
 
 

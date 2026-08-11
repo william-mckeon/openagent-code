@@ -156,6 +156,19 @@ def grep(args, ctx):
     root = _abs(ctx, args.get("path", "."))
     glob_filter = args.get("glob")
     matches = []
+    # specs/0076: if `path` is a FILE, search it DIRECTLY. os.walk on a file yields nothing, so a grep of a
+    # file that DOES contain the pattern returned a false "(no matches)" the model could act on.
+    if os.path.isfile(root):
+        try:
+            with open(root, encoding="utf-8") as f:
+                for i, line in enumerate(f, 1):
+                    if pattern.search(line):
+                        matches.append(f"{_rel(ctx, root)}:{i}:{line.rstrip()}")
+                        if len(matches) >= 200:
+                            break
+        except (UnicodeDecodeError, OSError) as e:
+            return ToolResult(False, f"Could not read {args.get('path')}: {e}")
+        return ToolResult(True, "\n".join(matches) if matches else "(no matches)")
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if not config.skip_walk_dir(d, dirpath)]
         for fn in filenames:

@@ -94,7 +94,10 @@ def _balance_plan(units, root, focus, ext=False):
     else:
         rest += file_units  # 0 or 1 explicit root file — leave as the model asked
     dirs, _ = _areas(root)
-    covered = " ".join(u[0].lower() for u in rest)
+    # specs/0076: cover-check the FIRST path component of each area (a set), NOT a substring of a joined blob —
+    # a folder whose name was a substring of any area label ('app' in 'mapper/') was falsely treated as covered
+    # and never got its own review area.
+    covered = {u[0].lower().split("/", 1)[0].strip() for u in rest}
     for d in dirs:
         if d.lower() not in covered:
             # When reviewing a GRANTED external dir, qualify the folder with its ABSOLUTE path so the child

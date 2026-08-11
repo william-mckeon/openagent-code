@@ -24,6 +24,7 @@ no opinion (proceed). A non-zero exit with valid JSON on stdout is still honored
 usable output fails open.
 """
 import json
+import os
 import subprocess
 from collections import namedtuple
 
@@ -94,17 +95,50 @@ def _entries(event, tool):
     return out
 
 
-def _run(entry, payload):
-    """Run one hook command; return its parsed JSON-object stdout, or None on ANY failure (fail-open)."""
-    cmd = entry.get("command")
+def _kill_tree(proc):
+    """specs/0076: best-effort kill of a hook process AND its children. shell=True spawns an intermediary
+    shell (cmd.exe / sh), so terminating `proc` alone leaves a hung grandchild (the real hook) running — and
+    on Windows subprocess.run's own timeout-kill only reaps the shell, so communicate() then BLOCKS on the
+    grandchild's still-open pipe, defeating the timeout entirely."""
     try:
-        proc = subprocess.run(
-            cmd, shell=True, input=json.dumps(payload), capture_output=True, text=True,
-            timeout=entry.get("timeout") or _TIMEOUT, cwd=payload.get("cwd") or None)
-    except Exception as e:  # noqa: BLE001 - timeout / spawn failure -> fail-open
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)], capture_output=True, timeout=5)
+        else:
+            import signal
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+    except Exception:  # noqa: BLE001 - best-effort; fall back to killing just the direct child
+        try:
+            proc.kill()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _run(entry, payload):
+    """Run one hook command; return its parsed JSON-object stdout, or None on ANY failure (fail-open).
+    specs/0076: Popen + a process-GROUP so a timeout can kill the whole tree (see _kill_tree)."""
+    cmd = entry.get("command")
+    timeout = entry.get("timeout") or _TIMEOUT
+    kw = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt" else {"start_new_session": True}
+    try:
+        proc = subprocess.Popen(cmd, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, text=True, cwd=payload.get("cwd") or None, **kw)
+    except Exception as e:  # noqa: BLE001 - spawn failure -> fail-open
+        log.warning("hook %r failed to spawn (%s) - fail-open", cmd, e)
+        return None
+    try:
+        stdout, _stderr = proc.communicate(input=json.dumps(payload), timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _kill_tree(proc)                     # kill the grandchild too, then reap the shell
+        try:
+            proc.communicate(timeout=5)
+        except Exception:  # noqa: BLE001
+            pass
+        log.warning("hook %r timed out after %ss - fail-open (process tree killed)", cmd, timeout)
+        return None
+    except Exception as e:  # noqa: BLE001 - any other spawn/IO failure -> fail-open
         log.warning("hook %r failed (%s) - fail-open", cmd, e)
         return None
-    out = (proc.stdout or "").strip()
+    out = (stdout or "").strip()
     if not out:
         return None
     try:

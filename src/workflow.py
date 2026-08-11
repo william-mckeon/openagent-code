@@ -192,5 +192,8 @@ def run_workflow(args, ctx):
               + (f", {len(dropped)} phase(s) over cap" if dropped else ""))
 
     final = final_digest(records, synthesis)
+    if dropped:   # specs/0076: surface dropped-over-cap phases in the DIGEST (not just a verbose console line),
+        final += (f"\n\n[NOTE] {len(dropped)} phase(s) beyond the cap of {config.MAX_WORKFLOW_PHASES} were NOT "
+                  f"run: {', '.join(str(p.get('label', '?')) for p in dropped)}.")
     ctx._workflow_digest = final   # per-turn re-run guard (reset per task in agent.run)
     return ToolResult(True, final, {"phases": len(records), "jobs": total_jobs})

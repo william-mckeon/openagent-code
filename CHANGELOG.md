@@ -15,8 +15,15 @@ below was a `.env` change, never a code change:
 - **thinkingmachines/Inkling on Together** — `https://api.together.xyz/v1`, OpenAI-compatible.
 - **gpt-oss-120b on AWS Bedrock / self-hosted vLLM (RunPod)** — the original baseline; last measured eval 13/13.
 
-## Features (specs/0022–0075)
+## Features (specs/0022–0076)
 
+- `0076` **fan-out & robustness** — six fixes: the hook timeout is now enforceable on Windows (Popen +
+  process-group + `_kill_tree`, so a hung grandchild is actually killed); `_balance_plan`'s review-coverage
+  check is exact per folder (a folder whose name was a SUBSTRING of an area label no longer falsely counts as
+  covered); over-cap workflow phases are surfaced in the digest, not dropped silently; subagent
+  error-containment now wraps child construction (`Trajectory`/`build_agent`); `grep` on a FILE path searches
+  the file instead of returning a false `(no matches)`; and the narration guard treats a newline outside quotes
+  as a second statement (a multiline command with real work isn't misread as pure narration). No new flag.
 - `0075` **model-io & import robustness** — seven fixes: ~34 bare `int()`/`float()` config parses that crashed
   EVERY run at import on a typo now fall back via `_env_int`/`_env_float`; a Bedrock throttle
   (`RateLimitError`, "too many tokens") is now retryable instead of fatal; the WEB system-prompt note stopped

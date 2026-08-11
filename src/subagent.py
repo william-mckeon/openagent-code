@@ -84,34 +84,42 @@ def run_subagent(task, parent_ctx, effort=None, label=None, read_only=False):
     # INSIDE an eval — e.g. the Phase-10 grounding verifier — under trajectories/eval/ (the firewall),
     # not in the training corpus (specs/0005).
     traj_dir = getattr(parent_ctx, "traj_dir", None) or config.trajectory_dir()
-    traj = Trajectory(
-        traj_dir, task, config.MODEL, parent_ctx.cwd,
-        parent_session_id=parent_ctx.session_id,
-        depth=child_depth,   # tool_schemas defaults to the active toolset
-        safety=config.safety_fingerprint(perms),   # specs/0033: the child's ACTUAL guards (read-only when parallel)
-    )
-    # Children are ALWAYS non-interactive, even from a REPL: a spawned worker reviewing one
-    # folder must never prompt the human (ask_user degrades to "no human - proceed"). Inheriting
-    # the parent's interactive flag let a child hijack the REPL with "Could you specify the path?"
-    # mid-review. The human talks to the lead; children just do their bounded task and report.
-    child_ctx = make_context(parent_ctx.cwd, perms, traj.session_id,
-                             depth=child_depth, verbose=parent_ctx.verbose,
-                             interactive=False, traj_dir=getattr(parent_ctx, "traj_dir", None))
-    if parent_ctx.verbose:
-        print(f"  [subagent depth={child_depth}] {(label or task[:70])[:80]}")
-
-    # specs/0027: advertise the granted reference dirs (--add-dir / request_dir) to the child's prompt so a
-    # grounding verifier / reviewer can read a cited granted-dir file by ABSOLUTE path (its inherited fence
-    # already permits it). run_subagent was the sole build_agent caller omitting granted_dirs. Gated on
-    # CODE_VERIFY_GROUNDING_PATHS so flag-off is byte-identical (the child's prompt is unchanged).
-    granted = getattr(parent_ctx.permissions, "extra_roots", None) if config.VERIFY_GROUNDING_PATHS else None
-    # specs/0030: a child shares the parent's cwd (the workspace); pin it durably so a spawned worker knows
-    # where "here" is too. Gated in build_system_prompt on CODE_WORKDIR_PROMPT (byte-identical off).
-    agent = build_agent(traj, effort=effort, granted_dirs=granted, cwd=parent_ctx.cwd)
+    traj = None
     try:
+        traj = Trajectory(
+            traj_dir, task, config.MODEL, parent_ctx.cwd,
+            parent_session_id=parent_ctx.session_id,
+            depth=child_depth,   # tool_schemas defaults to the active toolset
+            safety=config.safety_fingerprint(perms),   # specs/0033: the child's ACTUAL guards (read-only when parallel)
+        )
+        # Children are ALWAYS non-interactive, even from a REPL: a spawned worker reviewing one
+        # folder must never prompt the human (ask_user degrades to "no human - proceed"). Inheriting
+        # the parent's interactive flag let a child hijack the REPL with "Could you specify the path?"
+        # mid-review. The human talks to the lead; children just do their bounded task and report.
+        child_ctx = make_context(parent_ctx.cwd, perms, traj.session_id,
+                                 depth=child_depth, verbose=parent_ctx.verbose,
+                                 interactive=False, traj_dir=getattr(parent_ctx, "traj_dir", None))
+        if parent_ctx.verbose:
+            print(f"  [subagent depth={child_depth}] {(label or task[:70])[:80]}")
+
+        # specs/0027: advertise the granted reference dirs (--add-dir / request_dir) to the child's prompt so a
+        # grounding verifier / reviewer can read a cited granted-dir file by ABSOLUTE path (its inherited fence
+        # already permits it). run_subagent was the sole build_agent caller omitting granted_dirs. Gated on
+        # CODE_VERIFY_GROUNDING_PATHS so flag-off is byte-identical (the child's prompt is unchanged).
+        granted = getattr(parent_ctx.permissions, "extra_roots", None) if config.VERIFY_GROUNDING_PATHS else None
+        # specs/0030: a child shares the parent's cwd (the workspace); pin it durably so a spawned worker knows
+        # where "here" is too. Gated in build_system_prompt on CODE_WORKDIR_PROMPT (byte-identical off).
+        agent = build_agent(traj, effort=effort, granted_dirs=granted, cwd=parent_ctx.cwd)
         result = agent.run(task, child_ctx)
         traj.end(_classify(result, traj.tool_calls), result.final, terminated=result.terminated)
         return result.final or ""
     except Exception as e:
-        traj.end("error", None, terminated="exception")
+        # specs/0076: the try now wraps Trajectory()/make_context()/build_agent() too, so a failure in
+        # CHILD CONSTRUCTION becomes the '(subagent error: ...)' string instead of escaping run_subagent
+        # and crashing the whole fan-out. traj may be None if Trajectory() itself raised.
+        if traj is not None:
+            try:
+                traj.end("error", None, terminated="exception")
+            except Exception:  # noqa: BLE001 - closing a trajectory must never mask the real error
+                pass
         return f"(subagent error: {type(e).__name__}: {e})"
