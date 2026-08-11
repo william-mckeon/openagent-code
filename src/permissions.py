@@ -696,8 +696,14 @@ class Permissions:
                         ok = self._prompt("run_command", t)
                         return D(ok, "ask", f"{pin} -> {'allowed' if ok else 'denied'} by user")
                     return D(False, "ask", pin)
+                gate = self._sandbox_gate(t, ctx, D)   # specs/0083 #3: auto-allow only if it'll be sandboxed
+                if gate is not None:
+                    return gate
                 return D(True, "allow", f"allow rule {r!r}", r)
         if self.mode == "bypass":
+            gate = self._sandbox_gate(t, ctx, D)
+            if gate is not None:
+                return gate
             return D(True, "allow", "bypass mode")
         a = self._ask_approver("run_command", t, f"{self.mode} mode", ctx)
         if a is not None:
@@ -706,6 +712,32 @@ class Permissions:
             ok = self._prompt("run_command", t)
             return D(ok, "ask", f"{self.mode} mode -> {'allowed' if ok else 'denied'} by user")
         return D(False, "deny", f"{self.mode} mode needs approval, but no human is present")
+
+    def _sandbox_gate(self, t, ctx, D):
+        """specs/0083 #3: when CODE_REQUIRE_SANDBOX_FOR_AUTO is on, a MUTATING run_command may be auto-ALLOWED
+        only if it will ACTUALLY run in the OS sandbox (restricted token + job object). If the sandbox isn't
+        active/available, downgrade the allow to ask (guardian, then human) rather than silently auto-run
+        unconfined. Returns a Decision to substitute for the allow, or None to let the allow stand. OFF (default)
+        -> None, byte-identical. Read-only commands never reach here (they're safe unconfined)."""
+        if not config.REQUIRE_SANDBOX_FOR_AUTO:
+            return None
+        will_sandbox = False
+        if config.SANDBOX_SPAWN and os.name == "nt":
+            try:
+                from . import winsandbox
+                will_sandbox = winsandbox.available()
+            except Exception:  # noqa: BLE001 - any probe failure -> treat as NOT sandboxed (fail-closed)
+                will_sandbox = False
+        if will_sandbox:
+            return None
+        msg = "auto-approval requires the OS sandbox (CODE_REQUIRE_SANDBOX_FOR_AUTO) but it is not active"
+        esc = self._ask_approver("run_command", t, msg, ctx)
+        if esc is not None:
+            return D(esc[0], "ask", f"{msg} -> {esc[1]}")
+        if getattr(ctx, "interactive", False):
+            ok = self._prompt("run_command", t)
+            return D(ok, "ask", f"{msg} -> {'allowed' if ok else 'denied'} by user")
+        return D(False, "ask", msg)
 
     def _match_command_rules(self, rules, cmd):
         """Match run_command deny/ask/allow rules against a SINGLE command string (one parsed segment)."""

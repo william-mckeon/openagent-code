@@ -379,6 +379,38 @@ def _shell_invocation(cmd):
     return argv, (subprocess.DEVNULL if ni else None)
 
 
+def _sandboxed_run(shell_cmd, cwd, child_env):
+    """specs/0083: when CODE_SANDBOX_SPAWN is on, run `shell_cmd` under a RESTRICTED TOKEN + JOB OBJECT (Windows).
+    Returns a ToolResult when the sandbox path handled the command (ran / refused / timed out), or None to let
+    the normal spawn proceed (feature off, not Windows, or unavailable-and-not-required). FAIL-CLOSED: an
+    unavailable sandbox with CODE_SANDBOX_REQUIRED REFUSES; otherwise it falls back UNCONFINED but only with a
+    logged warning — it never silently pretends to have confined."""
+    if not config.SANDBOX_SPAWN or os.name != "nt":
+        return None
+    from . import winsandbox
+    env = child_env if child_env is not None else dict(os.environ)
+    if winsandbox.available():
+        try:
+            rc, out, timed = winsandbox.run_shell(shell_cmd, cwd, env, 120, stdin_devnull=True)
+            if timed:
+                return ToolResult(False, "Command timed out after 120s (sandboxed)")
+            if config.SCRUB_OUTPUT:   # specs/0078: redact secrets before the output reaches the model
+                from . import scrub
+                out = scrub.scrub_text(out)
+            return ToolResult(rc == 0, f"(exit {rc})\n{out[:5000]}", {"returncode": rc, "sandboxed": True})
+        except winsandbox.SandboxUnavailable:
+            pass  # became unavailable between probe and spawn -> fall through to the fail-closed handling
+    if config.SANDBOX_REQUIRED:   # #4: refuse rather than run unconfined
+        return ToolResult(False, "sandbox required (CODE_SANDBOX_REQUIRED) but the OS sandbox is unavailable on "
+                          "this host - command refused (fail-closed). Disable CODE_SANDBOX_REQUIRED to allow "
+                          "unconfined execution.")
+    from . import logsetup
+    logsetup.get_logger("tools").warning(
+        "CODE_SANDBOX_SPAWN is on but the OS sandbox is unavailable; running UNCONFINED "
+        "(set CODE_SANDBOX_REQUIRED=true to refuse instead)")
+    return None
+
+
 def run_command(args, ctx):
     cmd = args["command"]
     # FS confinement (Phase 17 / specs/0017): extend the workspace fence to run_command's WRITES. A
@@ -394,13 +426,19 @@ def run_command(args, ctx):
                               "(or a folder granted with --add-dir).")
     shell_cmd, shell_stdin = _shell_invocation(cmd)
     from . import envscrub   # specs/0078: an allowlisted child env (None when CODE_ENV_SCRUB off -> inherit)
+    child_env = envscrub.child_env()
+
+    sandboxed = _sandboxed_run(shell_cmd, ctx.cwd, child_env)   # specs/0083: OS sandbox (opt-in, fail-closed)
+    if sandboxed is not None:
+        return sandboxed
+
     try:
         # encoding='utf-8', errors='replace': the default text=True decodes command output with the
         # PLATFORM encoding (cp1252 on Windows), which RAISES on any byte undefined there and nulls
         # stdout while returncode stays 0 - silently dropping real output into the trajectory.
         p = subprocess.run(shell_cmd, cwd=ctx.cwd, capture_output=True,
                            encoding="utf-8", errors="replace", timeout=120, stdin=shell_stdin,
-                           env=envscrub.child_env())
+                           env=child_env)
     except subprocess.TimeoutExpired:
         return ToolResult(False, "Command timed out after 120s")
     out = (p.stdout or "")

@@ -15,8 +15,18 @@ below was a `.env` change, never a code change:
 - **thinkingmachines/Inkling on Together** — `https://api.together.xyz/v1`, OpenAI-compatible.
 - **gpt-oss-120b on AWS Bedrock / self-hosted vLLM (RunPod)** — the original baseline; last measured eval 13/13.
 
-## Features (specs/0022–0082)
+## Features (specs/0022–0083)
 
+- `0083` **OS sandbox** — Phase 3: the one real KERNEL boundary (every other control is in-process/advisory).
+  `CODE_SANDBOX_SPAWN` runs `run_command` children under a RESTRICTED TOKEN (`CreateRestrictedToken`
+  DISABLE_MAX_PRIVILEGE|LUA_TOKEN — a lesser version of our own token, so `CreateProcessAsUserW` needs no special
+  privilege) inside a JOB OBJECT (`KILL_ON_JOB_CLOSE` + optional memory / active-process caps). `available()`
+  does a REAL cached probe spawn, so it never claims confinement it can't deliver. `CODE_SANDBOX_REQUIRED` (#4):
+  if a command would be sandboxed but the sandbox is unavailable, REFUSE rather than run unconfined.
+  `CODE_REQUIRE_SANDBOX_FOR_AUTO` (#3): a mutating run_command auto-allows only if it'll actually be sandboxed,
+  else downgrades to ask. Validated on a Windows host — the restricted child's privileges drop 5→1 at Medium
+  integrity. All flags default OFF → byte-identical. (`src/winsandbox.py`, `scripts/check_winsandbox_0083.py`,
+  12/12; live restricted-token spawn confirmed.)
 - `0082` **secrets at rest** — Phase 3: protect the model credential on disk (Windows), stdlib + `icacls`, no
   pywin32. `CODE_LOCK_SECRETS` ACL-locks `.env` (and any `CODE_LOCK_SECRETS_PATHS`) to owner-only at startup —
   the Windows `chmod 0600` (strip inheritance, grant Read to the user + Full to SYSTEM). `CODE_SECRETS_VAULT`

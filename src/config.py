@@ -558,6 +558,23 @@ for _pair in os.environ.get("CODE_EXEC_HOST_PIN", "").split(";"):
         _n = _n.strip().lower()
         if _n:
             EXEC_HOST_PIN[_n] = [os.path.normcase(os.path.abspath(p.strip())) for p in _paths.split(",") if p.strip()]
+# OS-sandbox cluster (specs/0083), Windows, all default OFF. The one KERNEL boundary OAC has (vs its otherwise
+# in-process/advisory controls). SANDBOX_SPAWN: run_command children spawn under a RESTRICTED TOKEN (privileges
+# dropped, admin/powerful groups disabled) inside a JOB OBJECT (kill-on-close + optional caps) — when the host
+# actually supports it (winsandbox.available() does a real probe spawn; it never claims confinement it can't
+# deliver). SANDBOX_REQUIRED (#4, fail-closed): if a command WOULD be sandboxed but the sandbox is unavailable,
+# REFUSE to run it rather than run unconfined. REQUIRE_SANDBOX_FOR_AUTO (#3): don't auto-ALLOW a run_command
+# unless it will actually be sandboxed — else downgrade to ask (guardian/human). Job caps: SANDBOX_JOB_MEM_MB
+# (per-process commit cap, 0 = none), SANDBOX_JOB_MAX_PROCS (0 = none). SANDBOX_WRITE_RESTRICTED: add the
+# WRITE_RESTRICTED token flag (stricter; needs the workspace granted to a restricting SID or writes fail — off
+# by default). OFF everywhere -> run_command spawns exactly as before (byte-identical).
+SANDBOX_SPAWN = _as_bool(os.environ.get("CODE_SANDBOX_SPAWN", "false"))
+SANDBOX_REQUIRED = _as_bool(os.environ.get("CODE_SANDBOX_REQUIRED", "false"))
+REQUIRE_SANDBOX_FOR_AUTO = _as_bool(os.environ.get("CODE_REQUIRE_SANDBOX_FOR_AUTO", "false"))
+SANDBOX_JOB_MEM_MB = _env_int("CODE_SANDBOX_JOB_MEM_MB", "0")
+SANDBOX_JOB_MAX_PROCS = _env_int("CODE_SANDBOX_JOB_MAX_PROCS", "0")
+SANDBOX_WRITE_RESTRICTED = _as_bool(os.environ.get("CODE_SANDBOX_WRITE_RESTRICTED", "false"))
+
 _PROTECT_GLOBS = ["**/.git/**", ".git/**", "**/.env", ".env", "**/.env.*", ".env.*"]
 
 
