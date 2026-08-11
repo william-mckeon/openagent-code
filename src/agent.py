@@ -278,6 +278,7 @@ class Agent:
         ctx._verified_ok = False      # did a CHECK actually confirm success this turn? (grounding's unverified-success net)
         ctx._runtime_ok = False       # did a HEALTH-CHECK (curl/http/port probe) confirm a service is UP? (specs/0053)
         ctx._narration_streak = 0     # consecutive pure-narration steps (specs/0067): reset per task, no cross-turn leak
+        ctx._denial_streak = 0        # consecutive permission denials (specs/0080 guardian circuit-breaker): per task
         _prst = getattr(self.planner, "reset", None)   # specs/0074: JsonPlanner nudge budget is per-task
         if callable(_prst):
             _prst()                   # NativePlanner has no reset() -> no-op (byte-identical)
@@ -522,6 +523,18 @@ class Agent:
                     # every tool, logged against THIS agent's trajectory (subagent-safe).
                     pd = ctx.permissions.decide(name, args, ctx)
                     self.traj.log_permission(step, name, pd)
+                    # specs/0080 guardian circuit-breaker: the deny is fail-closed per call but stateless, so a
+                    # prompt-injected loop could retry a DENIED op forever. Count consecutive denials; abort the
+                    # turn honestly past CODE_GUARDIAN_MAX_DENIALS. 0 (default) -> never runs (byte-identical).
+                    if config.GUARDIAN_MAX_DENIALS > 0:
+                        ctx._denial_streak = (getattr(ctx, "_denial_streak", 0) + 1) if not pd.allowed else 0
+                        if not pd.allowed and ctx._denial_streak >= config.GUARDIAN_MAX_DENIALS:
+                            log.info("guardian circuit-breaker: %d consecutive denials — ending turn",
+                                     ctx._denial_streak)
+                            return self._finish(ctx, "(ended: too many consecutive DENIED operations — the "
+                                                "requested actions are not permitted here; try a different "
+                                                "approach or ask me to adjust the permissions.)",
+                                                "denial_loop", tool_calls)
                     if pd.allowed:
                         result = self.registry.run(name, args, ctx)
                     else:

@@ -527,6 +527,27 @@ SECRET_PATH_GLOBS = [g.strip() for g in
 # CGNAT / ULA), fail-closed on an unresolvable host. OFF -> web_fetch is byte-identical (single follow_redirects call).
 NETFENCE = _as_bool(os.environ.get("CODE_NETFENCE", "false"))
 
+# Guardian circuit-breaker (specs/0080). The guardian/fence deny is fail-closed PER call but stateless across
+# calls, so a prompt-injected loop can retry a denied destructive op forever. When > 0, the agent aborts the
+# turn after this many CONSECUTIVE denied tool calls. 0 (default) = off, byte-identical.
+GUARDIAN_MAX_DENIALS = _env_int("CODE_GUARDIAN_MAX_DENIALS", "0")
+
+# Protected-path deny-write defaults (specs/0080), default OFF. When on, modifying .git internals or a .env
+# file is denied by default (an operator shouldn't have to know to add the rule). Merged UNDER the user's own
+# rules; a user deny still wins, and OFF is byte-identical.
+PROTECT_PATHS = _as_bool(os.environ.get("CODE_PROTECT_PATHS", "false"))
+_PROTECT_GLOBS = ["**/.git/**", ".git/**", "**/.env", ".env", "**/.env.*", ".env.*"]
+
+
+def is_protected_path(rel):
+    """specs/0080: True if `rel` (a workspace-relative path) is a protected path that must not be MODIFIED by
+    default — .git internals or a .env file. fnmatch's '*' crosses '/', so '**/.git/**' matches a nested
+    .git/config; the anchored forms catch a top-level .git/ or .env. Never raises."""
+    import fnmatch
+    r = (rel or "").replace("\\", "/")
+    r = r[2:] if r.startswith("./") else r
+    return bool(r) and any(fnmatch.fnmatch(r, g) for g in _PROTECT_GLOBS)
+
 
 def is_secret_path(rel):
     """specs/0078: True if `rel` (a workspace-relative path) names a designated SECRET file — matched on the

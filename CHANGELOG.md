@@ -15,8 +15,13 @@ below was a `.env` change, never a code change:
 - **thinkingmachines/Inkling on Together** — `https://api.together.xyz/v1`, OpenAI-compatible.
 - **gpt-oss-120b on AWS Bedrock / self-hosted vLLM (RunPod)** — the original baseline; last measured eval 13/13.
 
-## Features (specs/0022–0079)
+## Features (specs/0022–0080)
 
+- `0080` **permission-policy hardening** — two Codex-adopted quick-wins. `CODE_GUARDIAN_MAX_DENIALS`: the
+  deny/guardian is fail-closed per call but stateless, so a prompt-injected loop could retry a DENIED op
+  forever; a per-task consecutive-denial counter now aborts the turn (honest new `denial_loop` outcome) past
+  the threshold. `CODE_PROTECT_PATHS`: ships opt-in deny-WRITE defaults for `.git` internals and `.env` (an
+  operator no longer has to know to add the rule); a user's own rules still win. Both byte-identical when off.
 - `0079` **net-fence (SSRF guard)** — `CODE_NETFENCE`: `web_fetch` did `httpx.get(follow_redirects=True)` with
   no host validation, so a URL or a redirect to `169.254.169.254` (cloud-metadata), `localhost`, or an RFC1918
   host reached the machine's own network. `src/netfence.py` now refuses any host resolving to a non-public IP

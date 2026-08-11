@@ -222,6 +222,14 @@ class Permissions:
             return Decision(False, "read_file", t.rel, "deny",
                             "secret-deny-read: refusing to read a designated secret file (.env / key)",
                             None, self.mode)
+        # specs/0080: deny MODIFYING a protected path (.git internals / .env) by default, so an operator
+        # needn't know to add the rule. Covers the direct mutators; apply_patch is re-gated per file (patch.py)
+        # so its ops hit this too. A user's own deny still wins (runs later). Gated -> OFF byte-identical.
+        if (config.PROTECT_PATHS and tool in ("write_file", "edit_file", "delete_file")
+                and t.kind == "path" and config.is_protected_path(t.rel)):
+            return Decision(False, tool, t.rel, "deny",
+                            "protected-path: refusing to modify a protected path (.git internals / .env)",
+                            None, self.mode)
         # run_command gated on the PARSED command (execpolicy, Phase 16): deny/ask/allow rules match ANY
         # segment (the `rm` inside `cd x && rm y`) and a wholly read-only command is allowed like a read
         # tool. OFF (default) -> decide() never consults execpolicy and the prefix path below is unchanged.
