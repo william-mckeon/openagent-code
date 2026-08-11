@@ -30,12 +30,14 @@ _SECRET = [
     (re.compile(r"(?i)([\"']?(?:_?csrf|csrf[-_]?token|xsrf|session[-_]?token|access[-_]?token|"
                 r"refresh[-_]?token|api[-_]?key|secret|password|passwd)[\"']?\s*[:=]\s*[\"'])[^\"']{6,}([\"'])"),
      r"\g<1>" + _M.format("token") + r"\g<2>"),
-    # specs/0073: the UNQUOTED form — a .env / YAML / shell-export secret (API_KEY=zk9v..., password: s3cr3t...).
-    # The value has no surrounding quotes; require >=6 non-space chars so prose ("password: use a strong one")
-    # is left alone, and a negative lookahead for a quote so the quoted branch above owns that case.
+    # specs/0073 (value tightened specs/0075): the UNQUOTED form — a .env / YAML / shell-export secret
+    # (API_KEY=zk9v..., password: s3cr3t...). The value is a SECRET-SHAPED token: a >=6-char run of
+    # [A-Za-z0-9_-] only — so prose ("password: use a strong one") is left alone AND source code
+    # (`api_key = os.environ.get(...)`) does NOT over-scrub, since a '.'/'('/'/' ends the run before 6 chars.
+    # A quote-lookahead leaves the quoted form to the branch above.
     (re.compile(r"(?i)((?:_?csrf|csrf[-_]?token|xsrf|session[-_]?token|access[-_]?token|"
                 r"refresh[-_]?token|api[-_]?key|secret|password|passwd)\s*[:=]\s*)"
-                r"(?![\"'])([^\s\"';,]{6,})"),
+                r"(?![\"'])([A-Za-z0-9][A-Za-z0-9_\-]{5,})(?![^\s\"';,])"),
      r"\g<1>" + _M.format("token")),
     (re.compile(r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b"), _M.format("email")),
 ]

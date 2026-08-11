@@ -60,6 +60,10 @@ def main():
     check("scrub: the quoted form still redacts; prose is left alone (no over-scrub)",
           "[redacted:token]" in scrub.scrub_text('api_key="zk9v2x8q4m7n3b6c5d"')
           and scrub.scrub_text("password: use a strong one") == "password: use a strong one")
+    check("scrub (specs/0075): CODE is NOT over-scrubbed (api_key = os.environ.get(...) / secret=fn(x))",
+          scrub.scrub_text('API_KEY = os.environ.get("CODE_API_KEY", "")')
+          == 'API_KEY = os.environ.get("CODE_API_KEY", "")'
+          and scrub.scrub_text("secret=get_secret(name)") == "secret=get_secret(name)")
 
     # 5. scrub card: grouped-only, so an epoch / id does not false-match
     check("scrub: a GROUPED 4-4-4-4 card is redacted; a solid 16-digit epoch/id is NOT",
