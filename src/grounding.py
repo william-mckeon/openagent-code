@@ -36,7 +36,8 @@ log = get_logger("grounding")
 # pull in opposite directions: the deterministic tier does a hard existence check with no model, so it
 # must be NARROW (a false match wrongly fails a correct answer); the Tier-2 verifier reads the workspace
 # and JUDGES, so it must be BROAD (under-inclusion silently skips the honest-but-wrong check).
-_QUOTED = re.compile(r"[`'\"]([A-Za-z0-9_.\-/]+)[`'\"]")
+_QUOTED = re.compile(r"[`'\"]([A-Za-z0-9_.\-/\\]+)[`'\"]")   # specs/0073: include backslash so a Windows-style
+#                                        citation `src\main.py` is seen (was invisible; _norm already -> '/')
 _EXT = re.compile(  # known code/doc extensions — the NARROW (deterministic) tier
     r"\.(py|js|ts|tsx|jsx|go|rs|java|rb|c|h|cpp|md|ya?ml|json|toml|sql|sh|txt|env|conf|cfg|ini|lock|xml|html|css)$",
     re.I)
@@ -103,11 +104,19 @@ _HEDGED = re.compile(
     r"cannot|can'?t|unable|fail(?:s|ed|ing)?|not\s+(?:yet\s+)?(?:pass|passing|verified|run|able))\b",
     re.I)
 # A run_command that IS a check — a success from one of these is real verification of a success claim.
+# specs/0073: only a REAL check counts. The old bare `build|compile|lint|type-?check` alternatives matched
+# `mkdir build`, `git checkout build`, `cat lint.log`, and `npm\s+run` matched `npm run dev` — any exit-0 such
+# command flipped ctx._verified_ok and silenced the unverified-success net for the whole turn. Now: distinctive
+# test/lint/type tools (safe anywhere), a build tool invoked as the COMMAND, or an explicit `<tool> <verb>`.
 _CHECK_CMD = re.compile(
-    r"\b(?:pytest|jest|vitest|mocha|tox|nox|go\s+test|cargo\s+test|ctest|"
-    r"npm\s+(?:test|run|ci)|yarn\s+(?:test|run)|pnpm\s+(?:test|run)|make(?:\s+\w+)?|"
+    r"\b(?:"
+    r"pytest|jest|vitest|mocha|tox|nox|ctest|rspec|phpunit|"
     r"tsc|eslint|ruff|flake8|pylint|mypy|pyright|black\s+--check|prettier\s+--check|"
-    r"gradle|mvn|dotnet\s+test|rspec|phpunit|build|compile|lint|type-?check)\b",
+    r"cmake|ninja|bazel|meson|msbuild|xcodebuild|gradle|mvn|make|"
+    r"go\s+(?:test|build|vet)|cargo\s+(?:test|build|check|clippy)|dotnet\s+(?:test|build)|"
+    r"npm\s+(?:test|ci)|npm\s+run\s+(?:\w*test\w*|build|lint|check|typecheck|tsc|compile|ci)|"
+    r"yarn\s+(?:test|build|lint|check|typecheck|tsc)|pnpm\s+(?:test|build|lint|check|typecheck|tsc)"
+    r")\b",
     re.I)
 
 
@@ -122,10 +131,13 @@ def ran_check(command):
 # only true HTTP/port probes count. `docker ps` / `docker compose up` exit 0 whether or not the app actually
 # serves, so they are NOT liveness proof and are excluded — the honest signal is an actual request that
 # connected. A connection-refused curl exits non-zero, so it does NOT flip _runtime_ok (the observed case).
+# specs/0073: a health/liveness claim may rest ONLY on an actual PROBE TOOL. The old bare `http[s]?://` /
+# `localhost:\d` alternatives matched any command containing a URL, so `git clone https://...` or
+# `pip install -i https://...` flipped ctx._runtime_ok and disabled the specs/0053 runtime-done net — commands
+# that prove nothing about liveness. Now only a probe tool (curl / iwr / Test-NetConnection / nc / ...) counts.
 _HEALTHCHECK_CMD = re.compile(
     r"\b(?:curl(?:\.exe)?|wget|iwr|invoke-webrequest|invoke-restmethod|irm|httpie|https?-get|"
-    r"nc|ncat|telnet|test-netconnection|tnc)\b"
-    r"|\bhttp[s]?://|\blocalhost:\d|\b127\.0\.0\.1:\d|\b0\.0\.0\.0:\d",
+    r"nc|ncat|telnet|test-netconnection|tnc)\b",
     re.I)
 
 

@@ -30,6 +30,13 @@ _SECRET = [
     (re.compile(r"(?i)([\"']?(?:_?csrf|csrf[-_]?token|xsrf|session[-_]?token|access[-_]?token|"
                 r"refresh[-_]?token|api[-_]?key|secret|password|passwd)[\"']?\s*[:=]\s*[\"'])[^\"']{6,}([\"'])"),
      r"\g<1>" + _M.format("token") + r"\g<2>"),
+    # specs/0073: the UNQUOTED form — a .env / YAML / shell-export secret (API_KEY=zk9v..., password: s3cr3t...).
+    # The value has no surrounding quotes; require >=6 non-space chars so prose ("password: use a strong one")
+    # is left alone, and a negative lookahead for a quote so the quoted branch above owns that case.
+    (re.compile(r"(?i)((?:_?csrf|csrf[-_]?token|xsrf|session[-_]?token|access[-_]?token|"
+                r"refresh[-_]?token|api[-_]?key|secret|password|passwd)\s*[:=]\s*)"
+                r"(?![\"'])([^\s\"';,]{6,})"),
+     r"\g<1>" + _M.format("token")),
     (re.compile(r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b"), _M.format("email")),
 ]
 
@@ -42,7 +49,9 @@ _FINANCIAL = [
     # user / account / customer id assignments
     (re.compile(r"(?i)([\"']?(?:user|account|customer)[-_]?id[\"']?\s*[:=]\s*[\"'])[A-Za-z0-9]{6,}([\"'])"),
      r"\g<1>" + _M.format("id") + r"\g<2>"),
-    (re.compile(r"\b(?:\d[ -]?){15}\d\b"), _M.format("card")),   # 16-digit card number
+    # specs/0073: require the GROUPED 4-4-4-4 form (a space/dash between each group) so a solid 16-digit epoch
+    # timestamp / id and arbitrary space-separated digit runs don't false-match and corrupt tool output.
+    (re.compile(r"\b\d{4}[ -]\d{4}[ -]\d{4}[ -]\d{4}\b"), _M.format("card")),   # 16-digit card (grouped)
     (re.compile(r"\b\d{3}-\d{2}-\d{4}\b"), _M.format("ssn")),
 ]
 

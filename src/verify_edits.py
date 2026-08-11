@@ -106,15 +106,20 @@ def challenge(problems):
 def _default_run_fn(cwd):
     """The runtime run_fn: run a verifier ARGV as a subprocess with NO shell (no injection surface), in
     the workspace cwd, with a timeout and utf-8/replace decoding (mirrors run_command). ok == exit 0.
-    A timeout / OSError is turned into a failed check output rather than an exception, so run_checks'
-    fail-open still applies without a raise."""
+    specs/0073: a TIMEOUT is a FAILED check — a verifier that never finished is NOT a pass (returning True
+    logged a passing verification reward and flipped ctx._verified_ok, corpus poison, exactly when the code
+    was likely broken). A genuine OSError (a missing/unrunnable verifier binary = infra, not a code failure)
+    still fails OPEN."""
     def run(argv):
         try:
             p = subprocess.run(argv, cwd=cwd, capture_output=True, encoding="utf-8",
                                errors="replace", timeout=config.VERIFY_TIMEOUT)
-        except (OSError, subprocess.SubprocessError) as e:
+        except subprocess.TimeoutExpired:
+            log.warning("verify command %r timed out after %ss - marking FAILED", argv[:1], config.VERIFY_TIMEOUT)
+            return False, f"(verifier timed out after {config.VERIFY_TIMEOUT}s)"
+        except OSError as e:
             log.warning("verify command %r failed to run (%s) - skipping, fail-open", argv[:1], e)
-            return True, ""   # fail-OPEN: an infra failure is not a code failure
+            return True, ""   # fail-OPEN: a missing/unrunnable verifier binary is not a code failure
         return p.returncode == 0, (p.stdout or "") + (p.stderr or "")
     return run
 
