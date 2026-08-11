@@ -69,6 +69,21 @@ def _classify(result, tool_calls):
     return outcomes.classify(result.terminated, tool_calls)
 
 
+def _child_permissions(parent_permissions, read_only):
+    """The Permissions a spawned child runs under. A parallel/read-only fan-out child (specs/0039) gets the
+    plan-mode read-only projection so concurrent children can't race the filesystem. specs/0084: a serial child
+    that would otherwise INHERIT propose mode ALSO gets that projection — a depth>0 child can neither mutate
+    (read-only until the manifest is approved) NOR approve (propose_changes is top-level-only), a guaranteed
+    deadlock that burned whole turns live; plan mode gives it the honest 'stop and report up' terminal instead.
+    Any other serial child inherits the parent's Permissions unchanged (CODE_SUBAGENT_NO_PROPOSE off ->
+    byte-identical)."""
+    if read_only:
+        return parent_permissions.readonly_view()
+    if config.SUBAGENT_NO_PROPOSE and getattr(parent_permissions, "mode", None) == "propose":
+        return parent_permissions.readonly_view()
+    return parent_permissions
+
+
 def run_subagent(task, parent_ctx, effort=None, label=None, read_only=False):
     """Build a child agent for `task`, run it in isolation, return its final text. `effort` overrides
     the child's reasoning effort (None = the global) — e.g. a grounding verifier at CODE_GROUNDING_EFFORT.
@@ -76,10 +91,7 @@ def run_subagent(task, parent_ctx, effort=None, label=None, read_only=False):
     raw injected prompt; it does NOT change what the child runs. `read_only` (specs/0039): a PARALLEL
     fan-out child runs under a read-only Permissions projection so concurrent children can't race the FS."""
     child_depth = parent_ctx.depth + 1
-    # A parallel fan-out child (specs/0039) runs READ-ONLY (writes/edits/deletes/commands denied) so
-    # concurrent children can't race the filesystem; the SERIAL path passes read_only=False -> the parent's
-    # own Permissions, byte-identical to today.
-    perms = parent_ctx.permissions.readonly_view() if read_only else parent_ctx.permissions
+    perms = _child_permissions(parent_ctx.permissions, read_only)
     # Children write to the parent's trajectory dir (None -> the corpus). This keeps subagents spawned
     # INSIDE an eval — e.g. the Phase-10 grounding verifier — under trajectories/eval/ (the firewall),
     # not in the training corpus (specs/0005).

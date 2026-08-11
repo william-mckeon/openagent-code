@@ -417,6 +417,26 @@ try:
 except ValueError:
     NARRATION_STALL_RETRIES = 1
 
+# Subagent propose-deadlock fix + no-progress stall breaker (specs/0084), all default OFF -> byte-identical.
+# SUBAGENT_NO_PROPOSE: a serial child (grounding verifier / guardian / any spawn) must NEVER inherit PROPOSE
+# mode — a depth>0 child can neither mutate (read-only until approved) NOR approve (propose_changes is
+# top-level-only), a guaranteed deadlock that burned whole turns live (see logs/9f1891b0af8d.log: 113 read-only
+# denials, 23 top-level-only failures). When on, such a child gets the honest plan-mode read-only view (stop and
+# report up) and the auto-spawned grounding/guardian verifiers spawn read-only in every parent mode.
+# STALL_MAX: the general no-progress backstop the narrow narration guard can't be — a step makes NO PROGRESS
+# when none of its calls both succeeded AND did NOVEL real work (every call denied, failed, pure-narration, or a
+# DUPLICATE of one already run this turn). N consecutive no-progress steps -> one bounded nudge then honest
+# 'stall'. 0 (default) = off; a recommended live value is ~8 (long enough to clear legit occasional repeats).
+SUBAGENT_NO_PROPOSE = _as_bool(os.environ.get("CODE_SUBAGENT_NO_PROPOSE", "false"))
+try:
+    STALL_MAX = max(0, _env_int("CODE_STALL_MAX", "0"))
+except ValueError:
+    STALL_MAX = 0
+try:
+    STALL_RETRIES = max(0, _env_int("CODE_STALL_RETRIES", "1"))
+except ValueError:
+    STALL_RETRIES = 1
+
 # Corpus curation (Phase 11 / specs/0011). An OFFLINE batch pass (train/curate.py) over captured
 # trajectories that flags PHANTOM CITATIONS — a closing answer referencing a file the run never opened.
 # Deterministic, no model (the semantic honest-but-wrong class is caught live by the grounding gate).

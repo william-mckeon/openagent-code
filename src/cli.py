@@ -409,6 +409,12 @@ def _run_session(traj, agent, ctx):
             if result.final:
                 print("\n" + result.final)
                 log.info("turn %d result: %s", turns, result.final[:500])
+                # specs/0084: a turn stopped by the step ceiling or a stall/gate is NOT a clean finish — say so,
+                # so a truncated recap isn't read as a complete answer (which drove the user to re-ask the same
+                # unbounded thing and re-trigger the loop). Parity with the one-shot path, which prints outcome=.
+                if result.terminated in ("max_steps", "stall", "narration_stall", "denial_loop"):
+                    print(f"\n[note: this turn stopped early (outcome={result.terminated}) — the answer above may "
+                          "be incomplete. Narrow the request, or tell me how you'd like to proceed.]")
             else:
                 log.warning("turn %d produced no output (dropped response?)", turns)
                 print("\n(no output — the model may have dropped the response, often a cold/"

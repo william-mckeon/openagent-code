@@ -169,6 +169,43 @@ _NARRATION_NUDGE = (
     "reply (or call ask_user) — a question is a normal final answer, not something to narrate with a command.")
 
 
+def _is_noop_narration(cmd):
+    """specs/0084: like _is_narration_command, but ALSO catches a command that is ENTIRELY a sequence of
+    narration prints joined by ';' / newlines (`Write-Output "a"; Write-Output "b"`), which the bare-newline
+    rule in _NARRATION_META treats as 'real work'. Used only by the no-progress stall breaker (the 0067 guard
+    keeps _is_narration_command untouched). Conservative: any real operator ($(), pipe, redirect, chain, &) or a
+    non-print statement -> not narration."""
+    c = (cmd or "").strip()
+    if _is_narration_command(c):
+        return True
+    masked = _QUOTED_SPAN.sub("", c)
+    if "$(" in c or any(ch in masked for ch in "|>&`"):
+        return False
+    stmts = [s.strip() for s in re.split(r"[;\n]", c) if s.strip()]
+    return len(stmts) >= 2 and all(_NARRATION_CMD.match(s) for s in stmts)
+
+
+def _canon_call(name, args):
+    """A stable, size-bounded key for a (tool, args) call so the stall breaker can tell a NOVEL call from a
+    re-run/re-read of one already done this turn. Values are truncated so a huge write payload still keys."""
+    if isinstance(args, dict):
+        body = repr(sorted((str(k), str(v)[:400]) for k, v in args.items()))
+    else:
+        body = repr(args)[:400]
+    return f"{name}:{body}"
+
+
+_STALL_NUDGE = (
+    "STOP. Your last several steps made NO progress — they were denied, failed, repeated a command/read you "
+    "already ran, or only printed status. Re-running the same thing will not change the result. If you are "
+    "blocked (a permission denial you cannot clear here), say so and RETURN what you found. If you have enough "
+    "to answer, write your final reply now. Do not repeat an action that already failed or already ran.")
+
+_STALL_FINAL = ("(Ended: I was repeating steps that made no progress — denied, failed, or duplicate actions — "
+                "instead of moving forward. Tell me how you'd like to proceed, or adjust what I'm allowed to do "
+                "here.)")
+
+
 def _reset_propose_for_turn(ctx):
     """Per-turn propose-mode reset (specs/0022 + 0048). DEFAULT: re-lock read-only and clear approved_paths,
     so an approval NEVER leaks past the turn it was granted (the cross-turn WRITE-leak guard). With
@@ -279,6 +316,8 @@ class Agent:
         ctx._runtime_ok = False       # did a HEALTH-CHECK (curl/http/port probe) confirm a service is UP? (specs/0053)
         ctx._narration_streak = 0     # consecutive pure-narration steps (specs/0067): reset per task, no cross-turn leak
         ctx._denial_streak = 0        # consecutive permission denials (specs/0080 guardian circuit-breaker): per task
+        ctx._stall_streak = 0         # consecutive NO-PROGRESS steps (specs/0084 stall breaker): per task
+        ctx._seen_calls = set()       # (tool, args) keys run this turn (specs/0084): a repeat is not progress
         _prst = getattr(self.planner, "reset", None)   # specs/0074: JsonPlanner nudge budget is per-task
         if callable(_prst):
             _prst()                   # NativePlanner has no reset() -> no-op (byte-identical)
@@ -315,6 +354,7 @@ class Agent:
         ground_retries = 0     # grounding-gate re-prompts used this run (Phase 10)
         accept_retries = 0     # acceptance-gate re-prompts used this run (Phase 25)
         narration_retries = 0  # narration-stall nudges used this run (specs/0067)
+        stall_retries = 0      # no-progress-stall nudges used this run (specs/0084)
 
         try:
             for step in range(self.max_steps):
@@ -515,6 +555,7 @@ class Agent:
                     return self._finish(ctx, decision.final,
                                         "ungrounded_completion" if ungrounded else "final", tool_calls)
 
+                step_made_progress = False   # specs/0084: did ANY call this step advance the task (allowed+ok+novel+real)?
                 for call in decision.calls:
                     name, args = call["name"], call["args"]
 
@@ -552,6 +593,18 @@ class Agent:
                     retry_index = consecutive_fail.get(name, 0)
                     self.traj.log_tool_call(step, name, args, result, retry_index)
                     consecutive_fail[name] = 0 if result.ok else retry_index + 1
+
+                    # specs/0084: a call is PROGRESS only if it was allowed, succeeded, did real (non-narration)
+                    # work, and is NOVEL this turn. A denied / failed / pure-narration / duplicate call is not —
+                    # that is exactly the propose-deadlock + re-scan + fake-approval loop the narrow narration
+                    # guard can't see. Track novelty in ctx._seen_calls (reset per task). Off -> block skipped.
+                    if config.STALL_MAX > 0:
+                        key = _canon_call(name, args)
+                        novel = key not in ctx._seen_calls
+                        ctx._seen_calls.add(key)
+                        is_noop = name == "run_command" and _is_noop_narration(args.get("command", ""))
+                        if pd.allowed and result.ok and novel and not is_noop:
+                            step_made_progress = True
 
                     # A run_command that IS a check (test / build / lint) and SUCCEEDED is real evidence a
                     # "the tests pass" claim can rest on — so the grounding unverified-success net won't
@@ -618,6 +671,26 @@ class Agent:
                         return self._finish(
                             ctx, decision.final or "(Ended: I was repeating no-op narration instead of "
                             "answering. Tell me how you'd like to proceed.)", "narration_stall", tool_calls)
+
+                # No-progress stall breaker (specs/0084): the GENERAL backstop the narration guard can't be. A
+                # step that made no progress (all calls denied / failed / pure-narration / duplicate) increments
+                # the streak; a single productive step resets it. This is what catches the propose-mode subagent
+                # deadlock (denied mutation -> failed top-level-only propose -> re-read -> fake-approve narration,
+                # none of which is progress) and any re-scan loop — unlike the denial/narration counters it does
+                # NOT reset on an interleaved allowed-but-useless call. OFF (STALL_MAX=0) -> skipped, byte-identical.
+                if config.STALL_MAX > 0 and decision.calls:
+                    ctx._stall_streak = 0 if step_made_progress else (getattr(ctx, "_stall_streak", 0) + 1)
+                    if ctx._stall_streak >= config.STALL_MAX:
+                        if stall_retries < config.STALL_RETRIES:
+                            stall_retries += 1
+                            ctx._stall_streak = 0
+                            if ctx.verbose:
+                                print(f"  [stall] {config.STALL_MAX} no-progress steps — nudging to finalize")
+                            log.info("no-progress stall (retry %d) — nudging to finalize", stall_retries)
+                            self.cm.add({"role": "user", "content": _STALL_NUDGE})
+                            continue
+                        log.info("no-progress stall persisted — ending turn (outcome=stall)")
+                        return self._finish(ctx, decision.final or _STALL_FINAL, "stall", tool_calls)
         except Exception:
             # The live context must never be left ending in dangling tool-results. Roll
             # back this whole turn (capture is untouched) and re-raise so the caller

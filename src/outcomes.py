@@ -16,7 +16,7 @@ exist to reject became SFT targets (corpus poison).
 # applies (a verify command that happens to pass must never mask an ungrounded/unverified answer).
 GATE_OUTCOMES = ("unverified_completion", "ungrounded_completion", "degenerate", "verify_failed_edits",
                  "goal_unmet", "manifest_declined", "spec_declined", "acceptance_unmet",
-                 "manifest_unapplied", "no_output", "narration_stall", "denial_loop")
+                 "manifest_unapplied", "no_output", "narration_stall", "denial_loop", "stall")
 
 
 def classify(terminated, tool_calls):

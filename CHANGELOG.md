@@ -15,8 +15,19 @@ below was a `.env` change, never a code change:
 - **thinkingmachines/Inkling on Together** — `https://api.together.xyz/v1`, OpenAI-compatible.
 - **gpt-oss-120b on AWS Bedrock / self-hosted vLLM (RunPod)** — the original baseline; last measured eval 13/13.
 
-## Features (specs/0022–0083)
+## Features (specs/0022–0084)
 
+- `0084` **subagent propose-deadlock fix + no-progress stall breaker** — kills the "dramatic looping"
+  root-caused from a live log (113 "propose mode is read-only" denials, 23 "propose_changes is top-level only").
+  An auto-spawned grounding verifier (depth>0) INHERITED propose mode, where it could neither mutate nor approve
+  — a deadlock (documented at permissions.py:372). `CODE_SUBAGENT_NO_PROPOSE` projects such a child to plan-mode
+  read-only (honest "stop and report up"), and spawns the grounding/guardian verifiers read-only in every mode.
+  `CODE_STALL_MAX` adds the general backstop the narration guard can't be: a step with no NOVEL successful work
+  (denied / failed / pure-narration / DUPLICATE) increments a streak that — unlike the denial/narration counters
+  — does NOT reset on an interleaved allowed-but-useless call; N in a row → one nudge then an honest `stall`
+  outcome (added to `GATE_OUTCOMES`). The REPL now prints a "stopped early" note on max_steps/stall so a
+  truncated recap isn't mistaken for a finished answer. All flags default OFF → byte-identical.
+  (`scripts/check_stall_0084.py`, 13/13.)
 - `0083` **OS sandbox** — Phase 3: the one real KERNEL boundary (every other control is in-process/advisory).
   `CODE_SANDBOX_SPAWN` runs `run_command` children under a RESTRICTED TOKEN (`CreateRestrictedToken`
   DISABLE_MAX_PRIVILEGE|LUA_TOKEN — a lesser version of our own token, so `CreateProcessAsUserW` needs no special

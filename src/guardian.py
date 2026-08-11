@@ -41,9 +41,12 @@ def review(tool, target, reason, ctx):
     approved_destructive = len(getattr(ctx, "_destructive_targets", ()) or ())   # breadth so far this turn
     task = _review_task(tool, target, reason, request, approved_destructive)
     label = f"guardian: {tool}({_short(target)})"
+    # specs/0084: the reviewer must never mutate (its prompt already forbids it). Only pass read_only when the
+    # flag is on so a flag-off spawn call is byte-identical to before.
+    _kw = {"read_only": True} if config.SUBAGENT_NO_PROPOSE else {}
     try:
-        out = (spawn(task, effort=config.GUARDIAN_EFFORT, label=label)
-               if config.GUARDIAN_EFFORT else spawn(task, label=label))
+        out = (spawn(task, effort=config.GUARDIAN_EFFORT, label=label, **_kw)
+               if config.GUARDIAN_EFFORT else spawn(task, label=label, **_kw))
     except Exception as e:  # noqa: BLE001 - a reviewer failure must DENY, never crash the parent turn
         log.warning("guardian reviewer raised (%s) - DENY (fail-closed)", e)
         return Verdict(False, f"reviewer error: {e}")

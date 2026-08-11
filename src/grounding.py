@@ -482,9 +482,12 @@ def semantic_problems(final_text, paths, spawn, effort=None, fetched=None):
     if not spawn:
         return []
     task = _verifier_task(final_text, paths, fetched)
+    # specs/0084: a verifier only reads/judges; never let it carry a mutating mode. Only pass read_only when the
+    # flag is on so a flag-off spawn call is byte-identical to before.
+    _kw = {"read_only": True} if config.SUBAGENT_NO_PROPOSE else {}
     try:
-        out = (spawn(task, effort=effort, label="grounding: verify final answer")
-               if effort else spawn(task, label="grounding: verify final answer"))
+        out = (spawn(task, effort=effort, label="grounding: verify final answer", **_kw)
+               if effort else spawn(task, label="grounding: verify final answer", **_kw))
     except Exception as e:  # noqa: BLE001 - a verifier failure must never crash the parent turn
         log.warning("grounding verifier raised (%s) - skipping, fail-open", e)
         return []
