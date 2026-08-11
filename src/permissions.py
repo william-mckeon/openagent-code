@@ -214,6 +214,14 @@ class Permissions:
             return Decision(False, "run_command", t.raw, "deny",
                             "self-preservation: refusing a name-based kill that would terminate the agent's own process",
                             None, self.mode)
+        # specs/0078: deny READING a designated secret file (.env / keys) even inside the readable fence, so a
+        # prompt-injected read_file(.env) can't surface CODE_API_KEY / provider tokens to the model. Runs before
+        # the read-only allow so a secret file is never let through. Gated -> OFF (default) byte-identical.
+        if (config.SECRET_DENY_READ and tool == "read_file" and t.kind == "path"
+                and config.is_secret_path(t.rel)):
+            return Decision(False, "read_file", t.rel, "deny",
+                            "secret-deny-read: refusing to read a designated secret file (.env / key)",
+                            None, self.mode)
         # run_command gated on the PARSED command (execpolicy, Phase 16): deny/ask/allow rules match ANY
         # segment (the `rm` inside `cd x && rm y`) and a wholly read-only command is allowed like a read
         # tool. OFF (default) -> decide() never consults execpolicy and the prefix path below is unchanged.

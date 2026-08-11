@@ -159,6 +159,8 @@ def grep(args, ctx):
     # specs/0076: if `path` is a FILE, search it DIRECTLY. os.walk on a file yields nothing, so a grep of a
     # file that DOES contain the pattern returned a false "(no matches)" the model could act on.
     if os.path.isfile(root):
+        if config.SECRET_DENY_READ and config.is_secret_path(root):
+            return ToolResult(True, "(no matches)")   # specs/0078: never grep a designated secret file's content
         try:
             with open(root, encoding="utf-8") as f:
                 for i, line in enumerate(f, 1):
@@ -172,6 +174,8 @@ def grep(args, ctx):
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if not config.skip_walk_dir(d, dirpath)]
         for fn in filenames:
+            if config.SECRET_DENY_READ and config.is_secret_path(fn):
+                continue    # specs/0078: never surface a secret file's CONTENT in a grep result
             fp = os.path.join(dirpath, fn)
             if glob_filter and not _glob_match(_rel(ctx, fp), fn, glob_filter):
                 continue
@@ -201,6 +205,8 @@ def glob_tool(args, ctx):
         # pkg/mod/, ...) and blow the model's context window — which is how a glob 500'd a worker.
         if config.skip_rel_path(rel):
             continue
+        if config.SECRET_DENY_READ and config.is_secret_path(rel):
+            continue    # specs/0078: don't list a designated secret file's PATH
         hits.append(rel)
     hits = sorted(hits)
     cap = 200
@@ -241,6 +247,8 @@ def tree(args, ctx):
         indent = "  " * depth
         label = os.path.basename(dirpath) if depth else (rel if rel != "." else ".")
         files = sorted(filenames)
+        if config.SECRET_DENY_READ:   # specs/0078: don't list a designated secret file's name in the tree map
+            files = [f for f in files if not config.is_secret_path(f)]
         lines.append(f"{indent}{label}/  ({len(files)} file{'s' if len(files) != 1 else ''})")
         for fn in files[:per_dir]:
             lines.append(f"{indent}  {fn}")
@@ -385,17 +393,22 @@ def run_command(args, ctx):
                               f"({', '.join(esc)}) - refused. Write only inside the workspace "
                               "(or a folder granted with --add-dir).")
     shell_cmd, shell_stdin = _shell_invocation(cmd)
+    from . import envscrub   # specs/0078: an allowlisted child env (None when CODE_ENV_SCRUB off -> inherit)
     try:
         # encoding='utf-8', errors='replace': the default text=True decodes command output with the
         # PLATFORM encoding (cp1252 on Windows), which RAISES on any byte undefined there and nulls
         # stdout while returncode stays 0 - silently dropping real output into the trajectory.
         p = subprocess.run(shell_cmd, cwd=ctx.cwd, capture_output=True,
-                           encoding="utf-8", errors="replace", timeout=120, stdin=shell_stdin)
+                           encoding="utf-8", errors="replace", timeout=120, stdin=shell_stdin,
+                           env=envscrub.child_env())
     except subprocess.TimeoutExpired:
         return ToolResult(False, "Command timed out after 120s")
     out = (p.stdout or "")
     if p.stderr:
         out += "\n[stderr]\n" + p.stderr
+    if config.SCRUB_OUTPUT:   # specs/0078: redact secrets in the LIVE output before it reaches the model
+        from . import scrub
+        out = scrub.scrub_text(out)
     return ToolResult(p.returncode == 0, f"(exit {p.returncode})\n{out[:5000]}",
                       {"returncode": p.returncode})
 

