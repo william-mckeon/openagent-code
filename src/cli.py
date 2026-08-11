@@ -699,8 +699,26 @@ def _run_task(task_id, spec_path, perms):
         return 1
 
 
+def _apply_secrets_startup():
+    """specs/0082: load a DPAPI vault into os.environ + ACL-lock secret files at startup (Windows). Best-effort,
+    never raises. Re-reads config.API_KEY after a vault load so a vault-supplied key reaches the model (config
+    was imported before the load). Off by flag (default) -> no-op / byte-identical."""
+    try:
+        from . import secretsvault
+        if config.SECRETS_VAULT and secretsvault.load_into_env(config.SECRETS_VAULT_PATH):
+            config.API_KEY = os.environ.get("CODE_API_KEY", config.API_KEY)
+        if config.LOCK_SECRETS:
+            for _p in config.LOCK_SECRETS_PATHS:
+                ok, msg = secretsvault.lock_file_acl(_p)
+                if ok:
+                    log.info("secrets: ACL-locked %s (owner-only)", _p)
+    except Exception as e:  # noqa: BLE001 - secrets startup must never break launch
+        log.warning("secrets startup skipped (%s)", e)
+
+
 def main(argv=None):
     _force_utf8_stdout()
+    _apply_secrets_startup()
     argv = list(argv if argv is not None else sys.argv[1:])
     # Agent-name install verbs (specs/0036): set-and-exit BEFORE _parse_flags / Permissions / MCP connect() /
     # warm_up(), so they do ZERO network I/O and need no configured endpoint. They must be the LEADING token;

@@ -527,6 +527,15 @@ SECRET_PATH_GLOBS = [g.strip() for g in
 # CGNAT / ULA), fail-closed on an unresolvable host. OFF -> web_fetch is byte-identical (single follow_redirects call).
 NETFENCE = _as_bool(os.environ.get("CODE_NETFENCE", "false"))
 
+# Secrets at rest (specs/0082), all default OFF. LOCK_SECRETS: at startup, `icacls`-lock the files in
+# CODE_LOCK_SECRETS_PATHS (default .env) to owner-only (the Windows chmod 0600). SECRETS_VAULT: at startup,
+# load a DPAPI-encrypted vault (CODE_SECRETS_VAULT_PATH) into os.environ (setdefault), so the model key isn't
+# plaintext in .env; env-scrub (0078) then keeps it out of children. Windows-only; no-op elsewhere.
+LOCK_SECRETS = _as_bool(os.environ.get("CODE_LOCK_SECRETS", "false"))
+LOCK_SECRETS_PATHS = [p.strip() for p in os.environ.get("CODE_LOCK_SECRETS_PATHS", ".env").split(",") if p.strip()]
+SECRETS_VAULT = _as_bool(os.environ.get("CODE_SECRETS_VAULT", "false"))
+SECRETS_VAULT_PATH = os.environ.get("CODE_SECRETS_VAULT_PATH", "").strip() or _resolve_install_path("secrets.dat")
+
 # Guardian circuit-breaker (specs/0080). The guardian/fence deny is fail-closed PER call but stateless across
 # calls, so a prompt-injected loop can retry a denied destructive op forever. When > 0, the agent aborts the
 # turn after this many CONSECUTIVE denied tool calls. 0 (default) = off, byte-identical.

