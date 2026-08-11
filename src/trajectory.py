@@ -262,6 +262,19 @@ class Trajectory:
             "tool_calls": tool_calls,    # this turn's own tool-call count (RunResult.tool_calls)
         })
 
+    def log_dir_grant(self, path, tier):
+        """specs/0074: a mid-session directory grant (/add-dir or a trusted-user-dir auto-grant), typed so
+        session.resume can re-apply it by TIER — instead of re-parsing the model-visible '(system) Read access
+        granted to: X' prose (fragile; the trusted-dir variant prints the user-typed path, not the realpath).
+        Additive record: convert.py ignores unknown types, so no SCHEMA_VERSION bump and old files are unchanged."""
+        self._write({
+            "type": "dir_grant",
+            "session_id": self.session_id,
+            "ts": _ts(),
+            "path": path,                # realpath of the granted directory
+            "tier": tier,                # "read_only" | "extra" (write-capable)
+        })
+
     def log_verification(self, command, ok, output):
         self._write({
             "type": "verification",

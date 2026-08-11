@@ -278,6 +278,9 @@ class Agent:
         ctx._verified_ok = False      # did a CHECK actually confirm success this turn? (grounding's unverified-success net)
         ctx._runtime_ok = False       # did a HEALTH-CHECK (curl/http/port probe) confirm a service is UP? (specs/0053)
         ctx._narration_streak = 0     # consecutive pure-narration steps (specs/0067): reset per task, no cross-turn leak
+        _prst = getattr(self.planner, "reset", None)   # specs/0074: JsonPlanner nudge budget is per-task
+        if callable(_prst):
+            _prst()                   # NativePlanner has no reset() -> no-op (byte-identical)
         ctx.effort = None             # a prior turn's effort request must not carry over (specs/0021)
         # Propose mode (specs/0022): a change-list approved for one task must NEVER authorize edits on the
         # next (the same cross-turn-leak class the plan/goal resets above fix — and worse here, because it

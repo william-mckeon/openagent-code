@@ -16,11 +16,14 @@ from . import config
 from . import memory
 from . import todos
 from . import specstore
-from .permissions import Permissions
 from .trajectory import Trajectory
-from .runtime import build_agent
-from .subagent import make_context
 from .context import sanitize_tail
+from .logsetup import get_logger
+# NOTE: build_agent (runtime) and make_context (subagent) pull in the model/litellm stack; they are imported
+# LAZILY inside resume() so this module — and its pure helpers (_load_records/_working_from/_replay_dir_grants)
+# — stay import-light and dep-free for the harness.
+
+log = get_logger("session")
 
 
 def find_session(session_id):
@@ -43,23 +46,58 @@ def _restore_plan(records):
     return result.split("Plan updated:\n", 1)[-1] if "Plan updated:" in result else None
 
 
+def _load_records(path):
+    """specs/0074: parse a trajectory file line-by-line, SKIPPING a corrupt/truncated record instead of
+    raising. A process killed mid-write leaves a half-written final JSON line; the old list comprehension
+    raised JSONDecodeError and made --resume crash (the caller catches only FileNotFoundError), so a single
+    bad byte lost the whole session."""
+    records = []
+    for line in open(path, encoding="utf-8"):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            records.append(json.loads(line))
+        except json.JSONDecodeError:
+            log.warning("resume: skipping a corrupt/truncated trajectory line in %s", os.path.basename(path))
+    return records
+
+
+def _working_from(records):
+    """The rehydrated working set from the raw `turn` stream. specs/0074: filter out ALL role:'system' turns,
+    not just a leading one — with CODE_SITUATIONAL_CONTEXT on, log_env_capture writes a role:'system' env
+    block PER TURN (cwd/date/git); re-sending those stale mid-conversation blocks each step violates the
+    single-sent-copy invariant (specs/0035) and feeds the model a stale date/cwd. The ContextManager owns the
+    real system prompt; the env pin is refreshed per turn by set_env_context. Then snap to a valid tool-pairing
+    (sanitize_tail) so a dangling tool_use can't poison the resumed session."""
+    turns = [r["message"] for r in records if r.get("type") == "turn"]
+    return sanitize_tail([m for m in turns if m.get("role") != "system"])
+
+
+def _replay_dir_grants(records, permissions):
+    """specs/0074: re-apply mid-session directory grants (typed dir_grant records) onto the fence so the
+    resumed session admits the paths the rehydrated history tells the model it may read — otherwise the model
+    is told it has access the fence now denies, and (being a weak model) retries the denied read in a loop.
+    Old trajectories carry no dir_grant records -> nothing replayed (byte-identical). BY TIER so a read-only
+    grant never comes back write-capable."""
+    for r in records:
+        if r.get("type") == "dir_grant" and r.get("path"):
+            bucket = permissions.read_only_roots if r.get("tier") == "read_only" else permissions.extra_roots
+            if r["path"] not in bucket:
+                bucket.append(r["path"])
+
+
 def resume(session_id, workspace, permissions, verbose=False, interactive=False):
     """Rehydrate a session -> (trajectory, agent, ctx) ready to continue."""
     path = find_session(session_id)
     if not path:
         raise FileNotFoundError(f"no trajectory found for session {session_id!r} under "
                                 f"{config.trajectory_dir()}")
-    records = [json.loads(line) for line in open(path, encoding="utf-8") if line.strip()]
-
-    # Rebuild the working set from the raw `turn` stream (the full history). The first
-    # turn is the system prompt, which the ContextManager owns separately.
-    turns = [r["message"] for r in records if r.get("type") == "turn"]
-    working = turns[1:] if turns and turns[0].get("role") == "system" else list(turns)
-    # specs/0034: snap the rehydrated tail to a clean tool-pairing boundary. The raw turn stream can end on a
-    # DANGLING assistant tool_call (a prior turn that died mid-flight logged the assistant-with-tool_calls but
-    # not its results; agent rollback trims only the LIVE view, never the file), which Bedrock rejects on the
-    # next step. (The oversized-history OVERFLOW is handled by the ContextManager's hard-cap compaction.)
-    working = sanitize_tail(working)
+    from .runtime import build_agent          # lazy: keep session.py import-light / dep-free (see top note)
+    from .subagent import make_context
+    records = _load_records(path)
+    working = _working_from(records)
+    _replay_dir_grants(records, permissions)
     plan = _restore_plan(records)
 
     traj = Trajectory.resume(path)

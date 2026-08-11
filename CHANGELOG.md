@@ -15,8 +15,15 @@ below was a `.env` change, never a code change:
 - **thinkingmachines/Inkling on Together** — `https://api.together.xyz/v1`, OpenAI-compatible.
 - **gpt-oss-120b on AWS Bedrock / self-hosted vLLM (RunPod)** — the original baseline; last measured eval 13/13.
 
-## Features (specs/0022–0073)
+## Features (specs/0022–0074)
 
+- `0074` **resume integrity** — six resume-cluster fixes, incl. two that PERMANENTLY broke a session:
+  `sanitize_tail` is now a full-history tool-pairing scan (a MID-list / partial-results dangling `tool_use` is
+  stubbed or dropped instead of poisoning every later step); `--resume` no longer crashes on a truncated last
+  JSON line (`_load_records` skips it); ALL stale `role:'system'` env blocks are filtered on rehydrate (not
+  just a leading one); mid-session `/add-dir`/trusted-dir grants are persisted as typed `dir_grant` records and
+  replayed by tier; and `JsonPlanner`'s nudge budget resets per task. No new flag; session.py's model imports
+  made lazy so its pure helpers stay dep-free.
 - `0073` **gate-honesty** — six corpus-poison / gate-bypass fixes: `ran_check` no longer flips "verified" on
   `mkdir build`/`git checkout build`/`npm run dev` (matches only real tools / `<tool> <verb>`); `ran_healthcheck`
   no longer flips "service up" on any URL like `git clone https://…` (only a real probe tool counts); a

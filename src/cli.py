@@ -208,6 +208,17 @@ def _closest_mode(name):
     return m[0] if m else None
 
 
+def _log_dir_grant(agent, path, tier):
+    """specs/0074: persist a mid-session directory grant as a typed record so --resume can restore the fence.
+    Best-effort — logging a grant must never break the REPL."""
+    traj = getattr(agent, "traj", None)
+    if traj is not None:
+        try:
+            traj.log_dir_grant(path, tier)
+        except Exception:  # noqa: BLE001
+            pass
+
+
 def _repl_add_dir(agent, ctx, path):
     """`/add-dir <path>` — grant a reference folder mid-session (0003 host access).
     Widens the LIVE permission fence for READS and tells the agent it can now read there.
@@ -225,6 +236,7 @@ def _repl_add_dir(agent, ctx, path):
     real = os.path.realpath(ap)
     if real not in ctx.permissions.read_only_roots:
         ctx.permissions.read_only_roots.append(real)
+        _log_dir_grant(agent, real, "read_only")   # specs/0074: typed record so resume restores the grant
     # Tell the agent (human-grant -> the model needs to KNOW the folder is readable).
     agent.cm.add({"role": "user", "content":
                   f"(system) Read access granted to: {ap}\n"
@@ -243,6 +255,7 @@ def _repl_grant_readonly(agent, ctx, ap):
     real = os.path.realpath(ap)
     if real not in ctx.permissions.read_only_roots:
         ctx.permissions.read_only_roots.append(real)
+        _log_dir_grant(agent, real, "read_only")   # specs/0074: restore this grant on --resume
     agent.cm.add({"role": "user", "content":
                   f"(system) Read access granted to: {ap}\n"
                   f"You may now read files there with absolute paths, and pass that path to grep/glob to "

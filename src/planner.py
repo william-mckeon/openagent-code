@@ -82,6 +82,13 @@ class JsonPlanner:
         self.model = model
         self.nudges = 0
 
+    def reset(self):
+        """specs/0074: clear per-TASK state (the nudge budget) at the start of each run. The REPL reuses ONE
+        agent/planner across turns, so without this a turn that exhausted its nudges left self.nudges maxed,
+        and the next unrelated task's FIRST protocol slip skipped straight to gave_up (mislabeled
+        nudge_exhausted) with zero corrective nudges. NativePlanner has no such state (no reset needed)."""
+        self.nudges = 0
+
     def step(self, messages, step):
         msg = self.model.complete(messages, None, step)   # no tools param
         content = msg.content or ""

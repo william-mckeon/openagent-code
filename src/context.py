@@ -83,17 +83,39 @@ def bounded_summary(messages, budget_chars, summarize_once, render):
 
 
 def sanitize_tail(working):
-    """Snap a rehydrated history to a clean tool-pairing boundary (specs/0034): drop a TRAILING assistant
-    message with tool_calls that has no following tool result (a prior turn that died mid-flight logged the
-    assistant-with-tool_calls but not its results; agent rollback trims only the LIVE view, never the file),
-    and a LEADING orphan tool result. Bedrock's Converse API rejects an unpaired tool_use / tool_result on the
-    next step. A strict no-op on an already-clean tail."""
+    """Snap a rehydrated history to a VALID tool-pairing EVERYWHERE (specs/0034, generalized specs/0074), not
+    just the tail. A prior turn that died mid-flight — or logged only SOME of a parallel call's results — left
+    an assistant tool_call with no matching tool result; Bedrock's Converse API rejects an unpaired
+    tool_use/tool_result on the NEXT step, permanently poisoning a resumed session (the tail-only scan missed a
+    MID-list dangle and a PARTIAL-results group). The scan: drop a LEADING orphan tool result; then for every
+    assistant-with-tool_calls, pair each call id against the immediately-following tool results — synthesize a
+    stub result for a missing id MID-history (so the surrounding turns stay valid) and DROP a TRAILING
+    incomplete group (nothing follows it to keep). A strict no-op on an already-clean history."""
     w = list(working)
-    while w and w[-1].get("role") == "assistant" and w[-1].get("tool_calls"):
-        w.pop()
-    while w and w[0].get("role") == "tool":
+    while w and w[0].get("role") == "tool":          # leading orphan tool result
         w.pop(0)
-    return w
+    out, i, n = [], 0, len(w)
+    while i < n:
+        m = w[i]
+        calls = m.get("tool_calls") if m.get("role") == "assistant" else None
+        if not calls:
+            out.append(m); i += 1; continue
+        j = i + 1
+        results = []
+        while j < n and w[j].get("role") == "tool":  # the results that immediately follow this turn
+            results.append(w[j]); j += 1
+        answered = {r.get("tool_call_id") for r in results}
+        missing = [c.get("id") for c in calls if c.get("id") not in answered]
+        if not missing:
+            out.extend([m, *results]); i = j; continue
+        if j >= n:                                    # TRAILING incomplete group -> drop it (nothing after)
+            break
+        out.extend([m, *results])                     # MID-history gap -> keep the turn, stub the missing ids
+        for cid in missing:
+            out.append({"role": "tool", "tool_call_id": cid,
+                        "content": "(interrupted — no result was recorded for this call)"})
+        i = j
+    return out
 
 
 class ContextManager:
