@@ -146,12 +146,47 @@ def split_segments(command, shell="bash"):
     return [s for s in out if s]
 
 
+# specs/0081: an interpreter WRAPPER whose real command hides in a -Command / -c / /c argument (or a
+# -EncodedCommand base64). Without lowering, `powershell -Command "rm -rf x"` classified on the wrapper token
+# `powershell` and the inner `rm -rf x` was invisible to deny/ask rules and the dangerous-pattern check.
+_WRAP_INNER = re.compile(
+    r"(?i)^\s*(?:[\w.:/\\-]*[/\\])?(?:powershell|pwsh|bash|sh|zsh|dash|cmd)(?:\.exe)?\b"
+    r".*?\s(?:-c|-lc|-command|/c)\b\s+(.*)$", re.S)
+_WRAP_ENC = re.compile(
+    r"(?i)^\s*(?:[\w.:/\\-]*[/\\])?(?:powershell|pwsh)(?:\.exe)?\b.*?\s-e(?:nc|ncodedcommand)?\b\s+([A-Za-z0-9+/=]{8,})",
+    re.S)
+
+
+def _interpreter_inner(seg):
+    """specs/0081: if `seg` is an interpreter WRAPPER (powershell -Command "…", bash -c "…", cmd /c …, or
+    powershell -EncodedCommand <b64>), return the INNER command string so it is decomposed and assessed too;
+    else None. Closes wrapper-smuggling — a dangerous inner command hidden behind a benign wrapper token.
+    Never raises."""
+    try:
+        m = _WRAP_ENC.match(seg)
+        if m:
+            import base64
+            return base64.b64decode(m.group(1) + "=" * (-len(m.group(1)) % 4)).decode("utf-16-le", "replace")
+        m = _WRAP_INNER.match(seg)
+        if m:
+            inner = m.group(1).strip()
+            if len(inner) >= 2 and inner[0] in "\"'" and inner[-1] == inner[0]:
+                inner = inner[1:-1]          # peel one layer of surrounding quotes
+            return inner or None
+    except Exception:  # noqa: BLE001 - lowering must never crash the gate
+        return None
+    return None
+
+
 def _collect(command, shell, out):
     subs, stripped = _extract_substitutions(command)
     for seg in _split_top_level(stripped, shell):
         seg = seg.strip()
         if seg:
             out.append(seg)
+            inner = _interpreter_inner(seg)   # specs/0081: lower the wrapper's INNER command and assess it too
+            if inner and inner != seg:
+                _collect(inner, shell, out)
     for sub in subs:
         _collect(sub, shell, out)   # a substitution's contents are commands too
 

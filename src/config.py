@@ -536,6 +536,19 @@ GUARDIAN_MAX_DENIALS = _env_int("CODE_GUARDIAN_MAX_DENIALS", "0")
 # file is denied by default (an operator shouldn't have to know to add the rule). Merged UNDER the user's own
 # rules; a user deny still wins, and OFF is byte-identical.
 PROTECT_PATHS = _as_bool(os.environ.get("CODE_PROTECT_PATHS", "false"))
+
+# Host-executable path pinning (specs/0081), default OFF (empty). An allow rule (run_command(git:*)) matches on
+# the token STRING, so a prompt-injected command that drops a malicious git.exe earlier on PATH would forge it.
+# CODE_EXEC_HOST_PIN pins an executable basename to absolute path(s): `git=C:/Program Files/Git/bin/git.exe;
+# python=C:/Python/python.exe,C:/Python312/python.exe`. When set, an allow-matched command whose basename is
+# pinned must RESOLVE (shutil.which) to a pinned path, else it's downgraded to ask. Empty -> no pinning.
+EXEC_HOST_PIN = {}
+for _pair in os.environ.get("CODE_EXEC_HOST_PIN", "").split(";"):
+    if "=" in _pair:
+        _n, _paths = _pair.split("=", 1)
+        _n = _n.strip().lower()
+        if _n:
+            EXEC_HOST_PIN[_n] = [os.path.normcase(os.path.abspath(p.strip())) for p in _paths.split(",") if p.strip()]
 _PROTECT_GLOBS = ["**/.git/**", ".git/**", "**/.env", ".env", "**/.env.*", ".env.*"]
 
 

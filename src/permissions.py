@@ -56,6 +56,36 @@ def _is_self_kill(command):
                for seg in _STMT_SEP.split(command or ""))
 
 
+def _exec_pin_violation(cmd):
+    """specs/0081: host-exe pinning. If CODE_EXEC_HOST_PIN pins the command's executable BASENAME to absolute
+    path(s), resolve it (shutil.which, PATHEXT-aware) and return a reason string when the resolved path is NOT
+    a pinned one — a planted same-named binary forging an allow rule. Empty pin map / an unpinned basename ->
+    None (no change). Never raises."""
+    if not config.EXEC_HOST_PIN:
+        return None
+    try:
+        tok = execpolicy._first_token((cmd or "").strip()).strip("\"'")
+        if not tok:
+            return None
+        base = os.path.basename(tok).lower()
+        for ext in (".exe", ".cmd", ".bat", ".com"):
+            if base.endswith(ext):
+                base = base[:-len(ext)]
+                break
+        pins = config.EXEC_HOST_PIN.get(base)
+        if not pins:
+            return None
+        import shutil
+        resolved = shutil.which(tok) or shutil.which(base)
+        if resolved is None:
+            return f"exec-host-pin: {base!r} is pinned but could not be resolved on PATH — refusing to auto-allow"
+        if os.path.normcase(os.path.abspath(resolved)) not in pins:
+            return f"exec-host-pin: {base!r} resolved to {resolved!r}, not a pinned path (possible planted binary)"
+    except Exception:  # noqa: BLE001 - pinning must never crash the gate
+        return None
+    return None
+
+
 def _canonical_tool(tool):
     """specs/0071: resolve a tool alias (e.g. print_tree -> tree) to its REAL name so the permission gate
     classifies and fences it correctly. Registry.run resolves the alias AFTER the gate, so without this a
@@ -657,6 +687,15 @@ class Permissions:
         for seg in candidates:                                   # allow — matches ANY segment
             r = self._match_command_rules(self.allow, seg)
             if r:
+                pin = _exec_pin_violation(t.raw)   # specs/0081: a planted same-named binary can't forge an allow
+                if pin is not None:
+                    esc = self._ask_approver("run_command", t, pin, ctx)
+                    if esc is not None:
+                        return D(esc[0], "ask", f"{pin} -> {esc[1]}")
+                    if getattr(ctx, "interactive", False):
+                        ok = self._prompt("run_command", t)
+                        return D(ok, "ask", f"{pin} -> {'allowed' if ok else 'denied'} by user")
+                    return D(False, "ask", pin)
                 return D(True, "allow", f"allow rule {r!r}", r)
         if self.mode == "bypass":
             return D(True, "allow", "bypass mode")
