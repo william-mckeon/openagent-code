@@ -13,6 +13,7 @@ docker-compose, and the Dockerfile sets the in-image defaults.
     Dockerfile ENV defaults  <  .env (local) / env_file (compose)  <  real env
 """
 import os
+import sys
 import json
 
 from dotenv import load_dotenv
@@ -34,6 +35,32 @@ load_dotenv(os.path.join(INSTALL_ROOT, ".env"), override=False)
 
 def _as_bool(value: str) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_int(name: str, default) -> int:
+    """specs/0075: parse an int env var, falling back to `default` on a malformed value instead of raising at
+    IMPORT. A single bad CODE_* value (e.g. CODE_MAX_STEPS=abc) used to crash EVERY run — flag-off included —
+    with an uncaught ValueError before the agent even started. Warns to stderr so the typo isn't silent."""
+    raw = os.environ.get(name)
+    if raw is None or str(raw).strip() == "":
+        return int(default)
+    try:
+        return int(str(raw).strip())
+    except (ValueError, TypeError):
+        sys.stderr.write(f"[config] {name}={raw!r} is not a valid integer; using {default}\n")
+        return int(default)
+
+
+def _env_float(name: str, default) -> float:
+    """specs/0075: the float twin of _env_int — never raise at import on a malformed CODE_* value."""
+    raw = os.environ.get(name)
+    if raw is None or str(raw).strip() == "":
+        return float(default)
+    try:
+        return float(str(raw).strip())
+    except (ValueError, TypeError):
+        sys.stderr.write(f"[config] {name}={raw!r} is not a valid number; using {default}\n")
+        return float(default)
 
 
 # -----------------------------------------------------------------------------
@@ -91,7 +118,7 @@ def looks_like_dep_cache(path: str) -> bool:
 MODEL = os.environ.get("CODE_MODEL", "openai/thinkingmachines/Inkling-Small:peft:262144")
 API_BASE = os.environ.get("CODE_API_BASE", "https://tinker.thinkingmachines.dev/services/tinker-prod/oai/api/v1")
 API_KEY = os.environ.get("CODE_API_KEY", "")
-TEMPERATURE = float(os.environ.get("CODE_TEMPERATURE", "0.2"))
+TEMPERATURE = _env_float("CODE_TEMPERATURE", "0.2")
 
 # CODE_REASONING_EFFORT — gpt-oss reasoning depth: low | medium | high. Higher means
 # the model deliberates more before answering — the lever against a weaker model
@@ -126,10 +153,14 @@ def reasoning_pin_overrides_ladder():
     _reasoning_kwargs, so when it 'escalates' it would actually DOWNGRADE such a pin (e.g. xhigh -> high). It
     must therefore be a NO-OP when this returns True. A plain ladder value ('low'/'medium'/'high') or an empty
     pin returns False, so adaptive effort runs exactly as before (byte-identical)."""
-    v = REASONING_VALUE
-    if v in (None, ""):
+    if REASONING_VALUE in (None, ""):
         return False
-    return not (isinstance(v, str) and v in _EFFORTS)
+    # specs/0075: a CUSTOM reasoning param (not the ladder's own 'reasoning_effort') can't be represented by
+    # the low/med/high ladder AT ALL, so a pin on it must override regardless of the value's shape — otherwise
+    # a ladder-shaped value ('high') on a custom param returned False and adaptive effort silently replaced it.
+    if REASONING_PARAM and REASONING_PARAM != "reasoning_effort":
+        return True
+    return not (isinstance(REASONING_VALUE, str) and REASONING_VALUE in _EFFORTS)
 
 # CODE_EXTRA_BODY (specs/0049) — a JSON object of provider params merged into the request's `extra_body`,
 # so the operator can send WHATEVER an OpenAI-compatible endpoint accepts (e.g. Tinker's `separate_reasoning`)
@@ -212,18 +243,18 @@ TOOL_MODE = os.environ.get("CODE_TOOL_MODE", "native").strip().lower()
 # a flaky / intermittent endpoint instead of failing the turn. 0 = no retries.
 # Default 5 (not 3): serverless Bedrock throws bursts of transient 503s on large
 # requests, and 3 short tries gave up before the burst cleared.
-MODEL_RETRIES = int(os.environ.get("CODE_MODEL_RETRIES", "5"))
+MODEL_RETRIES = _env_int("CODE_MODEL_RETRIES", "5")
 
 # CODE_BACKOFF_CAP — max seconds for one retry's exponential backoff (jitter added on
 # top). Raised from the old hard-coded 8s so retries can outwait a Bedrock 503 burst.
-BACKOFF_CAP = float(os.environ.get("CODE_BACKOFF_CAP", "20"))
+BACKOFF_CAP = _env_float("CODE_BACKOFF_CAP", "20")
 
 # CODE_REQUEST_TIMEOUT — read timeout (seconds) for a SINGLE model call. Generous
 # ON PURPOSE, copied from openagent-infra: a scale-to-zero serverless worker
 # cold-starts on its first call after an idle period (tens of seconds), and a short
 # timeout would ABORT that spin-up. openagent-infra absorbs the cold start at call
 # time with a 600s read timeout rather than failing fast; we do the same.
-REQUEST_TIMEOUT = float(os.environ.get("CODE_REQUEST_TIMEOUT", "600"))
+REQUEST_TIMEOUT = _env_float("CODE_REQUEST_TIMEOUT", "600")
 
 # CODE_WARMUP / CODE_WARMUP_BUDGET — absorb a cold start ONCE, up front. Before the
 # first task, warm_up() sends a throwaway tool-call probe and waits (up to
@@ -238,7 +269,7 @@ WARMUP = _as_bool(os.environ.get("CODE_WARMUP", "true"))
 # (give-up -> the real call drops -> re-warm -> repeat). The real cure for cold starts
 # is a min-active worker on the RunPod endpoint (no scale-to-zero); this just makes the
 # unavoidable first wait a single one. Set 0 / CODE_WARMUP=false to skip.
-WARMUP_BUDGET = float(os.environ.get("CODE_WARMUP_BUDGET", "600"))
+WARMUP_BUDGET = _env_float("CODE_WARMUP_BUDGET", "600")
 
 # CODE_STREAM (specs/0043) — stream the primary model turn. OFF by default -> the ONE
 # litellm.completion in complete() is a single non-streaming call, and both the request kwargs
@@ -272,7 +303,7 @@ WORKSPACE = os.environ.get("CODE_WORKSPACE") or os.getcwd()
 # can synthesize. The 128k window has the token headroom; let the loop take more
 # round-trips. Pair with the on-max_steps synthesis turn (agent.py) so a capped run
 # still returns an answer, and with subagent decomposition so big tasks fan out.
-MAX_STEPS = int(os.environ.get("CODE_MAX_STEPS", "50"))
+MAX_STEPS = _env_int("CODE_MAX_STEPS", "50")
 AUTO_APPROVE = _as_bool(os.environ.get("CODE_AUTO_APPROVE", "true"))
 VERBOSE = _as_bool(os.environ.get("CODE_VERBOSE", "true"))
 
@@ -323,7 +354,7 @@ ADD_DIRS = os.environ.get("CODE_ADD_DIRS", "").strip()
 # while it has update_plan steps marked completed whose named file shows no real change — the
 # harness challenges the mismatch (up to N times), then records an honest 'unverified_completion'.
 VERIFY_COMPLETION = _as_bool(os.environ.get("CODE_VERIFY_COMPLETION", "true"))
-VERIFY_COMPLETION_RETRIES = int(os.environ.get("CODE_VERIFY_COMPLETION_RETRIES", "2"))
+VERIFY_COMPLETION_RETRIES = _env_int("CODE_VERIFY_COMPLETION_RETRIES", "2")
 
 # Grounding check (Phase 10 / specs/0010). After verified completion accepts a "done", the harness
 # checks that the CLAIMS in the closing answer are grounded in the sources the agent cited/touched.
@@ -333,7 +364,7 @@ VERIFY_COMPLETION_RETRIES = int(os.environ.get("CODE_VERIFY_COMPLETION_RETRIES",
 # failure is re-prompted (up to N), then recorded as an honest 'ungrounded_completion'. Tier 2 is on
 # by default: it is the more agentic check AND each verifier is a captured trajectory for the flywheel.
 VERIFY_GROUNDING = _as_bool(os.environ.get("CODE_VERIFY_GROUNDING", "true"))
-VERIFY_GROUNDING_RETRIES = int(os.environ.get("CODE_VERIFY_GROUNDING_RETRIES", "2"))
+VERIFY_GROUNDING_RETRIES = _env_int("CODE_VERIFY_GROUNDING_RETRIES", "2")
 VERIFY_GROUNDING_SEMANTIC = _as_bool(os.environ.get("CODE_VERIFY_GROUNDING_SEMANTIC", "true"))
 # The reasoning effort the runtime Tier-2 grounding VERIFIER subagent runs at, INDEPENDENT of the
 # coding agent's global CODE_REASONING_EFFORT — so the judge can run cheap/low while the agent stays
@@ -367,7 +398,7 @@ GROUND_SKIP_GREENFIELD = _as_bool(os.environ.get("CODE_GROUND_SKIP_GREENFIELD", 
 # Centpilot run flagged its 11 stub files turn after turn). Only consulted when CODE_GROUND_SKIP_GREENFIELD
 # is on.
 try:
-    GROUND_GREENFIELD_MAX = max(0, int(os.environ.get("CODE_GROUND_GREENFIELD_MAX", "0")))
+    GROUND_GREENFIELD_MAX = max(0, _env_int("CODE_GROUND_GREENFIELD_MAX", "0"))
 except ValueError:
     GROUND_GREENFIELD_MAX = 0
 
@@ -378,11 +409,11 @@ except ValueError:
 # print trip a nudge to finalize (bounded), then an honest 'narration_stall'. OFF (default) -> byte-identical.
 GUARD_NARRATION_STALL = _as_bool(os.environ.get("CODE_GUARD_NARRATION_STALL", "false"))
 try:
-    NARRATION_STALL_MAX = max(2, int(os.environ.get("CODE_NARRATION_STALL_MAX", "3")))
+    NARRATION_STALL_MAX = max(2, _env_int("CODE_NARRATION_STALL_MAX", "3"))
 except ValueError:
     NARRATION_STALL_MAX = 3
 try:
-    NARRATION_STALL_RETRIES = max(0, int(os.environ.get("CODE_NARRATION_STALL_RETRIES", "1")))
+    NARRATION_STALL_RETRIES = max(0, _env_int("CODE_NARRATION_STALL_RETRIES", "1"))
 except ValueError:
     NARRATION_STALL_RETRIES = 1
 
@@ -484,7 +515,7 @@ SCRUB_TRAJECTORY = _as_bool(os.environ.get("CODE_SCRUB_TRAJECTORY", "false"))
 # floor for the fuzziest tier - keep it conservative (a loose value is what reintroduces the risk).
 EDIT_FUZZY = _as_bool(os.environ.get("CODE_EDIT_FUZZY", "false"))
 try:
-    EDIT_FUZZY_THRESHOLD = float(os.environ.get("CODE_EDIT_FUZZY_THRESHOLD", "0.9"))
+    EDIT_FUZZY_THRESHOLD = _env_float("CODE_EDIT_FUZZY_THRESHOLD", "0.9")
 except ValueError:
     EDIT_FUZZY_THRESHOLD = 0.9
 
@@ -500,10 +531,10 @@ APPLY_PATCH = _as_bool(os.environ.get("CODE_APPLY_PATCH", "false"))
 # runs as an ARGV list with no shell (no injection). CODE_VERIFY_CMDS_CONFIG is a JSON map of ext -> argv
 # list, resolved against INSTALL_ROOT. All default OFF except the reward label. See specs/0014.
 VERIFY_TOUCHED = _as_bool(os.environ.get("CODE_VERIFY_TOUCHED", "false"))
-VERIFY_TOUCHED_RETRIES = int(os.environ.get("CODE_VERIFY_TOUCHED_RETRIES", "2"))
+VERIFY_TOUCHED_RETRIES = _env_int("CODE_VERIFY_TOUCHED_RETRIES", "2")
 VERIFY_CMDS_CONFIG = _resolve_install_path(os.environ.get("CODE_VERIFY_CMDS_CONFIG", ""))
 VERIFY_TOUCHED_LABEL = _as_bool(os.environ.get("CODE_VERIFY_TOUCHED_LABEL", "true"))
-VERIFY_TIMEOUT = int(os.environ.get("CODE_VERIFY_TIMEOUT", "60"))
+VERIFY_TIMEOUT = _env_int("CODE_VERIFY_TIMEOUT", "60")
 
 # execpolicy (Phase 16 / specs/0016). Gate run_command on its PARSED segments (read-only / mutating /
 # dangerous) instead of a raw prefix: a deny/ask/allow rule then matches ANY segment (the `rm` inside
@@ -545,7 +576,7 @@ GUARDIAN_EFFORT = _gd_effort if _gd_effort in _EFFORTS else ""
 # cap denies the (N+1)-th regardless of the reviewer's verdict ("escalate to a human"). Raise it to allow
 # a bigger unattended sweep (a deliberate, auditable act). 0 disables the cap.
 try:
-    GUARDIAN_MAX_DESTRUCTIVE = max(0, int(os.environ.get("CODE_GUARDIAN_MAX_DESTRUCTIVE", "5")))
+    GUARDIAN_MAX_DESTRUCTIVE = max(0, _env_int("CODE_GUARDIAN_MAX_DESTRUCTIVE", "5"))
 except ValueError:
     GUARDIAN_MAX_DESTRUCTIVE = 5
 
@@ -567,18 +598,18 @@ GOAL_LOOP = _as_bool(os.environ.get("CODE_GOAL_LOOP", "false"))
 # Hard ceiling on bar iterations, whatever the model asks for. The destructive cap counts DISTINCT targets,
 # so it does NOT bound a bar re-running — this is the ONLY thing that does.
 try:
-    GOAL_MAX_ITERATIONS = max(1, int(os.environ.get("CODE_GOAL_MAX_ITERATIONS", "3")))
+    GOAL_MAX_ITERATIONS = max(1, _env_int("CODE_GOAL_MAX_ITERATIONS", "3"))
 except ValueError:
     GOAL_MAX_ITERATIONS = 3
 # Steps kept in reserve: run() falls THROUGH the gate chain to the synthesis path when max_steps runs out
 # (returning 'max_steps', not 'goal_unmet'), so the gate stops re-prompting this close to the ceiling.
 try:
-    GOAL_STEP_HEADROOM = max(1, int(os.environ.get("CODE_GOAL_STEP_HEADROOM", "6")))
+    GOAL_STEP_HEADROOM = max(1, _env_int("CODE_GOAL_STEP_HEADROOM", "6"))
 except ValueError:
     GOAL_STEP_HEADROOM = 6
 # Seconds a single bar run may take before it's killed (a hung bar must not hang the loop).
 try:
-    GOAL_TIMEOUT = max(1, int(os.environ.get("CODE_GOAL_TIMEOUT", "120")))
+    GOAL_TIMEOUT = max(1, _env_int("CODE_GOAL_TIMEOUT", "120"))
 except ValueError:
     GOAL_TIMEOUT = 120
 # OPTIONAL operator allowlist: a JSON file of permitted bar argv lists (e.g. [["npm","test"],["pytest"]]).
@@ -614,7 +645,7 @@ _ef_max = os.environ.get("CODE_EFFORT_MAX", "").strip().lower()
 EFFORT_MAX = _ef_max if _ef_max in _EFFORTS else "high"
 # Struggle score at which the harness auto-escalates one rung (a single flaky retry shouldn't jump).
 try:
-    EFFORT_THRESHOLD = max(1, int(os.environ.get("CODE_EFFORT_THRESHOLD", "2")))
+    EFFORT_THRESHOLD = max(1, _env_int("CODE_EFFORT_THRESHOLD", "2"))
 except ValueError:
     EFFORT_THRESHOLD = 2
 # OPTIONAL state file for the online learner (its persisted per-signature stats). Unset = in-memory only.
@@ -729,15 +760,15 @@ def permission_extra_roots() -> list:
 # CODE_COMPACT_KEEP_RECENT  How many of the most-recent working messages to keep
 #                         verbatim (never summarized).
 # -----------------------------------------------------------------------------
-COMPACT_AT_TOKENS = int(os.environ.get("CODE_COMPACT_AT_TOKENS", "16000"))
-COMPACT_KEEP_RECENT = int(os.environ.get("CODE_COMPACT_KEEP_RECENT", "8"))
+COMPACT_AT_TOKENS = _env_int("CODE_COMPACT_AT_TOKENS", "16000")
+COMPACT_KEEP_RECENT = _env_int("CODE_COMPACT_KEEP_RECENT", "8")
 
 # CODE_MAX_MESSAGE_CHARS — cap on a SINGLE message's content in the LIVE context (the full
 # text is still logged raw to the trajectory). Stops one giant tool result (a huge file read,
 # a long subagent return) from dominating the window and defeating compaction — which keeps
 # recent messages verbatim and so can't shrink a huge recent one. ~48k chars ≈ 12k tokens.
 # 0 disables the cap.
-MAX_MESSAGE_CHARS = int(os.environ.get("CODE_MAX_MESSAGE_CHARS", "48000"))
+MAX_MESSAGE_CHARS = _env_int("CODE_MAX_MESSAGE_CHARS", "48000")
 
 # CODE_MODEL_MAX_TOKENS — the model's HARD context window (Phase 34 / specs/0034). Unlike CODE_COMPACT_AT_TOKENS
 # above (a SOFT compaction TRIGGER), this is the true ceiling the SENT context must never exceed. gpt-oss-120b
@@ -790,7 +821,7 @@ else:
     except ValueError:
         MODEL_MAX_OUTPUT_TOKENS = 0
 try:
-    OUTPUT_MARGIN_TOKENS = max(0, int(os.environ.get("CODE_OUTPUT_MARGIN_TOKENS", "4096")))
+    OUTPUT_MARGIN_TOKENS = max(0, _env_int("CODE_OUTPUT_MARGIN_TOKENS", "4096"))
 except ValueError:
     OUTPUT_MARGIN_TOKENS = 4096
 MIN_OUTPUT_TOKENS = 512   # floor for the auto output cap so a large prompt never yields a non-positive cap
@@ -800,17 +831,17 @@ MIN_OUTPUT_TOKENS = 512   # floor for the auto output cap so a large prompt neve
 #   may not), 2 = children may spawn too, etc. Enforced at the spawn_agent tool.
 #   2 (raised from 1): lets a per-folder child decompose a large folder one level
 #   further, so a whole-project review maps cleanly as a tree of summaries.
-MAX_SUBAGENT_DEPTH = int(os.environ.get("CODE_MAX_SUBAGENT_DEPTH", "2"))
+MAX_SUBAGENT_DEPTH = _env_int("CODE_MAX_SUBAGENT_DEPTH", "2")
 
 # CODE_MAX_SUBAGENT_FANOUT — how many children ONE agent may spawn (breadth). Depth
 # alone doesn't bound cost: an agent told to "decompose" could otherwise spawn an
 # unbounded number of subagents. Caps the fan-out per agent. Enforced at spawn_agent.
-MAX_SUBAGENT_FANOUT = int(os.environ.get("CODE_MAX_SUBAGENT_FANOUT", "8"))
+MAX_SUBAGENT_FANOUT = _env_int("CODE_MAX_SUBAGENT_FANOUT", "8")
 
 # CODE_MAX_REVIEW_AREAS — fan-out cap for the review_repo orchestrator specifically. Higher
 # than MAX_SUBAGENT_FANOUT (which guards ad-hoc spawning) because a whole-repo review wants
 # to cover EVERY top-level area, and each child is bounded and returns only a short summary.
-MAX_REVIEW_AREAS = int(os.environ.get("CODE_MAX_REVIEW_AREAS", "16"))
+MAX_REVIEW_AREAS = _env_int("CODE_MAX_REVIEW_AREAS", "16")
 
 # Workflows (Phase 38 / specs/0038) — a synchronous MULTI-PHASE fan-out+reduce engine (src/workflow.py): the
 # generalization of review_repo to N ordered phases the MODEL authors, each phase fanning out captured
@@ -824,7 +855,7 @@ WORKFLOWS = _as_bool(os.environ.get("CODE_WORKFLOWS", "false"))
 # so the two orchestrators tune independently. Defensive int (config is imported on every flag-off run — a
 # bad value must never raise at import).
 try:
-    MAX_WORKFLOW_PHASES = max(1, int(os.environ.get("CODE_MAX_WORKFLOW_PHASES", "5")))
+    MAX_WORKFLOW_PHASES = max(1, _env_int("CODE_MAX_WORKFLOW_PHASES", "5"))
 except ValueError:
     MAX_WORKFLOW_PHASES = 5
 # Bounded PARALLEL fan-out (Phase 39 / specs/0039). How many fan-out children run CONCURRENTLY: 1 (default) =
@@ -834,7 +865,7 @@ except ValueError:
 # can't burst the account-global Bedrock rate limit). Behavioral, not a safety gate -> absent from
 # safety_fingerprint like the other fan-out caps. Defensive int (a bad value must not raise at import).
 try:
-    WORKFLOW_CONCURRENCY = max(1, min(int(os.environ.get("CODE_WORKFLOW_CONCURRENCY", "1")), MAX_REVIEW_AREAS))
+    WORKFLOW_CONCURRENCY = max(1, min(_env_int("CODE_WORKFLOW_CONCURRENCY", "1"), MAX_REVIEW_AREAS))
 except ValueError:
     WORKFLOW_CONCURRENCY = 1
 # Async background runtime (Phase 40 / specs/0040), REPL-ONLY. When on, run_workflow can SUBMIT a workflow to
@@ -844,7 +875,7 @@ except ValueError:
 # from safety_fingerprint, like the other workflow flags. Defensive int (a bad value must not raise at import).
 WORKFLOWS_ASYNC = _as_bool(os.environ.get("CODE_WORKFLOWS_ASYNC", "false"))
 try:
-    MAX_BACKGROUND_TASKS = max(1, int(os.environ.get("CODE_MAX_BACKGROUND_TASKS", "3")))
+    MAX_BACKGROUND_TASKS = max(1, _env_int("CODE_MAX_BACKGROUND_TASKS", "3"))
 except ValueError:
     MAX_BACKGROUND_TASKS = 3
 
@@ -873,7 +904,7 @@ SEARCH_URL = os.environ.get("CODE_SEARCH_URL", "")
 SEARCH_KEY = os.environ.get("CODE_SEARCH_KEY", "")
 # Defensive int (config.py is imported on EVERY run, flag-off included): a bad value must not raise at import.
 try:
-    SEARCH_MAX_RESULTS = max(1, int(os.environ.get("CODE_SEARCH_MAX_RESULTS", "5")))
+    SEARCH_MAX_RESULTS = max(1, _env_int("CODE_SEARCH_MAX_RESULTS", "5"))
 except ValueError:
     SEARCH_MAX_RESULTS = 5
 
@@ -959,7 +990,7 @@ def safety_fingerprint(perms=None):
 # -----------------------------------------------------------------------------
 MEMORY = _as_bool(os.environ.get("CODE_MEMORY", "false"))
 MEMORY_FILE = os.environ.get("CODE_MEMORY_FILE", ".openagent/memory.md")
-MEMORY_MAX_CHARS = int(os.environ.get("CODE_MEMORY_MAX_CHARS", "4000"))
+MEMORY_MAX_CHARS = _env_int("CODE_MEMORY_MAX_CHARS", "4000")
 
 
 def memory_file(workspace: str) -> str:
@@ -980,7 +1011,7 @@ def memory_file(workspace: str) -> str:
 # -----------------------------------------------------------------------------
 PROJECT_TODOS = _as_bool(os.environ.get("CODE_PROJECT_TODOS", "false"))
 PROJECT_TODOS_FILE = os.environ.get("CODE_PROJECT_TODOS_FILE", ".openagent/todos.md")
-PROJECT_TODOS_MAX_CHARS = int(os.environ.get("CODE_PROJECT_TODOS_MAX_CHARS", "4000"))
+PROJECT_TODOS_MAX_CHARS = _env_int("CODE_PROJECT_TODOS_MAX_CHARS", "4000")
 
 
 def todos_file(workspace: str) -> str:
@@ -1004,9 +1035,9 @@ def todos_file(workspace: str) -> str:
 # -----------------------------------------------------------------------------
 SPEC_FIRST = _as_bool(os.environ.get("CODE_SPEC_FIRST", "false"))
 SPECS_DIR = os.environ.get("CODE_SPECS_DIR", ".openagent/specs")
-SPECS_MAX_CHARS = int(os.environ.get("CODE_SPECS_MAX_CHARS", "8000"))
+SPECS_MAX_CHARS = _env_int("CODE_SPECS_MAX_CHARS", "8000")
 try:
-    SPEC_FIRST_RETRIES = max(1, int(os.environ.get("CODE_SPEC_FIRST_RETRIES", "2")))
+    SPEC_FIRST_RETRIES = max(1, _env_int("CODE_SPEC_FIRST_RETRIES", "2"))
 except ValueError:
     SPEC_FIRST_RETRIES = 2
 

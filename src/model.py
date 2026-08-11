@@ -57,6 +57,11 @@ def _non_retryable(e):
     overflow. Re-sending the identical oversized/malformed request only fails again, so we
     raise immediately rather than backing off through every retry."""
     name = type(e).__name__.lower()
+    # specs/0075: a RATE-LIMIT / throttle is RETRYABLE — backing off is exactly the fix. Bedrock's throttle
+    # message ("Too many tokens, please wait before trying again") contains 'too many tokens', which the
+    # substring net below would otherwise mis-read as a context overflow and raise with retries still left.
+    if "ratelimit" in name or "throttl" in name:
+        return False
     if "badrequest" in name or "contextwindow" in name or "invalidrequest" in name:
         return True
     msg = str(e).lower()
@@ -116,39 +121,41 @@ def _assemble_stream(chunks, show_reasoning=False):
     content, reasoning, usage, finish = [], [], None, None
     tools = {}   # index -> {"id", "name", "args": [fragments]}
     shown = False   # specs/0064: have we started teeing the reasoning stream this call?
-    for chunk in chunks:
-        u = getattr(chunk, "usage", None)
-        if u is not None:
-            usage = u
-        choices = getattr(chunk, "choices", None) or []
-        if not choices:
-            continue                       # a usage-only terminal chunk carries no choices
-        choice0 = choices[0]
-        if getattr(choice0, "finish_reason", None):
-            finish = choice0.finish_reason
-        delta = getattr(choice0, "delta", None)
-        if delta is None:
-            continue
-        if getattr(delta, "content", None):
-            content.append(delta.content)
-        if getattr(delta, "reasoning_content", None):
-            _frag = delta.reasoning_content
-            reasoning.append(_frag)
-            if show_reasoning:   # specs/0064: tee the thinking to the console live (dimmed), display-only
-                print(("\n\x1b[2m  thinking: " if not shown else "") + _frag, end="", flush=True)
-                shown = True
-        for td in (getattr(delta, "tool_calls", None) or []):
-            slot = tools.setdefault(getattr(td, "index", 0) or 0, {"id": None, "name": None, "args": []})
-            if getattr(td, "id", None):
-                slot["id"] = td.id
-            fn = getattr(td, "function", None)
-            if fn is not None:
-                if getattr(fn, "name", None):
-                    slot["name"] = fn.name
-                if getattr(fn, "arguments", None):
-                    slot["args"].append(fn.arguments)
-    if show_reasoning and shown:   # specs/0064: reset the dim style + newline so the answer prints clean below
-        print("\x1b[0m", flush=True)
+    try:
+        for chunk in chunks:
+            u = getattr(chunk, "usage", None)
+            if u is not None:
+                usage = u
+            choices = getattr(chunk, "choices", None) or []
+            if not choices:
+                continue                       # a usage-only terminal chunk carries no choices
+            choice0 = choices[0]
+            if getattr(choice0, "finish_reason", None):
+                finish = choice0.finish_reason
+            delta = getattr(choice0, "delta", None)
+            if delta is None:
+                continue
+            if getattr(delta, "content", None):
+                content.append(delta.content)
+            if getattr(delta, "reasoning_content", None):
+                _frag = delta.reasoning_content
+                reasoning.append(_frag)
+                if show_reasoning:   # specs/0064: tee the thinking to the console live (dimmed), display-only
+                    print(("\n\x1b[2m  thinking: " if not shown else "") + _frag, end="", flush=True)
+                    shown = True
+            for td in (getattr(delta, "tool_calls", None) or []):
+                slot = tools.setdefault(getattr(td, "index", 0) or 0, {"id": None, "name": None, "args": []})
+                if getattr(td, "id", None):
+                    slot["id"] = td.id
+                fn = getattr(td, "function", None)
+                if fn is not None:
+                    if getattr(fn, "name", None):
+                        slot["name"] = fn.name
+                    if getattr(fn, "arguments", None):
+                        slot["args"].append(fn.arguments)
+    finally:
+        if show_reasoning and shown:   # specs/0075: reset the dim style even if the stream RAISED mid-way
+            print("[0m", flush=True)
     tool_calls = None
     if tools:
         tool_calls = [
@@ -291,7 +298,14 @@ class Model:
             # cold spin-up, which is how a turn ended in "(no output)". So re-absorb the
             # cold start the same way startup does — warm_up() waits for a real tool call
             # — then retry. Accept the empty response only on the final attempt.
-            dropped = bool(schemas) and not (msg.content or "").strip() and not (msg.tool_calls or [])
+            # specs/0075: a cold/DROPPED worker returns a TOTALLY empty turn. Do NOT misdiagnose an output-cap
+            # truncation (finish_reason == 'length') or a turn that produced reasoning_content as a cold
+            # worker — those are real (if truncated) responses, and re-warming would waste a ~30-60s cold-start
+            # wait on a healthy endpoint (and could loop). Only a genuinely empty turn is a drop.
+            _finish = getattr(resp.choices[0], "finish_reason", None)
+            dropped = (bool(schemas) and not (msg.content or "").strip() and not (msg.tool_calls or [])
+                       and _finish != "length"
+                       and not (getattr(msg, "reasoning_content", None) or "").strip())
             if dropped and not last:
                 # First drop on a WARMABLE endpoint (CODE_API_BASE set): re-warm once — a
                 # mid-session cold start. Re-running warm-up on every retry is what turned a

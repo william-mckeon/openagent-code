@@ -128,7 +128,12 @@ def _parse_flags(argv):
         elif a == "--no-spec-first":
             config.SPEC_FIRST = False; i += 1
         elif a == "--warmup" and i + 1 < len(argv):
-            config.WARMUP_BUDGET = float(argv[i + 1]); i += 2
+            try:                                     # specs/0075: a bad --warmup is a usage error, not a traceback
+                config.WARMUP_BUDGET = float(argv[i + 1])
+            except ValueError:
+                print(f"error: --warmup expects a number of seconds, got {argv[i + 1]!r}")
+                sys.exit(2)
+            i += 2
         else:
             rest.append(a); i += 1
     return mode, dirs, rest

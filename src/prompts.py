@@ -223,7 +223,7 @@ def build_system_prompt(mode, tools, memory=None, todos=None, spec=None, granted
     # Fire for native web_ tools OR a web-marked MCP server (specs/0029) - both put untrusted web content
     # into context and record citeable URLs on the read-ledger.
     if any(t["name"].startswith("web_") or t.get("web") for t in tools):
-        note = ("\n\nWEB: web_fetch / web_search send data OFF this machine - read local code first; use "
+        note += ("\n\nWEB: web_fetch / web_search send data OFF this machine - read local code first; use "
                 "them only when you genuinely need external information. web_search returns a numbered list "
                 "of results; web_fetch opens one URL for its full text. CITE the URL for any fact you take "
                 "from the web. A URL that web_search SURFACED counts as a (weak) cited source - you may cite "

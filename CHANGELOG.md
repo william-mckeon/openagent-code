@@ -15,8 +15,15 @@ below was a `.env` change, never a code change:
 - **thinkingmachines/Inkling on Together** — `https://api.together.xyz/v1`, OpenAI-compatible.
 - **gpt-oss-120b on AWS Bedrock / self-hosted vLLM (RunPod)** — the original baseline; last measured eval 13/13.
 
-## Features (specs/0022–0074)
+## Features (specs/0022–0075)
 
+- `0075` **model-io & import robustness** — seven fixes: ~34 bare `int()`/`float()` config parses that crashed
+  EVERY run at import on a typo now fall back via `_env_int`/`_env_float`; a Bedrock throttle
+  (`RateLimitError`, "too many tokens") is now retryable instead of fatal; the WEB system-prompt note stopped
+  CLOBBERING the `CODE_WORKDIR_PROMPT` pin (`note +=`, not `=`); `--warmup <non-number>` is a usage error not a
+  traceback; `show_reasoning` resets the console dim style even on a mid-stream error (`try/finally`); a custom
+  `CODE_REASONING_PARAM` overrides the effort ladder regardless of value shape; and an output-cap truncation
+  is no longer misdiagnosed as a cold worker. No new flag.
 - `0074` **resume integrity** — six resume-cluster fixes, incl. two that PERMANENTLY broke a session:
   `sanitize_tail` is now a full-history tool-pairing scan (a MID-list / partial-results dangling `tool_use` is
   stubbed or dropped instead of poisoning every later step); `--resume` no longer crashes on a truncated last
