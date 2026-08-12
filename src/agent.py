@@ -195,6 +195,25 @@ def _canon_call(name, args):
     return f"{name}:{body}"
 
 
+# specs/0085: pull the PRINTED text out of a narration command — the write-output/echo/write-host argument(s).
+# For a weak model that "replies" by printing, that text IS its intended user-facing message.
+_PRINT_STMT = re.compile(r"""(?is)(?:write-output|write-host|echo)\s+(['"])(.*?)\1""")
+
+
+def _narration_text(calls):
+    """The concatenated printed text of a step's narration run_commands (specs/0085) — the message the model
+    was trying to say. '' when nothing quoted is found."""
+    parts = []
+    for c in calls or []:
+        if (c or {}).get("name") != "run_command":
+            continue
+        cmd = ((c.get("args") or {}) if isinstance(c.get("args"), dict) else {}).get("command", "")
+        said = "\n".join(m.group(2) for m in _PRINT_STMT.finditer(cmd or "")).strip()
+        if said:
+            parts.append(said)
+    return "\n".join(parts).strip()
+
+
 _STALL_NUDGE = (
     "STOP. Your last several steps made NO progress — they were denied, failed, repeated a command/read you "
     "already ran, or only printed status. Re-running the same thing will not change the result. If you are "
@@ -397,6 +416,25 @@ class Agent:
                         _mdl.effort = _new
                         self._escalated = True
                 decision = self.planner.step(self.cm.context(), step)
+
+                # Narration-as-final (specs/0085): the DISEASE behind the narration loop. In native tool mode a
+                # turn with ANY tool call has final=None (planner.py), so a weak model that "replies" by printing
+                # — run_command(Write-Output "my answer") — is treated as an ACTION, executed as a no-op, and
+                # loops; it never emits a clean no-tool-call finish. When a step's ONLY calls are pure-narration
+                # prints, the model is trying to TALK, not act: end the turn NOW with the printed text (a clean
+                # 'final'), the FIRST time — so the loop can't form and no bandaid guard is needed. This is why a
+                # print is the model's reply channel here; we honor it instead of counting no-op prints. OFF ->
+                # byte-identical (the print runs as a command exactly as before).
+                if (config.NARRATION_AS_FINAL and decision.calls and not decision.final and not decision.nudge
+                        and all(c.get("name") == "run_command"
+                                and _is_noop_narration((c.get("args") or {}).get("command", ""))
+                                for c in decision.calls)):
+                    said = _narration_text(decision.calls) or (decision.assistant or {}).get("content", "").strip()
+                    said = said or "(done)"
+                    self.cm.add({"role": "assistant", "content": said})   # clean msg — no dangling tool_calls
+                    log.info("narration-as-final at step %d — the model's only action was a print; "
+                             "ending the turn with its text instead of looping", step)
+                    return self._finish(ctx, said, "final", tool_calls)
 
                 # Degeneracy guard (repetition loop): a weak model can get stuck emitting the same line
                 # over and over (seen live: "...rename the comment at line 578? Already done." x

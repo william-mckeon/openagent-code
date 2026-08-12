@@ -38,7 +38,7 @@ class _Ctx:
         self.spawn = spawn
 
 
-def _spawn_grounded(task, effort=None, label=None):
+def _spawn_grounded(task, effort=None, label=None, **_k):
     return "GROUNDED"   # a fail-open verifier that finds nothing wrong
 
 
@@ -121,7 +121,7 @@ def main():
 
     def _recorder():
         seen = []
-        def s(task, effort=None, label=None):
+        def s(task, effort=None, label=None, **_k):
             seen.append(label or task); return "GROUNDED"
         return seen, s
 

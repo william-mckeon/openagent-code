@@ -36,8 +36,8 @@ class _Ctx:
 
 
 def _spawn(verdict, calls, raises=False):
-    # Mirrors the real ctx.spawn signature (task, effort=None, label=None) so a label= call doesn't blow up.
-    def s(task, effort=None, label=None):
+    # Mirrors the real ctx.spawn signature (task, effort=None, label=None, **_k) so a label= call doesn't blow up.
+    def s(task, effort=None, label=None, **_k):
         calls.append(label or task)
         if raises:
             raise RuntimeError("reviewer exploded")
@@ -80,7 +80,7 @@ def main():
           and "canNOT tie it to the user's request, DENY" in _req_prompt)
     # review() reads ctx.request and passes it to the reviewer
     _seen = []
-    def _cap(task, effort=None, label=None):
+    def _cap(task, effort=None, label=None, **_k):
         _seen.append(task)
         return "APPROVE: does exactly what the user asked"
     _cx = _Ctx(_cap, depth=0)

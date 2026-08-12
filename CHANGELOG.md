@@ -15,8 +15,15 @@ below was a `.env` change, never a code change:
 - **thinkingmachines/Inkling on Together** — `https://api.together.xyz/v1`, OpenAI-compatible.
 - **gpt-oss-120b on AWS Bedrock / self-hosted vLLM (RunPod)** — the original baseline; last measured eval 13/13.
 
-## Features (specs/0022–0084)
+## Features (specs/0022–0085)
 
+- `0085` **narration-as-final** — the ROOT fix for the narration loop (not another counter). In native tool mode
+  a turn with any tool call has `final=None` (planner.py), so a weak model that "replies" by printing —
+  `run_command(Write-Output "answer")` — is executed as a no-op and loops, never emitting a clean finish (seen
+  live: Inkling-Small emitting the identical print every step while its own reasoning said "no tool calls").
+  `CODE_NARRATION_AS_FINAL`: when a step's ONLY calls are pure-narration prints, END the turn with the printed
+  text as a clean `final` the FIRST time — the loop never forms, superseding the narration-stall guard for the
+  reply case. Default OFF → byte-identical. (`scripts/check_narration_final_0085.py`, 7/7.)
 - `0084` **subagent propose-deadlock fix + no-progress stall breaker** — kills the "dramatic looping"
   root-caused from a live log (113 "propose mode is read-only" denials, 23 "propose_changes is top-level only").
   An auto-spawned grounding verifier (depth>0) INHERITED propose mode, where it could neither mutate nor approve

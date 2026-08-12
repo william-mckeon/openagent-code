@@ -87,9 +87,12 @@ def _ctx():
 
 def main():
     _saved = {k: getattr(config, k) for k in (
-        "GUARD_NARRATION_STALL", "NARRATION_STALL_MAX", "NARRATION_STALL_RETRIES",
+        "GUARD_NARRATION_STALL", "NARRATION_STALL_MAX", "NARRATION_STALL_RETRIES", "NARRATION_AS_FINAL",
         "ADAPTIVE_EFFORT", "SITUATIONAL_CONTEXT",
         "VERIFY_COMPLETION", "VERIFY_MANIFEST", "VERIFY_GROUNDING", "VERIFY_TOUCHED")}
+    # specs/0085 supersedes the narration guard for the reply case; isolate it OFF so this harness tests the
+    # 0067 guard's own control flow (the live .env may arm CODE_NARRATION_AS_FINAL).
+    config.NARRATION_AS_FINAL = False
     config.ADAPTIVE_EFFORT = config.SITUATIONAL_CONTEXT = False
     config.VERIFY_COMPLETION = config.VERIFY_MANIFEST = config.VERIFY_GROUNDING = config.VERIFY_TOUCHED = False
     config.NARRATION_STALL_MAX = 3

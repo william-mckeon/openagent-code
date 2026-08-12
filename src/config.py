@@ -427,6 +427,13 @@ except ValueError:
 # when none of its calls both succeeded AND did NOVEL real work (every call denied, failed, pure-narration, or a
 # DUPLICATE of one already run this turn). N consecutive no-progress steps -> one bounded nudge then honest
 # 'stall'. 0 (default) = off; a recommended live value is ~8 (long enough to clear legit occasional repeats).
+# Narration-as-final (specs/0085), default OFF -> byte-identical. The ROOT fix for the narration loop: in native
+# tool mode a turn with any tool call has final=None, so a weak model that "replies" by printing —
+# run_command(Write-Output "answer") — is executed as a no-op and loops, never emitting a clean finish. When on,
+# a step whose ONLY calls are pure-narration prints ENDS the turn with the printed text (a clean 'final') the
+# first time, so the loop never forms (supersedes the narration-stall guard for the reply case).
+NARRATION_AS_FINAL = _as_bool(os.environ.get("CODE_NARRATION_AS_FINAL", "false"))
+
 SUBAGENT_NO_PROPOSE = _as_bool(os.environ.get("CODE_SUBAGENT_NO_PROPOSE", "false"))
 try:
     STALL_MAX = max(0, _env_int("CODE_STALL_MAX", "0"))
