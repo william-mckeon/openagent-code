@@ -233,6 +233,16 @@ def _answer_collapsed(new, orig):
     return o >= 400 and n < max(200, int(0.4 * o))
 
 
+def _review_digest_body(digest):
+    """specs/0088: the per-area summaries from a review_repo digest, WITHOUT the internal 'synthesize now'
+    trailer — a substantive fallback review to deliver if a weak model collapses the synthesis into a receipt.
+    The children actually read the files, so this is a real review, not the model's status line."""
+    if not digest:
+        return ""
+    cut = digest.find("\nYou now have what you need.")   # the trailer that must not reach the user
+    return (digest[:cut] if cut > 0 else digest).strip()
+
+
 def _reset_propose_for_turn(ctx):
     """Per-turn propose-mode reset (specs/0022 + 0048). DEFAULT: re-lock read-only and clear approved_paths,
     so an approval NEVER leaks past the turn it was granted (the cross-turn WRITE-leak guard). With
@@ -440,6 +450,14 @@ class Agent:
                                 for c in decision.calls)):
                     said = _narration_text(decision.calls) or (decision.assistant or {}).get("content", "").strip()
                     said = said or "(done)"
+                    # specs/0088: if this print is a receipt that collapses a review_repo digest produced this
+                    # turn ("Review complete, N files covered"), deliver the substantive per-area digest the
+                    # fan-out children built instead of the receipt. OFF -> byte-identical.
+                    if config.REVIEW_DELIVER_DIGEST and getattr(ctx, "_reviewed_digest", None):
+                        _body = _review_digest_body(ctx._reviewed_digest)
+                        if _body and _answer_collapsed(said, _body):
+                            log.info("review synthesis printed as a receipt — delivering the per-area digest")
+                            said = "Here's the review, area by area:\n\n" + _body
                     self.cm.add({"role": "assistant", "content": said})   # clean msg — no dangling tool_calls
                     log.info("narration-as-final at step %d — the model's only action was a print; "
                              "ending the turn with its text instead of looping", step)
@@ -615,6 +633,16 @@ class Agent:
                         log.info("grounding correction collapsed the answer (%d->%d chars) — delivering the "
                                  "re-verified fuller original", len(ground_original or ""), len((decision.final or "")))
                         final_answer = ground_original
+                    # specs/0088: a weak model that ran review_repo but COLLAPSED the synthesis into a receipt
+                    # gets the substantive per-area digest (the children actually read the files) delivered
+                    # instead — so the user gets a real review, not "Review complete, N files covered". OFF ->
+                    # byte-identical.
+                    if config.REVIEW_DELIVER_DIGEST and not ungrounded and getattr(ctx, "_reviewed_digest", None):
+                        body = _review_digest_body(ctx._reviewed_digest)
+                        if body and _answer_collapsed(final_answer, body):
+                            log.info("review synthesis collapsed to a receipt (%d chars) — delivering the "
+                                     "per-area review_repo digest", len((final_answer or "")))
+                            final_answer = "Here's the review, area by area:\n\n" + body
                     return self._finish(ctx, final_answer,
                                         "ungrounded_completion" if ungrounded else "final", tool_calls)
 

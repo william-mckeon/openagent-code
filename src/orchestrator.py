@@ -233,8 +233,10 @@ def review_repo(args, ctx):
                      f"{cap}): {names}. Re-run review_repo scoped to those with `path`.")
     parts.append(f"\nYou now have what you need. Write the FINAL review for the user NOW by "
                  f"synthesizing ALL {len(summaries)} summaries above — do not let one area (e.g. "
-                 f"src/) crowd out the rest. Give a one-line take on EACH area, then the overall "
-                 f"architecture and the top cross-cutting findings. Do NOT call read_file / tree / "
+                 f"src/) crowd out the rest. Give your take on EACH area (a sentence or two — the "
+                 f"finding AND why it matters), then the overall architecture and the top "
+                 f"cross-cutting findings. Report the findings THEMSELVES — do NOT reduce this to a "
+                 f"'review complete / N files covered' status line; that is not the review. Do NOT call read_file / tree / "
                  f"grep / spawn_agent / review_repo again: the children already covered the files, "
                  f"and re-reading or re-delegating only wastes budget and overflows your context. "
                  f"This is a REVIEW — report findings only; do not edit, create, or run anything. "

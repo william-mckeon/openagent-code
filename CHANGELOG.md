@@ -15,8 +15,18 @@ below was a `.env` change, never a code change:
 - **thinkingmachines/Inkling on Together** — `https://api.together.xyz/v1`, OpenAI-compatible.
 - **gpt-oss-120b on AWS Bedrock / self-hosted vLLM (RunPod)** — the original baseline; last measured eval 13/13.
 
-## Features (specs/0022–0087)
+## Features (specs/0022–0088)
 
+- `0088` **review substance** — stop a review collapsing into a receipt. A whole-project review kept returning
+  "Review complete. 9 folders covered. No edits made." instead of the review, because BASE_PROMPT ORDERED
+  brevity ("Be concise… keep reviews tight") and a weak model over-obeyed, collapsing the review to a status
+  line that narration-as-final then shipped. Fix: (1) rebalance the prompt (BASE_PROMPT + review_repo trailer) so
+  a review must give the actual per-area assessment + findings and NEVER a "review complete" receipt; (2)
+  `CODE_REVIEW_DELIVER_DIGEST` structural backstop — if the model still collapses a `review_repo` synthesis into
+  a receipt, deliver the substantive per-area digest the fan-out children built (trailer stripped), on both the
+  narration-print and content delivery paths. Default OFF → byte-identical.
+  (`scripts/check_review_digest_0088.py`, 5/5.) Not fixed: a polished opinion synthesis (a stronger-model
+  capability) — the backstop guarantees findings, not synthesis.
 - `0087` **grounding anti-collapse / anti-hijack** — stop the grounding gate eating the answer. Across 4 sessions
   a "review my project" turn returned a verification RECEIPT ("Confirmed: style.css exists") instead of the
   review: a flaky semantic verifier FABRICATED filesystem facts (flagged `../style.css` "not found" when it

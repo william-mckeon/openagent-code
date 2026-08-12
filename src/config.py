@@ -391,6 +391,14 @@ VERIFY_GROUNDING_PATHS = _as_bool(os.environ.get("CODE_VERIFY_GROUNDING_PATHS", 
 # pre-challenge answer is delivered instead of the receipt.
 GROUND_ANTI_COLLAPSE = _as_bool(os.environ.get("CODE_GROUND_ANTI_COLLAPSE", "false"))
 
+# Review digest fallback (specs/0088), default OFF -> byte-identical. A weak model that ran review_repo (whose
+# fan-out children actually read the files and returned a substantive per-area digest) sometimes COLLAPSES the
+# synthesis into a receipt — "Review complete. 9 folders covered. No edits made." — so the user gets a receipt,
+# not the review. When on, if the final answer is a receipt-sized collapse of the digest that review_repo
+# produced this turn, deliver the per-area DIGEST itself (trailer stripped) instead — a real review the children
+# built, independent of whether the weak model can synthesize it.
+REVIEW_DELIVER_DIGEST = _as_bool(os.environ.get("CODE_REVIEW_DELIVER_DIGEST", "false"))
+
 # Greenfield grounding guard (specs/0042). On a GREENFIELD workspace — a fresh, empty project dir with no
 # reviewable source files — every path the closing answer cites is a PROPOSAL (a file to CREATE), not a
 # claim about existing state. The path-existence grounding (deterministic present-path check + the Tier-2
