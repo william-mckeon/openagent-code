@@ -15,8 +15,18 @@ below was a `.env` change, never a code change:
 - **thinkingmachines/Inkling on Together** — `https://api.together.xyz/v1`, OpenAI-compatible.
 - **gpt-oss-120b on AWS Bedrock / self-hosted vLLM (RunPod)** — the original baseline; last measured eval 13/13.
 
-## Features (specs/0022–0091)
+## Features (specs/0022–0092)
 
+- `0092` **advisory / conversational register** — used as a research / design thought-partner (a near-empty
+  workspace, "review this doc", "research these claims", "what do you think about the free tier?"), Arcus
+  collapsed every substantive turn into a status receipt — `Claims verified: X - CONFIRMED`, `=== SUMMARY FOR
+  USER ===`, `Status: Ready for next instruction` (log `7170fa4eb4dd`) — because the prompt models only a
+  code-editing task executor and `native_tools_note` pins the final reply as "a short final summary" of the work.
+  `CODE_ADVISORY_REGISTER` adds the missing register: `build_system_prompt` appends one ADVISORY note (explain /
+  research / weigh / "what do you think" is not a code task → substantive prose, never a receipt; the
+  VERIFY/verified vocabulary is internal discipline, not the user-facing voice; reply as prose, never
+  `Write-Output` it) and `native_tools_note` reshapes the final-reply line to "the answer the user asked for".
+  Default OFF → byte-identical. (`scripts/check_advisory_register_0092.py`.)
 - `0091` **subagent budget** — the biggest run-cost multiplier is subagent fan-out: a `review_repo` covers up to
   `CODE_MAX_REVIEW_AREAS` areas and **each is a full agent loop**, and every spawned child inherited the main
   agent's max reasoning pin (`xhigh`) and full 50-step budget while doing cheap work (read a folder, summarize, a

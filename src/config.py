@@ -543,6 +543,18 @@ PROMPT_HYGIENE = _as_bool(os.environ.get("CODE_PROMPT_HYGIENE", "false"))
 # unchanged. Reversible: flip it off to get the full prompt back.
 LEAN_PROMPT = _as_bool(os.environ.get("CODE_LEAN_PROMPT", "false"))
 
+# Advisory / conversational register (specs/0092), default OFF -> byte-identical. The prompt models a CODE-EDITING
+# task executor end to end, and native_tools_note pins the final reply as "a short final summary" of "the task
+# done and verified" — so when the tool is used as a research / design thought-partner (review this doc, research
+# these claims, "what are your thoughts on X?"), the model has no advisory register and collapses the answer to a
+# status receipt: "Claims verified: X - CONFIRMED", "=== SUMMARY FOR USER ===", "Status: Ready for next
+# instruction" (observed on a live Centpilot run, log 7170fa4eb4dd). When ON, build_system_prompt appends an
+# ADVISORY note (explain/advise/research/"what do you think" is not a code task -> answer in substantive prose,
+# never a receipt; the VERIFY/verified vocabulary is internal discipline, not the user-facing voice; write the
+# reply as prose, never Write-Output it) AND native_tools_note reshapes the final-reply line so it is "the answer
+# the user asked for", not "a short summary of what you did". Off -> both fall to the original text, byte-identical.
+ADVISORY_REGISTER = _as_bool(os.environ.get("CODE_ADVISORY_REGISTER", "false"))
+
 # Runtime-done honesty gate (Phase 53 / specs/0053). The existing unverified-success net (grounding._SUCCESS)
 # only knows test/build/lint "pass/green/clean" language — so a small model's "Done / plumbing fixed / the app
 # is serving" sailed through on a live Centpilot run while `curl localhost:8080` had just returned

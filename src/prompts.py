@@ -172,11 +172,19 @@ def reply_shape_caveat():
 
 
 def native_tools_note(tools):
-    """Suffix for native (OpenAI) tool-calling mode."""
+    """Suffix for native (OpenAI) tool-calling mode. specs/0092: when CODE_ADVISORY_REGISTER is on, the
+    final-reply line says the reply is the ANSWER the user asked for (prose when they asked you to think,
+    a short summary when it was a code task) instead of pinning it to "a short final summary" of the work —
+    the phrase that drove the status-receipt collapse. Off -> the original text (byte-identical)."""
     names = ", ".join(t["name"] for t in tools)
-    return (f"You have these tools: {names}. Call them using your tool-calling "
-            "capability. When the task is done and verified, reply with a short "
-            "final summary and no tool calls — that ends the session.")
+    close = (("When you are done, reply with no tool calls — that ends the session. Make that final message "
+              "the ANSWER to what was asked: prose that explains or advises when the user asked you to think, "
+              "research, or weigh something; a short summary of the change when it was a code task. Not a "
+              "status line.")
+             if config.ADVISORY_REGISTER else
+             ("When the task is done and verified, reply with a short final summary and no tool calls — that "
+              "ends the session."))
+    return (f"You have these tools: {names}. Call them using your tool-calling capability. " + close)
 
 
 def json_tools_protocol(tools):
@@ -419,6 +427,23 @@ def build_system_prompt(mode, tools, memory=None, todos=None, spec=None, granted
                  "file — or write a scratch/notes file — to 'back up' a step or satisfy an internal check. If a "
                  "completion or verification challenge fires on read-only work, the fix is to correct the plan "
                  "(drop the file from the step with update_plan), not to invent a change.")
+
+    # Advisory / conversational register (specs/0092): the rest of the prompt models ONLY a code-editing task
+    # executor, so a research / design / "what do you think" turn has no register and collapses to a status
+    # receipt (the live Centpilot run: "Claims verified: X - CONFIRMED", "=== SUMMARY FOR USER ===", "Status:
+    # Ready for next instruction"). This note gives the missing register. Gated on CODE_ADVISORY_REGISTER so a
+    # flag-off prompt is byte-identical.
+    if config.ADVISORY_REGISTER:
+        note += ("\n\nADVISORY REGISTER: not every request is a code task. When the user asks you to explain, "
+                 "research, weigh options, or \"what do you think\", ANSWER in substantive prose — the actual "
+                 "findings or recommendation WITH your reasons, the way you'd brief a colleague. That IS the "
+                 "deliverable. Do NOT reply with a status receipt: no ✓ checklists, no \"X - CONFIRMED / "
+                 "verified\" lines, no \"=== SUMMARY ===\" block, no \"Status / Awaiting instruction\". Those "
+                 "describe your work; they are not the answer, and collapsing real thinking into one is a "
+                 "FAILURE, not brevity. Keep the VERIFY / verified / done vocabulary to your INTERNAL discipline "
+                 "— say what you found and what it means, not that you \"confirmed\" it. \"Answer directly\" "
+                 "means lead with the substance, NOT omit your reasoning. Write the reply as prose in your final "
+                 "message; never print it with run_command / Write-Output — a printed status line is not a reply.")
 
     # Cross-session memory (Phase 4 #7): prior-session notes about THIS repo. Lands in
     # the system prompt, which is logged as the first raw turn -> self-containment holds.
