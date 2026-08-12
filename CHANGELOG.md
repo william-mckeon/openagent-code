@@ -15,8 +15,18 @@ below was a `.env` change, never a code change:
 - **thinkingmachines/Inkling on Together** — `https://api.together.xyz/v1`, OpenAI-compatible.
 - **gpt-oss-120b on AWS Bedrock / self-hosted vLLM (RunPod)** — the original baseline; last measured eval 13/13.
 
-## Features (specs/0022–0086)
+## Features (specs/0022–0087)
 
+- `0087` **grounding anti-collapse / anti-hijack** — stop the grounding gate eating the answer. Across 4 sessions
+  a "review my project" turn returned a verification RECEIPT ("Confirmed: style.css exists") instead of the
+  review: a flaky semantic verifier FABRICATED filesystem facts (flagged `../style.css` "not found" when it
+  exists; claimed `Agent.py` "present" to reject a correct absence claim), and the correction re-prompt
+  ("output your corrected answer and nothing else") made the weak model collapse the whole review into the
+  receipt. `CODE_GROUND_ANTI_COLLAPSE`: drops a verifier flag the real tree contradicts (model-free
+  cross-check), rewords the challenge to RE-SEND the complete answer, and delivers the fuller original if a
+  correction still collapses. `.env` also sets `CODE_VERIFY_GROUNDING_SEMANTIC=false` for immediate relief
+  (keeps the deterministic path check). Default OFF → byte-identical. (`scripts/check_ground_anticollapse_0087.py`,
+  12/12.) Not fixed: the shallow stats-print review on the direct-read path (a model limitation).
 - `0086` **compaction / resume de-poison** — 0085 stops a narration loop forming; 0086 cleans one already in the
   history. A resumed looped session compacts hundreds of no-op `Write-Output` narration turns + "STOP" nudges
   into a loop-saturated summary that re-primes the behavior (seen live: a resumed "hi" returned only "No

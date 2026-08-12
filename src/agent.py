@@ -225,6 +225,14 @@ _STALL_FINAL = ("(Ended: I was repeating steps that made no progress — denied,
                 "here.)")
 
 
+def _answer_collapsed(new, orig):
+    """specs/0087: True if a grounding CORRECTION shrank a SUBSTANTIAL answer into a terse receipt — a weak model
+    reading the challenge as "emit just a 'confirmed X' note" instead of re-sending the full review. Substantial
+    original (>= 400 chars) and a reply under 40% of it (min 200)."""
+    o, n = len((orig or "").strip()), len((new or "").strip())
+    return o >= 400 and n < max(200, int(0.4 * o))
+
+
 def _reset_propose_for_turn(ctx):
     """Per-turn propose-mode reset (specs/0022 + 0048). DEFAULT: re-lock read-only and clear approved_paths,
     so an approval NEVER leaks past the turn it was granted (the cross-turn WRITE-leak guard). With
@@ -371,6 +379,7 @@ class Agent:
         verify_retries = 0     # completion-gate re-prompts used this run (Phase 6)
         edit_verify_retries = 0  # auto-verify-gate re-prompts used this run (Phase 14)
         ground_retries = 0     # grounding-gate re-prompts used this run (Phase 10)
+        ground_original = None  # specs/0087: the first substantial answer a grounding challenge hit (collapse fallback)
         accept_retries = 0     # acceptance-gate re-prompts used this run (Phase 25)
         narration_retries = 0  # narration-stall nudges used this run (specs/0067)
         stall_retries = 0      # no-progress-stall nudges used this run (specs/0084)
@@ -583,6 +592,10 @@ class Agent:
                     ungrounded = grounding.problems(decision.final, ctx) if config.VERIFY_GROUNDING else []
                     if ungrounded and ground_retries < config.VERIFY_GROUNDING_RETRIES:
                         ground_retries += 1
+                        # specs/0087: remember the FIRST substantial answer a challenge hit, so if the
+                        # correction collapses it into a receipt we can deliver the fuller original instead.
+                        if config.GROUND_ANTI_COLLAPSE and ground_original is None:
+                            ground_original = decision.final
                         if ctx.verbose:
                             print(f"  [grounding] {len(ungrounded)} claim(s) not backed by the "
                                   f"cited sources")
@@ -590,7 +603,19 @@ class Agent:
                                  "; ".join(ungrounded))
                         self.cm.add({"role": "user", "content": grounding.challenge(ungrounded)})
                         continue
-                    return self._finish(ctx, decision.final,
+                    # specs/0087: a bounded grounding correction that COLLAPSED a real answer into a terse
+                    # receipt delivers the fuller pre-challenge answer instead (a receipt helps no one). But
+                    # RE-VERIFY the original first — deliver it ONLY if it is itself grounded now, so a genuinely
+                    # honest-but-wrong original (a real flag drop_contradicted_flags correctly KEEPS) is never
+                    # resurrected as a clean 'final'; otherwise keep the correction. Only when grounding PASSED.
+                    final_answer = decision.final
+                    if (config.GROUND_ANTI_COLLAPSE and not ungrounded and ground_original
+                            and _answer_collapsed(decision.final, ground_original)
+                            and not grounding.problems(ground_original, ctx)):
+                        log.info("grounding correction collapsed the answer (%d->%d chars) — delivering the "
+                                 "re-verified fuller original", len(ground_original or ""), len((decision.final or "")))
+                        final_answer = ground_original
+                    return self._finish(ctx, final_answer,
                                         "ungrounded_completion" if ungrounded else "final", tool_calls)
 
                 step_made_progress = False   # specs/0084: did ANY call this step advance the task (allowed+ok+novel+real)?

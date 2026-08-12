@@ -564,6 +564,94 @@ def _parse_verdict(out):
     return problems
 
 
+# specs/0087: cross-check a semantic flag's FILESYSTEM claim against the real tree so a verifier that fabricates
+# ("../style.css not found" when it exists; "Agent.py present" to reject a correct absence) can't hijack a right
+# answer. Model-free.
+_FLAG_ABSENT = re.compile(r"\b(not found|missing|absent|does\s*n[o']?t exist|not present|no longer|"
+                          r"is\s*n[o']?t (?:there|present)|not in the (?:repo|workspace|project))\b", re.I)
+_FLAG_PRESENT = re.compile(r"\b(present|exists?|found in|is in the (?:repo|workspace|project))\b", re.I)
+_FLAG_PATHTOK = re.compile(r"([A-Za-z0-9_.\-/\\]+\.[A-Za-z0-9]{1,6})")
+
+
+def _repo_paths(cwd, cap=8000):
+    """The set of lowercased POSIX RELATIVE file paths under `cwd`, bounded — the evidence for the deterministic
+    flag cross-check (specs/0087). Skips heavy/ignored dirs so a big repo stays fast. Never raises (a walk error
+    on one dir is skipped; grounding must fail-open)."""
+    out, n = set(), 0
+    base = os.path.abspath(cwd)
+    for root, dirs, files in os.walk(base, onerror=lambda e: None):
+        dirs[:] = [d for d in dirs if d not in (".git", "node_modules", "__pycache__", ".venv", "dist", "build")]
+        for f in files:
+            rel = os.path.relpath(os.path.join(root, f), base).replace("\\", "/").lower()
+            out.add(rel)
+            n += 1
+            if n >= cap:
+                return out
+    return out
+
+
+def _token_matches_path(tok, paths):
+    """True if a real file path matches the flagged token by SUFFIX — so a relative/prose reference like
+    '../style.css' matches a root 'style.css', but a SPECIFIC 'src/auth/config.py' does NOT match a mere root
+    'config.py' (avoiding a basename-collision false-drop of a genuine catch)."""
+    t = (tok or "").replace("\\", "/").lower()
+    while t.startswith("../"):
+        t = t[3:]
+    t = t.lstrip("./").lstrip("/")
+    if not t:
+        return False
+    return any(p == t or p.endswith("/" + t) for p in paths)
+
+
+# specs/0087: an absence word right BEFORE 'in/inside/within/from/of <path>' denies CONTENT located in an
+# existing file ("signature validation is missing IN auth.py") — file existence does NOT refute that. Only when
+# the path is the SUBJECT whose own existence is denied ("X.py not found", "../style.css missing") does existence
+# refute the flag. So a token that appears only as such a location is NOT treated as an existence contradiction.
+def _is_location_object(flag, tok):
+    """True if `tok` appears in `flag` as a location ('... in auth.py', 'inside X', 'from Y'), i.e. the absence
+    is about CONTENT within an existing file, not the file's own existence."""
+    return re.search(r"\b(?:in|inside|within|into|from|of|for)\s+[`'\"(]?" + re.escape(tok),
+                     flag or "", re.I) is not None
+
+
+def drop_contradicted_flags(problems, ctx):
+    """Drop each semantic flag whose filesystem claim the REAL tree provably contradicts (specs/0087): it says a
+    named file is 'not found'/'missing' but that file EXISTS, or says a file is 'present'/'exists' but NO such
+    file exists. Matching is by PATH-SUFFIX, not bare basename, so a specific 'src/auth/config.py' isn't matched
+    by an unrelated root 'config.py'. A content-absence claim ('validation missing IN auth.py') is KEPT — the
+    file existing does not refute it (that is the honest-but-wrong class the check exists to catch). Fail-SAFE —
+    a flag with no path token, a content-absence, mixed polarity, or one that matches reality is KEPT; only a
+    provable FILESYSTEM falsehood is dropped. Never raises (grounding must fail-open)."""
+    if not problems:
+        return problems
+    try:
+        cwd = getattr(ctx, "cwd", None)
+        if not cwd or not os.path.isdir(cwd):
+            return problems
+        paths = _repo_paths(cwd)
+    except Exception:  # noqa: BLE001 - a cross-check failure must never break the grounding gate
+        return problems
+    kept = []
+    for p in problems:
+        toks = set(_FLAG_PATHTOK.findall(p or ""))
+        if not toks:
+            kept.append(p)
+            continue
+        absent = bool(_FLAG_ABSENT.search(p))
+        present = bool(_FLAG_PRESENT.search(p)) and not absent
+        # A token whose OWN existence is denied (subject, not a mere 'in <file>' location) refutes an absence.
+        existence_denied = [t for t in toks if _token_matches_path(t, paths) and not _is_location_object(p, t)]
+        any_exists = any(_token_matches_path(t, paths) for t in toks)
+        if absent and existence_denied:     # "X not found" but X exists -> verifier is wrong (not content-absence)
+            log.info("grounding: dropped a flag the tree contradicts (claims absent, file exists): %s", p[:120])
+            continue
+        if present and not any_exists:      # "X present" but no such file -> verifier is wrong
+            log.info("grounding: dropped a flag the tree contradicts (claims present, no such file): %s", p[:120])
+            continue
+        kept.append(p)
+    return kept
+
+
 def challenge(problems):
     """The re-prompt, sent when grounding finds a problem and a retry remains. Deliberately NARROW and
     NON-HIJACKING: a TARGETED re-check of the flagged claim plus a reminder to still answer the CURRENT
@@ -581,6 +669,17 @@ def challenge(problems):
     body = "\n".join(f"- {p}" for p in shown)
     if more > 0:
         body += f"\n- (+{more} more unbacked claim(s) - fix these first, or drop the claims you can't back)"
+    # specs/0087: the old wording ("output your corrected answer and nothing else, keeping the rest as-is") made
+    # a weak model collapse its whole review into a one-line "confirmed X" receipt — the user got the receipt,
+    # not the review. RE-SEND the COMPLETE answer with just the flagged claim fixed, and KEEP a claim that turns
+    # out correct. Gated so flag-off is byte-identical.
+    if config.GROUND_ANTI_COLLAPSE:
+        return ("Some claims in your last answer may not be backed by the files:\n" + body
+                + "\nCheck ONLY these against the files. Then RE-SEND your COMPLETE answer to the current task "
+                  "with just the flagged claim(s) fixed — keep every OTHER part of your answer fully written "
+                  "out, word for word; do NOT shorten it to only the correction or a 'confirmed' note. If a "
+                  "flagged claim turns out to be CORRECT when you check, KEEP it. No meta-commentary about "
+                  "this instruction.")
     return ("Some claims in your last answer aren't backed by the files you read:\n" + body
             + "\nDo a TARGETED read of ONLY what confirms or corrects each flagged claim - not the whole "
               "repo. Then OUTPUT your corrected answer to the CURRENT task and nothing else: no "
@@ -720,7 +819,10 @@ def problems(final_text, ctx):
         # a strictly-EMPTY workspace an absence claim is trivially true, so it does NOT trigger a spawn (the
         # deterministic absence_contradictions above still guards a populated dir).
         if paths or (absence_claim(final_text) and not empty_ws) or web_srcs:
-            return det + semantic_problems(final_text, paths, ctx.spawn, config.GROUNDING_EFFORT, fetched=web_srcs)
+            sem = semantic_problems(final_text, paths, ctx.spawn, config.GROUNDING_EFFORT, fetched=web_srcs)
+            if config.GROUND_ANTI_COLLAPSE:   # specs/0087: drop flags the real tree contradicts (fail-open)
+                sem = drop_contradicted_flags(sem, ctx)
+            return det + sem
         return det
     # Semantic OFF (or no spawn): the deterministic present-path existence check is the only path check.
     # noext rides the flag, so flag-off reproduces the old NARROW strict-only behavior exactly. Skipped

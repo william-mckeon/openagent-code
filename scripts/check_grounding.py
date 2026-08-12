@@ -42,9 +42,11 @@ def main():
     # CODE_VERIFY_GROUNDING_PATHS=true makes the deterministic present-path check also fire in semantic mode.
     _saved_gp, _saved_mc = config.VERIFY_GROUNDING_PATHS, config.VERIFY_MUTATION_CLAIMS
     _saved_gf = config.GROUND_SKIP_GREENFIELD
+    _saved_ac = config.GROUND_ANTI_COLLAPSE
     config.ENABLE_WEB = False
     config.VERIFY_GROUNDING_PATHS = False
     config.VERIFY_MUTATION_CLAIMS = False
+    config.GROUND_ANTI_COLLAPSE = False   # specs/0087: this suite tests the DEFAULT challenge()/flags (the live .env may arm it)
     config.GROUND_SKIP_GREENFIELD = False   # isolate from live .env: these tests use a small workspace + the verifier
 
     # -- cited_paths: BROAD (verifier) vs STRICT (deterministic) --------------
@@ -264,6 +266,7 @@ def main():
     config.ENABLE_WEB = _saved_web
     config.VERIFY_GROUNDING_PATHS, config.VERIFY_MUTATION_CLAIMS = _saved_gp, _saved_mc
     config.GROUND_SKIP_GREENFIELD = _saved_gf
+    config.GROUND_ANTI_COLLAPSE = _saved_ac
     passed, total = sum(_results), len(_results)
     print(f"\nVERDICT: {passed}/{total} {'[OK]' if passed == total else '[FAIL]'}")
     return 0 if passed == total else 1

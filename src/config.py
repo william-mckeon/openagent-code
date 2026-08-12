@@ -381,6 +381,16 @@ GROUNDING_EFFORT = _g_effort if _g_effort in _EFFORTS else ""
 # the verifier isn't handed granted dirs).
 VERIFY_GROUNDING_PATHS = _as_bool(os.environ.get("CODE_VERIFY_GROUNDING_PATHS", "false"))
 
+# Grounding anti-collapse / anti-hijack (specs/0087), default OFF -> byte-identical. The semantic verifier is a
+# small model that sometimes FABRICATES a filesystem fact — flagging a cited path as "not found" when it exists
+# (../style.css), or claiming a file is "present" to reject a CORRECT absence claim (Agent.py, only NAMED in a
+# .md) — and the correction re-prompt made a weak model collapse its whole review into a one-line "confirmed X"
+# receipt. So the user got a receipt, not the review (seen live across 4 sessions). When on: (1) a semantic flag
+# whose path-existence claim the REAL tree contradicts is dropped; (2) the challenge tells the model to RE-SEND
+# its COMPLETE answer (not just the fix); (3) if a correction still collapses the answer, the fuller
+# pre-challenge answer is delivered instead of the receipt.
+GROUND_ANTI_COLLAPSE = _as_bool(os.environ.get("CODE_GROUND_ANTI_COLLAPSE", "false"))
+
 # Greenfield grounding guard (specs/0042). On a GREENFIELD workspace — a fresh, empty project dir with no
 # reviewable source files — every path the closing answer cites is a PROPOSAL (a file to CREATE), not a
 # claim about existing state. The path-existence grounding (deterministic present-path check + the Tier-2
