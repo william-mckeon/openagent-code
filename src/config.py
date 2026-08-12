@@ -994,6 +994,26 @@ MAX_SUBAGENT_FANOUT = _env_int("CODE_MAX_SUBAGENT_FANOUT", "8")
 # to cover EVERY top-level area, and each child is bounded and returns only a short summary.
 MAX_REVIEW_AREAS = _env_int("CODE_MAX_REVIEW_AREAS", "16")
 
+# Subagent budget (specs/0091), all default OFF -> byte-identical. The main agent runs at the global reasoning
+# pin (xhigh) for quality; a spawned SUBAGENT (a review_repo/workflow fan-out child, a spawn_agent worker) does
+# far cheaper work (read a folder, summarize, an approve/deny verdict) yet INHERITS that xhigh pin — a review can
+# fan out up to 16 full agent loops, each at max reasoning, the biggest cost multiplier in the tool.
+# SUBAGENT_EFFORT: the reasoning effort a spawned child runs at when its caller didn't pin one — so children run
+# cheap while the main agent stays premium. Valid values are the per-role effort ladder _EFFORTS = low|medium|high
+# (NOT the global CODE_REASONING_VALUE, which is a separate pass-through path that also accepts xhigh/a float). An
+# EXPLICIT per-role effort still wins (GROUNDING_EFFORT for the grounding verifier, GUARDIAN_EFFORT for the guardian).
+# Empty (default) = inherit the global pin, byte-identical. An out-of-set value WARNS and falls to "" (inherit) —
+# without the warning a typo like CODE_SUBAGENT_EFFORT=xhigh would SILENTLY leave subagents on the expensive global
+# pin, the exact opposite of this cost knob's purpose (the reviewer's catch on specs/0091).
+# SUBAGENT_MAX_STEPS: a smaller model<->tool step budget for a child (a stuck child otherwise burns MAX_STEPS=50).
+# 0 (default) = use the global MAX_STEPS, byte-identical.
+_sa_effort = os.environ.get("CODE_SUBAGENT_EFFORT", "").strip().lower()
+if _sa_effort and _sa_effort not in _EFFORTS:
+    sys.stderr.write(f"[config] CODE_SUBAGENT_EFFORT={_sa_effort!r} is not one of "
+                     f"{sorted(_EFFORTS)}; ignoring (subagents inherit the global reasoning pin)\n")
+SUBAGENT_EFFORT = _sa_effort if _sa_effort in _EFFORTS else ""
+SUBAGENT_MAX_STEPS = max(0, _env_int("CODE_SUBAGENT_MAX_STEPS", "0"))
+
 # Workflows (Phase 38 / specs/0038) — a synchronous MULTI-PHASE fan-out+reduce engine (src/workflow.py): the
 # generalization of review_repo to N ordered phases the MODEL authors, each phase fanning out captured
 # subagents and reducing to a digest that feeds the next. Opt-in: the `run_workflow` tool is offered ONLY

@@ -15,8 +15,18 @@ below was a `.env` change, never a code change:
 - **thinkingmachines/Inkling on Together** — `https://api.together.xyz/v1`, OpenAI-compatible.
 - **gpt-oss-120b on AWS Bedrock / self-hosted vLLM (RunPod)** — the original baseline; last measured eval 13/13.
 
-## Features (specs/0022–0090)
+## Features (specs/0022–0091)
 
+- `0091` **subagent budget** — the biggest run-cost multiplier is subagent fan-out: a `review_repo` covers up to
+  `CODE_MAX_REVIEW_AREAS` areas and **each is a full agent loop**, and every spawned child inherited the main
+  agent's max reasoning pin (`xhigh`) and full 50-step budget while doing cheap work (read a folder, summarize, a
+  verdict). Two new knobs make spawned children cheap without touching the main agent: `CODE_SUBAGENT_EFFORT` (the
+  reasoning effort a child runs at when its caller didn't pin one — an explicit `CODE_GROUNDING_EFFORT`/
+  `CODE_GUARDIAN_EFFORT` still wins) and `CODE_SUBAGENT_MAX_STEPS` (a smaller child step budget). Wiring:
+  `run_subagent` fills `effort` from `SUBAGENT_EFFORT` only in the `None` case and passes `max_steps` to a new
+  optional `build_agent(max_steps=…)` param. Both default OFF → byte-identical. Live `.env` arms them (`low`/`12`)
+  alongside the pre-existing count knobs (`GUARDIAN_EFFORT=low`, `MAX_REVIEW_AREAS 16→6`, `FANOUT 8→3`,
+  `DEPTH 2→1`); the main agent's `xhigh`/`MAX_STEPS=50` are untouched. (`scripts/check_subagent_budget_0091.py`.)
 - `0090` **lean prompt, pass 2** — extends `CODE_LEAN_PROMPT` to the secondary prompts the inventory flagged:
   15 leaner tool descriptions (a `_LEAN_DESC` map + `desc_for`, used by both `openai_schemas` and the json
   protocol), lean WEB/PROPOSE/SPEC notes in `build_system_prompt`, a lean PowerShell footgun list (alias catalog

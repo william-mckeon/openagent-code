@@ -91,6 +91,11 @@ def run_subagent(task, parent_ctx, effort=None, label=None, read_only=False):
     raw injected prompt; it does NOT change what the child runs. `read_only` (specs/0039): a PARALLEL
     fan-out child runs under a read-only Permissions projection so concurrent children can't race the FS."""
     child_depth = parent_ctx.depth + 1
+    # specs/0091: a spawned child runs at CODE_SUBAGENT_EFFORT (cheap) UNLESS its caller pinned an effort — a
+    # grounding verifier (GROUNDING_EFFORT) / guardian (GUARDIAN_EFFORT) pass their own and still win. So the
+    # review/spawn children go budget while the main agent keeps its premium pin. Empty -> None -> global pin.
+    if effort is None and config.SUBAGENT_EFFORT:
+        effort = config.SUBAGENT_EFFORT
     perms = _child_permissions(parent_ctx.permissions, read_only)
     # Children write to the parent's trajectory dir (None -> the corpus). This keeps subagents spawned
     # INSIDE an eval — e.g. the Phase-10 grounding verifier — under trajectories/eval/ (the firewall),
@@ -121,7 +126,8 @@ def run_subagent(task, parent_ctx, effort=None, label=None, read_only=False):
         granted = getattr(parent_ctx.permissions, "extra_roots", None) if config.VERIFY_GROUNDING_PATHS else None
         # specs/0030: a child shares the parent's cwd (the workspace); pin it durably so a spawned worker knows
         # where "here" is too. Gated in build_system_prompt on CODE_WORKDIR_PROMPT (byte-identical off).
-        agent = build_agent(traj, effort=effort, granted_dirs=granted, cwd=parent_ctx.cwd)
+        agent = build_agent(traj, effort=effort, granted_dirs=granted, cwd=parent_ctx.cwd,
+                            max_steps=(config.SUBAGENT_MAX_STEPS or None))   # specs/0091: smaller child step budget
         result = agent.run(task, child_ctx)
         traj.end(_classify(result, traj.tool_calls), result.final, terminated=result.terminated)
         return result.final or ""

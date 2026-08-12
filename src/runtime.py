@@ -15,7 +15,7 @@ from .agent import Agent
 
 
 def build_agent(trajectory, initial_working=None, pinned_plan=None, memory=None, todos=None, spec=None,
-                granted_dirs=None, effort=None, cwd=None, show_reasoning=False):
+                granted_dirs=None, effort=None, cwd=None, show_reasoning=False, max_steps=None):
     """Build an agent. For resume, pass `initial_working` (the rehydrated history)
     and `pinned_plan` (restored from the trajectory) — see src/session.py. `memory`
     is the loaded cross-session project memory (Phase 4 #7) and `todos` the loaded
@@ -23,7 +23,10 @@ def build_agent(trajectory, initial_working=None, pinned_plan=None, memory=None,
     `granted_dirs` are reference dirs beyond the workspace (--add-dir / CODE_ADD_DIRS),
     advertised in the prompt so the agent uses them. `effort` overrides the model's
     reasoning effort for this whole agent (None = the global CODE_REASONING_EFFORT) —
-    used to run a grounding verifier subagent at CODE_GROUNDING_EFFORT independent of the parent."""
+    used to run a grounding verifier subagent at CODE_GROUNDING_EFFORT independent of the parent.
+    `max_steps` overrides the step budget for this agent (None = the global CODE_MAX_STEPS) — used by
+    run_subagent to give a spawned child a smaller budget (specs/0091); byte-identical for the main/resume
+    callers, which never pass it."""
     model = Model(trajectory, effort=effort, show_reasoning=show_reasoning)   # specs/0064: top-level REPL only
     tools = active_tools()   # base + memory + todos + web (+ MCP) — the dynamic toolset for this run
     planner = make_planner(config.TOOL_MODE, model, openai_schemas(tools))
@@ -33,4 +36,5 @@ def build_agent(trajectory, initial_working=None, pinned_plan=None, memory=None,
                         initial_working=initial_working)
     if pinned_plan:
         cm.set_pinned(pinned_plan)
-    return Agent(planner, Registry(tools), trajectory, config.MAX_STEPS, cm)
+    return Agent(planner, Registry(tools), trajectory,
+                 config.MAX_STEPS if max_steps is None else max_steps, cm)   # specs/0091: capped child budget
