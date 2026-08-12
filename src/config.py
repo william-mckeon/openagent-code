@@ -878,6 +878,15 @@ def permission_extra_roots() -> list:
 COMPACT_AT_TOKENS = _env_int("CODE_COMPACT_AT_TOKENS", "16000")
 COMPACT_KEEP_RECENT = _env_int("CODE_COMPACT_KEEP_RECENT", "8")
 
+# Compaction de-poison (specs/0086), default OFF -> byte-identical. A session poisoned by a narration loop (a
+# weak model that emitted hundreds of no-op run_command(Write-Output "...") turns + "STOP narrating" nudges)
+# summarizes into a loop-SATURATED briefing that re-primes the same behavior every turn (seen live: a resumed
+# session where 'hi' returned only 'No narration - direct reply delivered.'). When on, no-op narration turns and
+# nudge messages are DROPPED (pairing-safe) before the history is summarized AND when a session is resumed, so
+# the model sees the REAL work, not the loop. 0085 stops new narration from accumulating; 0086 cleans the
+# already-poisoned history.
+COMPACT_DROP_NOISE = _as_bool(os.environ.get("CODE_COMPACT_DROP_NOISE", "false"))
+
 # CODE_MAX_MESSAGE_CHARS — cap on a SINGLE message's content in the LIVE context (the full
 # text is still logged raw to the trajectory). Stops one giant tool result (a huge file read,
 # a long subagent return) from dominating the window and defeating compaction — which keeps

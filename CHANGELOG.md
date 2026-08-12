@@ -15,8 +15,15 @@ below was a `.env` change, never a code change:
 - **thinkingmachines/Inkling on Together** — `https://api.together.xyz/v1`, OpenAI-compatible.
 - **gpt-oss-120b on AWS Bedrock / self-hosted vLLM (RunPod)** — the original baseline; last measured eval 13/13.
 
-## Features (specs/0022–0085)
+## Features (specs/0022–0086)
 
+- `0086` **compaction / resume de-poison** — 0085 stops a narration loop forming; 0086 cleans one already in the
+  history. A resumed looped session compacts hundreds of no-op `Write-Output` narration turns + "STOP" nudges
+  into a loop-saturated summary that re-primes the behavior (seen live: a resumed "hi" returned only "No
+  narration - direct reply delivered."). `CODE_COMPACT_DROP_NOISE`: `context.drop_narration_noise` strips the
+  no-op narration turns (+ their tool results, pairing-safe) and nudge messages before the history is summarized
+  AND when a session is resumed, so the model sees the real work. Default OFF → byte-identical.
+  (`scripts/check_depoison_0086.py`, 10/10.)
 - `0085` **narration-as-final** — the ROOT fix for the narration loop (not another counter). In native tool mode
   a turn with any tool call has `final=None` (planner.py), so a weak model that "replies" by printing —
   `run_command(Write-Output "answer")` — is executed as a no-op and loops, never emitting a clean finish (seen

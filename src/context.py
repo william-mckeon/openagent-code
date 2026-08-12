@@ -21,6 +21,7 @@ single item can grow unbounded and blow the model's window (our "no unbounded mo
 items" rule). The full text is always kept raw in the trajectory.
 """
 import json
+import re
 
 from . import config
 from .logsetup import get_logger
@@ -31,6 +32,70 @@ log = get_logger("context")
 def estimate_tokens(messages):
     """Cheap, dependency-free token estimate (~4 chars/token over the JSON)."""
     return sum(len(json.dumps(m, ensure_ascii=False)) for m in messages) // 4
+
+
+# -- de-poison (specs/0086): strip a narration LOOP out of the history before it is summarized / rehydrated ----
+# A weak model stuck in a narration loop emits hundreds of no-op run_command(Write-Output "...") turns plus the
+# injected "STOP narrating" nudges. Summarized, that spam becomes a loop-priming briefing that re-triggers the
+# loop every turn. Dropping it (pairing-safe) leaves the REAL work for the summarizer. PURE / model-free.
+_NARR_CMD = re.compile(r"^\s*(?:write-output|write-host|echo)\s+['\"]", re.I)
+_NARR_META = re.compile(r"[|>&`\n]|;|\$\(")
+_QSPAN = re.compile(r"'[^']*'|\"[^\"]*\"")
+_NUDGE_MARKERS = ("side-effect-free narration commands", "steps made NO progress")
+
+
+def _is_noop_narration(cmd):
+    """True if `cmd` is a pure side-effect-free print (write-output/echo/write-host of a literal), including a
+    multi-statement all-print command. Mirrors agent._is_noop_narration (kept local so context has no import
+    cycle with agent)."""
+    c = (cmd or "").strip()
+    if _NARR_CMD.match(c) and "$(" not in c and not _NARR_META.search(_QSPAN.sub("", c)):
+        return True
+    masked = _QSPAN.sub("", c)
+    if "$(" in c or any(ch in masked for ch in "|>&`"):
+        return False
+    stmts = [s.strip() for s in re.split(r"[;\n]", c) if s.strip()]
+    return len(stmts) >= 2 and all(_NARR_CMD.match(s) for s in stmts)
+
+
+def _all_narration_calls(calls):
+    """True if EVERY tool call is a run_command whose command is pure narration (native tool-call format)."""
+    saw = False
+    for tc in calls or []:
+        fn = (tc.get("function") if isinstance(tc, dict) else None) or {}
+        if fn.get("name") != "run_command":
+            return False
+        try:
+            cmd = (json.loads(fn.get("arguments") or "{}") or {}).get("command", "")
+        except (json.JSONDecodeError, TypeError):
+            return False
+        if not _is_noop_narration(cmd):
+            return False
+        saw = True
+    return saw
+
+
+def drop_narration_noise(messages):
+    """Return `messages` with no-op NARRATION turns (an assistant whose only tool_calls are pure prints, plus the
+    tool results that immediately follow it) and the STOP/narration NUDGE user messages removed. Tool-call<->
+    result pairing is preserved (a narration assistant and its results are dropped together). A real turn — any
+    read/edit/run, any non-narration command — is always kept. A strict no-op on a clean history."""
+    out, i, n = [], 0, len(messages)
+    while i < n:
+        m = messages[i]
+        if m.get("role") == "user" and any(mk in (m.get("content") or "") for mk in _NUDGE_MARKERS):
+            i += 1
+            continue
+        calls = m.get("tool_calls") if m.get("role") == "assistant" else None
+        if calls and _all_narration_calls(calls):
+            j = i + 1
+            while j < n and messages[j].get("role") == "tool":   # drop the narration turn + its results together
+                j += 1
+            i = j
+            continue
+        out.append(m)
+        i += 1
+    return out
 
 
 # -- bounded summarize (specs/0034): a single summarize call must never exceed the model window ------------
@@ -145,7 +210,10 @@ class ContextManager:
             # re-log them — only new turns get logged from here on. Cap each so the
             # bounded-fragment invariant (specs/0009) holds on resume too: a huge
             # historical message must not re-enter the live context uncapped.
-            self.working = [self._capped(m) for m in initial_working]
+            # specs/0086: de-poison a narration-looped session on resume — drop the no-op narration turns +
+            # nudges so the model doesn't rehydrate (and re-summarize) the loop. OFF -> byte-identical.
+            hist = drop_narration_noise(initial_working) if config.COMPACT_DROP_NOISE else initial_working
+            self.working = [self._capped(m) for m in hist]
 
     def add(self, message):
         """Append one message. Logged raw (never compacted) and added to the live set.
@@ -383,7 +451,14 @@ class ContextManager:
         old, keep = self.working[:cut], self.working[cut:]
         before = estimate_tokens(self._base() + self.working)
 
-        summary = self.model.summarize(old)
+        # specs/0086: don't feed a narration loop to the summarizer — the summary would just re-encode the loop.
+        # Filter the no-op narration turns + nudges out of what gets summarized (OFF -> byte-identical: summarize
+        # `old` unchanged). `old` still leaves working via the summary either way, so pairing is unaffected.
+        to_summarize = drop_narration_noise(old) if config.COMPACT_DROP_NOISE else old
+        if to_summarize:
+            summary = self.model.summarize(to_summarize)
+        else:   # `old` was entirely narration/nudges -> nothing worth summarizing (only when the flag is on)
+            summary = "(earlier turns were no-op narration and have been omitted)"
         summary_msg = self._capped({
             "role": "user",
             "content": "[Earlier conversation summarized to save context]\n" + summary,
