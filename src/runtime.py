@@ -15,7 +15,7 @@ from .agent import Agent
 
 
 def build_agent(trajectory, initial_working=None, pinned_plan=None, memory=None, todos=None, spec=None,
-                granted_dirs=None, effort=None, cwd=None, show_reasoning=False, max_steps=None):
+                granted_dirs=None, effort=None, cwd=None, show_reasoning=False, max_steps=None, user_facing=True):
     """Build an agent. For resume, pass `initial_working` (the rehydrated history)
     and `pinned_plan` (restored from the trajectory) — see src/session.py. `memory`
     is the loaded cross-session project memory (Phase 4 #7) and `todos` the loaded
@@ -26,12 +26,14 @@ def build_agent(trajectory, initial_working=None, pinned_plan=None, memory=None,
     used to run a grounding verifier subagent at CODE_GROUNDING_EFFORT independent of the parent.
     `max_steps` overrides the step budget for this agent (None = the global CODE_MAX_STEPS) — used by
     run_subagent to give a spawned child a smaller budget (specs/0091); byte-identical for the main/resume
-    callers, which never pass it."""
+    callers, which never pass it. `user_facing` (specs/0092) is True for the top-level agent that talks to the
+    USER, False for a spawned subagent (run_subagent passes it) so the advisory register — a user-facing concern
+    — never reaches a guardian/grounding/review child and can't push its terse-verdict contract toward prose."""
     model = Model(trajectory, effort=effort, show_reasoning=show_reasoning)   # specs/0064: top-level REPL only
     tools = active_tools()   # base + memory + todos + web (+ MCP) — the dynamic toolset for this run
     planner = make_planner(config.TOOL_MODE, model, openai_schemas(tools))
     system_prompt = build_system_prompt(config.TOOL_MODE, tools, memory=memory, todos=todos, spec=spec,
-                                        granted_dirs=granted_dirs, cwd=cwd)
+                                        granted_dirs=granted_dirs, cwd=cwd, user_facing=user_facing)
     cm = ContextManager(system_prompt, model, trajectory, verbose=config.VERBOSE,
                         initial_working=initial_working)
     if pinned_plan:

@@ -93,6 +93,23 @@ def main():
         # -- ON stays additive: no base-prompt constant was mutated ------------------------------------
         check("ON is strictly LONGER than OFF (additive note only, base prompt untouched)",
               len(sys_on) > len(sys_off))
+
+        # -- ON but NOT user-facing (a subagent): the register is SUPPRESSED --------------------------------
+        # specs/0092 adversarial-review fix: build_system_prompt is the SAME builder for the main agent and for
+        # a guardian/grounding/spawn subagent. The register is a user-facing concern, so a subagent (user_facing
+        # =False) must NOT carry it, or its terse APPROVE/DENY / GROUNDED-UNGROUNDED verdict contract gets pushed
+        # toward prose and can be mis-parsed (a spurious DENY). Flag still ON for all of these.
+        sub = prompts.build_system_prompt("native", at, user_facing=False)
+        check("ON + subagent (user_facing=False): the ADVISORY note is SUPPRESSED",
+              "ADVISORY REGISTER" not in sub)
+        check("ON + subagent: the native close reverts to the original 'short final summary' (terse contract safe)",
+              "a short final summary and no tool calls" in sub and "ANSWER to what was asked" not in sub)
+        check("ON + subagent prompt == main prompt with the flag OFF (register fully absent, byte-identical)",
+              sub == sys_off)
+        check("ON: native_tools_note(user_facing=False) is the original literal despite the flag",
+              prompts.native_tools_note(_FAKE_TOOLS, user_facing=False) == expected_off)
+        check("ON: native_tools_note(user_facing=True) is still reshaped (main agent keeps the register)",
+              "ANSWER to what was asked" in prompts.native_tools_note(_FAKE_TOOLS, user_facing=True))
     finally:
         config.ADVISORY_REGISTER = _saved
 

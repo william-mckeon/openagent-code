@@ -48,6 +48,25 @@ The prompt models a code-editing task executor end to end and has **no advisory 
 No change to the base-prompt string constants, the gates, or the reasoning-leak machinery — the fix is purely the
 missing *register*, added additively when armed.
 
+### Scope: user-facing top-level turn only (adversarial-review fix)
+
+`build_system_prompt` is the SAME builder for the main agent AND for every spawned subagent (a guardian reviewer,
+a grounding verifier, a `spawn_agent`/review child) — it was depth-agnostic. An adversarial review of the first
+cut caught the leak: with the flag on, the advisory register ("answer in prose, not a status line") reached the
+**guardian** subagent, whose contract is to emit exactly `APPROVE: <reason>` / `DENY: <reason>` (parsed
+fail-closed: needs `\bAPPROVE\b` present and `\bDENY\b` absent). On this weak model — which the whole spec exists
+because it over-anchors on system-prompt register cues — the guardian could wrap its verdict in prose, dropping
+the token or naming "deny" in its reasoning → a spurious DENY of a legitimate user-requested action.
+
+Fix: the register is a **user-facing** concern, so it is gated on a new `user_facing` flag threaded
+`run_subagent → build_agent → build_system_prompt`/`native_tools_note`. `user_facing=True` (default → the main
+`cli`/`session` agents, byte-identical) applies the register; `run_subagent` passes `user_facing=False`, so a
+subagent gets the plain prompt and its terse structured contracts (guardian APPROVE/DENY, grounding
+GROUNDED/UNGROUNDED) are untouched. A subagent's prompt with the flag ON is byte-identical to the main prompt with
+the flag OFF. (The 5 other review findings were verified and refuted — byte-identity found nothing; the
+reasoning-leak/reply-shape/print-task/grounding tensions were traced to pre-existing accepted baseline behavior,
+not defects the diff introduces.)
+
 ## Non-goals
 
 - Does NOT loosen the honesty/verification gates, the read-only-review rule, or the grounding contract — those are
@@ -61,9 +80,11 @@ missing *register*, added additively when armed.
 `scripts/check_advisory_register_0092.py` (dep-free): armed → the assembled native prompt contains the ADVISORY
 REGISTER note and `native_tools_note` no longer pins "a short final summary" (says "the ANSWER to what was
 asked"); the note explicitly forbids the receipt tells (CONFIRMED / === SUMMARY === / Status-Awaiting / ✓
-checklist) and the Write-Output-as-reply habit; OFF → `build_system_prompt` and `native_tools_note` are
-**byte-identical** to the pre-0092 text (the exact "short final summary … ends the session." string, no advisory
-note). No regression across the prompt-adjacent suite.
+checklist) and the Write-Output-as-reply habit; a **subagent** (`user_facing=False`) with the flag ON has the
+register SUPPRESSED — its prompt is byte-identical to the main prompt with the flag OFF, and `native_tools_note`
+reverts to the original close; OFF → `build_system_prompt` and `native_tools_note` are **byte-identical** to the
+pre-0092 text (the exact "short final summary … ends the session." string, no advisory note). No regression across
+the prompt-adjacent suite.
 
 ## Byte-identity
 

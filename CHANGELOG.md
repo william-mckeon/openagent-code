@@ -26,7 +26,11 @@ below was a `.env` change, never a code change:
   research / weigh / "what do you think" is not a code task → substantive prose, never a receipt; the
   VERIFY/verified vocabulary is internal discipline, not the user-facing voice; reply as prose, never
   `Write-Output` it) and `native_tools_note` reshapes the final-reply line to "the answer the user asked for".
-  Default OFF → byte-identical. (`scripts/check_advisory_register_0092.py`.)
+  Scoped to the **user-facing** top-level turn (a new `user_facing` flag threaded `run_subagent → build_agent →
+  build_system_prompt`): a guardian/grounding/review subagent keeps the plain prompt so its terse
+  APPROVE/DENY · GROUNDED/UNGROUNDED verdict contract is never pushed toward prose (an adversarial review caught
+  the register leaking into the guardian and risking a spurious DENY). Default OFF → byte-identical.
+  (`scripts/check_advisory_register_0092.py`, 21/21.)
 - `0091` **subagent budget** — the biggest run-cost multiplier is subagent fan-out: a `review_repo` covers up to
   `CODE_MAX_REVIEW_AREAS` areas and **each is a full agent loop**, and every spawned child inherited the main
   agent's max reasoning pin (`xhigh`) and full 50-step budget while doing cheap work (read a folder, summarize, a

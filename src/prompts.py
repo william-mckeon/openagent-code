@@ -171,17 +171,20 @@ def reply_shape_caveat():
             " or a particular format); if so give EXACTLY that and hold this synthesis for when they ask.")
 
 
-def native_tools_note(tools):
-    """Suffix for native (OpenAI) tool-calling mode. specs/0092: when CODE_ADVISORY_REGISTER is on, the
-    final-reply line says the reply is the ANSWER the user asked for (prose when they asked you to think,
-    a short summary when it was a code task) instead of pinning it to "a short final summary" of the work —
-    the phrase that drove the status-receipt collapse. Off -> the original text (byte-identical)."""
+def native_tools_note(tools, user_facing=True):
+    """Suffix for native (OpenAI) tool-calling mode. specs/0092: when CODE_ADVISORY_REGISTER is on AND this is
+    the user-facing top-level turn, the final-reply line says the reply is the ANSWER the user asked for (prose
+    when they asked you to think, a short summary when it was a code task) instead of pinning it to "a short
+    final summary" of the work — the phrase that drove the status-receipt collapse. `user_facing=False` (a
+    guardian / grounding / spawned subagent, which never replies to the user) keeps the ORIGINAL close so its
+    terse-verdict contract (APPROVE/DENY, GROUNDED/UNGROUNDED) is never pushed toward prose — an adversarial
+    review caught the register leaking into the guardian and risking a spurious DENY. Off -> original (byte-id)."""
     names = ", ".join(t["name"] for t in tools)
     close = (("When you are done, reply with no tool calls — that ends the session. Make that final message "
               "the ANSWER to what was asked: prose that explains or advises when the user asked you to think, "
               "research, or weigh something; a short summary of the change when it was a code task. Not a "
               "status line.")
-             if config.ADVISORY_REGISTER else
+             if (config.ADVISORY_REGISTER and user_facing) else
              ("When the task is done and verified, reply with a short final summary and no tool calls — that "
               "ends the session."))
     return (f"You have these tools: {names}. Call them using your tool-calling capability. " + close)
@@ -252,8 +255,13 @@ def _identity_block(name):
     return "\n".join(lines) + directive
 
 
-def build_system_prompt(mode, tools, memory=None, todos=None, spec=None, granted_dirs=None, cwd=None):
-    suffix = json_tools_protocol(tools) if mode == "json" else native_tools_note(tools)
+def build_system_prompt(mode, tools, memory=None, todos=None, spec=None, granted_dirs=None, cwd=None,
+                        user_facing=True):
+    # specs/0092: `user_facing` is True for the top-level agent that talks to the USER, False for a spawned
+    # subagent (guardian/grounding verifier/review child) that returns structured text to its PARENT. The
+    # advisory register is a user-facing concern, so it is gated on user_facing — a subagent keeps the plain
+    # prompt and its terse-verdict contracts are untouched.
+    suffix = json_tools_protocol(tools) if mode == "json" else native_tools_note(tools, user_facing)
     note = ""
     # Working directory (specs/0030): pin the ABSOLUTE workspace path in the DURABLE system prompt (which is
     # NEVER compacted), so the agent always knows where "here" is - not only in the off-by-default per-turn
@@ -431,9 +439,10 @@ def build_system_prompt(mode, tools, memory=None, todos=None, spec=None, granted
     # Advisory / conversational register (specs/0092): the rest of the prompt models ONLY a code-editing task
     # executor, so a research / design / "what do you think" turn has no register and collapses to a status
     # receipt (the live Centpilot run: "Claims verified: X - CONFIRMED", "=== SUMMARY FOR USER ===", "Status:
-    # Ready for next instruction"). This note gives the missing register. Gated on CODE_ADVISORY_REGISTER so a
-    # flag-off prompt is byte-identical.
-    if config.ADVISORY_REGISTER:
+    # Ready for next instruction"). This note gives the missing register. Gated on CODE_ADVISORY_REGISTER AND
+    # `user_facing` — a subagent (guardian verdict, grounding verifier, review child) is NOT user-facing and must
+    # keep its terse structured contract, so the register never reaches it. Off -> byte-identical.
+    if config.ADVISORY_REGISTER and user_facing:
         note += ("\n\nADVISORY REGISTER: not every request is a code task. When the user asks you to explain, "
                  "research, weigh options, or \"what do you think\", ANSWER in substantive prose — the actual "
                  "findings or recommendation WITH your reasons, the way you'd brief a colleague. That IS the "

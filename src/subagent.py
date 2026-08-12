@@ -127,7 +127,9 @@ def run_subagent(task, parent_ctx, effort=None, label=None, read_only=False):
         # specs/0030: a child shares the parent's cwd (the workspace); pin it durably so a spawned worker knows
         # where "here" is too. Gated in build_system_prompt on CODE_WORKDIR_PROMPT (byte-identical off).
         agent = build_agent(traj, effort=effort, granted_dirs=granted, cwd=parent_ctx.cwd,
-                            max_steps=(config.SUBAGENT_MAX_STEPS or None))   # specs/0091: smaller child step budget
+                            max_steps=(config.SUBAGENT_MAX_STEPS or None),   # specs/0091: smaller child step budget
+                            user_facing=False)   # specs/0092: a subagent returns structured text to its PARENT,
+                                                  # never the user -> keep the plain prompt + terse-verdict contract
         result = agent.run(task, child_ctx)
         traj.end(_classify(result, traj.tool_calls), result.final, terminated=result.terminated)
         return result.final or ""
