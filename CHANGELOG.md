@@ -15,8 +15,16 @@ below was a `.env` change, never a code change:
 - **thinkingmachines/Inkling on Together** — `https://api.together.xyz/v1`, OpenAI-compatible.
 - **gpt-oss-120b on AWS Bedrock / self-hosted vLLM (RunPod)** — the original baseline; last measured eval 13/13.
 
-## Features (specs/0022–0088)
+## Features (specs/0022–0089)
 
+- `0089` **lean system prompt** — BASE_PROMPT had grown to 9,802 chars / 116 lines sent EVERY turn; an
+  exhaustive extraction of every model-facing prompt found it the single biggest bloat source (the honesty theme
+  restated across ~7 bullets, review-behavior across ~6), which a model treats as many literal constraints —
+  amplifying the over-obedience behind the recent failures. `CODE_LEAN_PROMPT` swaps in `LEAN_BASE_PROMPT`
+  (~81% smaller: a role line + 6 tight bullets — read-before-claim, workspace scoping, edit/delete mechanics,
+  verify-don't-declare, review = read-only + substantive + review_repo, answer directly). Same identity/tool/
+  memory wiring; dropped clauses are redundant elaboration the gates/tools already enforce. Default OFF →
+  byte-identical; reversible for lean-vs-full comparison. (`scripts/check_lean_prompt_0089.py`, 14/14.)
 - `0088` **review substance** — stop a review collapsing into a receipt. A whole-project review kept returning
   "Review complete. 9 folders covered. No edits made." instead of the review, because BASE_PROMPT ORDERED
   brevity ("Be concise… keep reviews tight") and a weak model over-obeyed, collapsing the review to a status

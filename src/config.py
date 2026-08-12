@@ -534,6 +534,15 @@ REPLY_SHAPE = _as_bool(os.environ.get("CODE_REPLY_SHAPE", "false"))
 # fixed" while :8080 was refused). OFF by default -> no note appended (byte-identical prompt).
 PROMPT_HYGIENE = _as_bool(os.environ.get("CODE_PROMPT_HYGIENE", "false"))
 
+# Lean system prompt (specs/0089), default OFF -> byte-identical. BASE_PROMPT grew to ~9.8k chars / 116 lines,
+# sent EVERY turn — a firehose of "do NOT / NEVER / ALWAYS" rules a model has to wade through before it can
+# think, and many are redundant elaborations the gates/tools already enforce. When on, build_system_prompt uses
+# LEAN_BASE_PROMPT (~1/7 the size) that keeps only the load-bearing behavior (read-before-claim, workspace
+# scoping, edit/delete mechanics, verify-don't-declare, review = read-only + substantive + review_repo, answer
+# directly / match length). The identity/name/persona injection, tool-mode suffix, memory/todos/spec are
+# unchanged. Reversible: flip it off to get the full prompt back.
+LEAN_PROMPT = _as_bool(os.environ.get("CODE_LEAN_PROMPT", "false"))
+
 # Runtime-done honesty gate (Phase 53 / specs/0053). The existing unverified-success net (grounding._SUCCESS)
 # only knows test/build/lint "pass/green/clean" language — so a small model's "Done / plumbing fixed / the app
 # is serving" sailed through on a live Centpilot run while `curl localhost:8080` had just returned
