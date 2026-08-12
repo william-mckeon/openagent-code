@@ -381,7 +381,8 @@ class Agent:
             env = envcontext.build_env_context(
                 ctx.cwd, getattr(ctx.permissions, "extra_roots", None),
                 include_git=config.SITUATIONAL_GIT, shell_hints=config.SHELL_HINTS,
-                reasoning_effort=(config.display_effort() if config.CONTEXT_SELF_STATE else None))  # specs/0062
+                reasoning_effort=(config.display_effort() if config.CONTEXT_SELF_STATE else None),  # specs/0062
+                lean=config.LEAN_PROMPT)   # specs/0090: leaner PowerShell footgun list
             self.cm.set_env_context(env)
             self.cm.log_env_capture(env)
         consecutive_fail = {}  # tool name -> count of prior consecutive failures

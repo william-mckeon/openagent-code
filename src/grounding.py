@@ -673,6 +673,11 @@ def challenge(problems):
     # a weak model collapse its whole review into a one-line "confirmed X" receipt — the user got the receipt,
     # not the review. RE-SEND the COMPLETE answer with just the flagged claim fixed, and KEEP a claim that turns
     # out correct. Gated so flag-off is byte-identical.
+    if config.GROUND_ANTI_COLLAPSE and config.LEAN_PROMPT:   # specs/0090: leaner anti-collapse challenge
+        return ("Some claims may not be backed by the files:\n" + body
+                + "\nCheck ONLY these, then RE-SEND your COMPLETE answer with just the flagged claim(s) fixed — "
+                  "keep every other part in full, not collapsed to a 'confirmed' note. Keep a flagged claim "
+                  "that turns out correct. No meta-commentary.")
     if config.GROUND_ANTI_COLLAPSE:
         return ("Some claims in your last answer may not be backed by the files:\n" + body
                 + "\nCheck ONLY these against the files. Then RE-SEND your COMPLETE answer to the current task "

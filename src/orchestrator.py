@@ -231,17 +231,25 @@ def review_repo(args, ctx):
         names = ", ".join(lbl for lbl, *_ in truncated)
         parts.append(f"\n[NOTE] {len(truncated)} area(s) not reviewed (fan-out cap "
                      f"{cap}): {names}. Re-run review_repo scoped to those with `path`.")
-    parts.append(f"\nYou now have what you need. Write the FINAL review for the user NOW by "
-                 f"synthesizing ALL {len(summaries)} summaries above — do not let one area (e.g. "
-                 f"src/) crowd out the rest. Give your take on EACH area (a sentence or two — the "
-                 f"finding AND why it matters), then the overall architecture and the top "
-                 f"cross-cutting findings. Report the findings THEMSELVES — do NOT reduce this to a "
-                 f"'review complete / N files covered' status line; that is not the review. Do NOT call read_file / tree / "
-                 f"grep / spawn_agent / review_repo again: the children already covered the files, "
-                 f"and re-reading or re-delegating only wastes budget and overflows your context. "
-                 f"This is a REVIEW — report findings only; do not edit, create, or run anything. "
-                 f"Your next reply must be the finished review, as a clean report, with no tool calls."
-                 + prompts.reply_shape_caveat())
+    if config.LEAN_PROMPT:   # specs/0090: leaner trailer (keeps the "You now have..." anchor the 0088 digest-strip finds)
+        parts.append(f"\nYou now have what you need. Write the FINAL review NOW by synthesizing ALL "
+                     f"{len(summaries)} summaries above — a sentence or two on EACH area (the finding AND why "
+                     f"it matters), then the overall architecture and top cross-cutting findings. Report the "
+                     f"findings themselves, not a 'review complete / N files covered' receipt; do not edit, "
+                     f"run, or call any tool again — your next reply IS the finished review."
+                     + prompts.reply_shape_caveat())
+    else:
+        parts.append(f"\nYou now have what you need. Write the FINAL review for the user NOW by "
+                     f"synthesizing ALL {len(summaries)} summaries above — do not let one area (e.g. "
+                     f"src/) crowd out the rest. Give your take on EACH area (a sentence or two — the "
+                     f"finding AND why it matters), then the overall architecture and the top "
+                     f"cross-cutting findings. Report the findings THEMSELVES — do NOT reduce this to a "
+                     f"'review complete / N files covered' status line; that is not the review. Do NOT call read_file / tree / "
+                     f"grep / spawn_agent / review_repo again: the children already covered the files, "
+                     f"and re-reading or re-delegating only wastes budget and overflows your context. "
+                     f"This is a REVIEW — report findings only; do not edit, create, or run anything. "
+                     f"Your next reply must be the finished review, as a clean report, with no tool calls."
+                     + prompts.reply_shape_caveat())
     digest = "\n".join(parts)
     ctx._reviewed_digest = digest   # cache it so a re-run this turn short-circuits (see the top guard)
     return ToolResult(True, digest, {"areas": len(summaries)})

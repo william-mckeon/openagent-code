@@ -36,7 +36,7 @@ def _shell_name():
 
 
 def build_env_context(cwd, granted_dirs=None, include_git=False, git_status_fn=None, now=None,
-                      shell_hints=False, reasoning_effort=None):
+                      shell_hints=False, reasoning_effort=None, lean=False):
     """Return a bounded, plain-text environment block (never None, never raises).
 
     Pure + injectable: `now` (a datetime) and `git_status_fn` are injected by the acceptance harness so
@@ -63,7 +63,18 @@ def build_env_context(cwd, granted_dirs=None, include_git=False, git_status_fn=N
         lines.append(f"- reasoning effort: {reasoning_effort}")
     # PowerShell 5.1 command rules (specs/0046), only when opted in AND the shell is actually PowerShell —
     # its syntax differs from POSIX in ways a bash-trained model gets wrong. Gated, so OFF is byte-identical.
-    if shell_hints and os.name == "nt":
+    if shell_hints and os.name == "nt" and lean:
+        # specs/0090: keep only the non-inferable footguns; drop the alias catalog a model already knows.
+        lines.append(
+            "- shell rules (PowerShell 5.1): chain commands with `;` — `&&` / `||` are NOT valid; `curl` / "
+            "`wget` are Invoke-WebRequest aliases (call `curl.exe` for real curl); discard output with `$null` "
+            "/ `Out-Null`, not `/dev/null`; make dirs with `New-Item -ItemType Directory -Force`, not `mkdir "
+            "-p`; NEVER run a bare `echo` / `Write-Output` with no argument (it PROMPTS for input and HANGS); "
+            "stop a background process by PID (`Stop-Process -Id N`), NEVER by name — `Stop-Process -Name "
+            "python` / `taskkill /IM python*` kills THIS agent; do NOT append `2>&1` to a native exe (git / "
+            "docker / curl / npm) — PowerShell wraps its stderr as a NativeCommandError and returns a NON-zero "
+            "exit even on success, so the call is mislabeled failed; let stderr flow (it is captured for you).")
+    elif shell_hints and os.name == "nt":
         lines.append(
             "- shell rules (PowerShell 5.1): chain with `;` (`&&` / `||` are NOT valid); list files with "
             "`Get-ChildItem` (`ls` / `dir` take NO Unix flags like `-la`); read with `Get-Content` (not "

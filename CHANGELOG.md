@@ -15,8 +15,15 @@ below was a `.env` change, never a code change:
 - **thinkingmachines/Inkling on Together** — `https://api.together.xyz/v1`, OpenAI-compatible.
 - **gpt-oss-120b on AWS Bedrock / self-hosted vLLM (RunPod)** — the original baseline; last measured eval 13/13.
 
-## Features (specs/0022–0089)
+## Features (specs/0022–0090)
 
+- `0090` **lean prompt, pass 2** — extends `CODE_LEAN_PROMPT` to the secondary prompts the inventory flagged:
+  15 leaner tool descriptions (a `_LEAN_DESC` map + `desc_for`, used by both `openai_schemas` and the json
+  protocol), lean WEB/PROPOSE/SPEC notes in `build_system_prompt`, a lean PowerShell footgun list (alias catalog
+  dropped), a lean review_repo trailer, and a lean grounding anti-collapse challenge. The assembled system prompt
+  (native, all 25 tools) drops 17,993 → 9,203 chars (48%) on top of the lean BASE_PROMPT. Every machine contract
+  is preserved (apply_patch envelope, pursue argv-list bar, web untrusted+cite, update_plan `file` hook, the
+  0088 review-digest anchor). Default OFF → byte-identical. (`scripts/check_lean_prompt2_0090.py`, 14/14.)
 - `0089` **lean system prompt** — BASE_PROMPT had grown to 9,802 chars / 116 lines sent EVERY turn; an
   exhaustive extraction of every model-facing prompt found it the single biggest bloat source (the honesty theme
   restated across ~7 bullets, review-behavior across ~6), which a model treats as many literal constraints —
