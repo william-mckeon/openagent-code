@@ -242,19 +242,21 @@ def _narration_is_incomplete(said):
     """specs/0093: True if a narration print is a FRAGMENT — a header/banner/status line the model prints BEFORE
     the real answer — rather than the complete answer itself. Used to nudge the model to deliver the full answer
     via the clean reply channel instead of finalizing the turn on the fragment (the "=== FILE LIST ===" empty
-    response, log 98d6cbd9d8a2). CONSERVATIVE: a multi-line body or substantive single-line prose is treated as
-    COMPLETE (honored immediately), so a genuine printed answer is never nudged."""
+    response, log 98d6cbd9d8a2). Rule: a print is INCOMPLETE iff EVERY non-blank line is itself a status/banner/
+    continuation line — a single "=== FILE LIST ===" or a multi-line all-status RECEIPT
+    ("=== FILE LIST ===\\nFiles in workspace: …\\nStatus: done"). As soon as ONE line carries real content, the
+    print is a genuine answer/list and is honored immediately, so a real reply is never nudged (specs/0093 review)."""
     t = (said or "").strip()
     if not t or t == "(done)":
         return True                                              # empty / placeholder — not a real answer
-    lines = [ln for ln in t.splitlines() if ln.strip()]
-    if len(lines) >= 3:
-        return False                                             # a real multi-line answer / list — honor it
-    if _NARRATION_STATUS_PREFIX.match(t):
-        return True                                              # a banner / heading / status preamble
-    if t.endswith((":", "-", "—", "–", "=")):
-        return True                                              # a "the list follows" continuation cue
-    return False                                                 # substantive prose — honor it
+
+    def _is_status_line(ln):
+        ln = ln.strip()
+        # a === banner ===, a lone heading, a "File exists / Files in workspace / Status:" preamble, or a line
+        # ending in a "the body follows" cue (: - — – =)
+        return bool(_NARRATION_STATUS_PREFIX.match(ln)) or ln.endswith((":", "-", "—", "–", "="))
+
+    return all(_is_status_line(ln) for ln in t.splitlines() if ln.strip())
 
 _STALL_FINAL = ("(Ended: I was repeating steps that made no progress — denied, failed, or duplicate actions — "
                 "instead of moving forward. Tell me how you'd like to proceed, or adjust what I'm allowed to do "
@@ -418,7 +420,8 @@ class Agent:
                 ctx.cwd, getattr(ctx.permissions, "extra_roots", None),
                 include_git=config.SITUATIONAL_GIT, shell_hints=config.SHELL_HINTS,
                 reasoning_effort=(config.display_effort() if config.CONTEXT_SELF_STATE else None),  # specs/0062
-                lean=config.LEAN_PROMPT)   # specs/0090: leaner PowerShell footgun list
+                lean=config.LEAN_PROMPT,   # specs/0090: leaner PowerShell footgun list
+                extra_hints=config.SHELL_HINTS_EXTRA)   # specs/0094: heredoc/ls-la/which gaps + scratch discipline
             self.cm.set_env_context(env)
             self.cm.log_env_capture(env)
         consecutive_fail = {}  # tool name -> count of prior consecutive failures

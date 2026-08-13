@@ -64,6 +64,20 @@ incorrect / "is not missing" / "did not open|read|review" / "only read"). This d
 - Grounding: the real-trigger sentence and an action-negation are flagged at baseline and DROPPED by strict; three
   genuine absences ("`X` is empty", "no code in `X`", "`X` has no implementation") are KEPT by strict.
 
+## Adversarial-review fixes (post-commit)
+
+A 4-lens adversarial review of the diff confirmed **one HIGH** defect and refuted three:
+- **HIGH (fixed):** `_ABSENCE_PREDICATE`'s `has no …` / `(no|zero) …` branches required the noun ADJACENT to the
+  quantifier, so a modifier between them ("no **Go** source", "has no **.py** files", "no **actual**
+  implementation") dropped a genuine absence — reopening the documented live miss ("the auth service has no Go
+  source" while `src/auth` held 14 `.go` files). Fixed with a bounded `(?:[\w.\-]+\s+){0,3}` modifier gap on both
+  branches (still doesn't match "add missing code" — no quantifier). Harness cases added.
+- **Applied anyway (low/refuted but on-target):** `_narration_is_incomplete` rewritten to the cleaner rule
+  "incomplete iff EVERY non-blank line is a status/banner/continuation line" — this also catches a MULTI-LINE
+  all-status receipt (`=== FILE LIST ===\nFiles in workspace: …\nStatus: done`), which the first cut's ">=3 lines
+  = complete" fast-path let through. `_ABSENCE_META` bare `described` tightened to `described as` so a genuine
+  absence that merely narrates description isn't vetoed.
+
 ## Non-goals
 
 - Does not change WHY the weak model reply-prints (the advisory register 0092 + the nudge address that at the

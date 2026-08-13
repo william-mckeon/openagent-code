@@ -15,8 +15,15 @@ below was a `.env` change, never a code change:
 - **thinkingmachines/Inkling on Together** — `https://api.together.xyz/v1`, OpenAI-compatible.
 - **gpt-oss-120b on AWS Bedrock / self-hosted vLLM (RunPod)** — the original baseline; last measured eval 13/13.
 
-## Features (specs/0022–0093)
+## Features (specs/0022–0094)
 
+- `0094` **extra shell hints + scratch-file discipline** — two "smaller notes" from log `98d6cbd9d8a2`, separate
+  from 0093: the model still ran `ls -la`, `cat << 'EOF'` (a heredoc), `tail`, `which` (fail on PowerShell), and
+  kept leaving PDF-extraction temp files in the workspace. `CODE_SHELL_HINTS_EXTRA` appends one gated env-block
+  line covering the gaps NEITHER block had — heredocs don't exist (use `Set-Content` / a here-string), the Unix
+  flags/commands `ls -la` / `which` / `head` / `tail` the LEAN block (0090) had dropped, and a scratch-file
+  discipline (write a PDF extraction / temp report under `$env:TEMP`, not the workspace, or delete it). A new flag
+  so an existing `CODE_SHELL_HINTS` setup is byte-identical. (`scripts/check_shell_hints_extra_0094.py`, 11/11.)
 - `0093` **the model actually responds** — on the full Inkling (log `98d6cbd9d8a2`) the agent intermittently
   returned no real answer — a bare header (`=== FILE LIST ===`), a status line (`File exists: X`), or a repeating
   phantom grounding challenge. Two causes, both fixed default-OFF: (A) `CODE_NARRATION_FULL_ANSWER` — narration-as

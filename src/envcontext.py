@@ -36,7 +36,7 @@ def _shell_name():
 
 
 def build_env_context(cwd, granted_dirs=None, include_git=False, git_status_fn=None, now=None,
-                      shell_hints=False, reasoning_effort=None, lean=False):
+                      shell_hints=False, reasoning_effort=None, lean=False, extra_hints=False):
     """Return a bounded, plain-text environment block (never None, never raises).
 
     Pure + injectable: `now` (a datetime) and `git_status_fn` are injected by the acceptance harness so
@@ -91,6 +91,19 @@ def build_env_context(cwd, granted_dirs=None, include_git=False, git_status_fn=N
             "kills THIS agent; do NOT append `2>&1` to a native exe (docker / git / curl / npm) — PowerShell "
             "wraps its stderr as a NativeCommandError and returns a NON-zero exit even on success, so the call "
             "is mislabeled failed; let stderr flow (it is captured for you) or use `-ErrorAction`.")
+    # specs/0094: one MORE line for the footguns still landing on the full Inkling that NEITHER block above
+    # covers — heredocs (which don't exist in PowerShell) and, because the LEAN block dropped the alias catalog,
+    # the Unix flags/commands `ls -la` / `head` / `tail` / `which` — plus a scratch-file discipline so the agent
+    # stops leaving temp extractions in the user's project. Gated on extra_hints so OFF is byte-identical.
+    if shell_hints and os.name == "nt" and extra_hints:
+        lines.append(
+            "- more shell rules (PowerShell 5.1): there is NO heredoc — `cat << 'EOF'` / `<<` FAIL; write a file "
+            "with `Set-Content -Path f -Value '...'` or a small Python script (a multi-line literal is a "
+            "`@'...'@` here-string with the closing `'@` at column 0). Unix commands/flags do NOT exist here: "
+            "`ls -la` / `ls -l` -> `Get-ChildItem`; `which x` -> `Get-Command x`; `head` / `tail` -> "
+            "`Select-Object -First N` / `-Last N`. Put SCRATCH/working files (a PDF extraction, a temp report) "
+            "under `$env:TEMP`, NOT the workspace — or delete them when done; don't leave scratch files in the "
+            "user's project.")
     dirs = [d for d in (granted_dirs or []) if d]
     if dirs:
         shown = dirs[:_MAX_DIRS]

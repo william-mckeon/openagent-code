@@ -509,6 +509,13 @@ SITUATIONAL_GIT = _as_bool(os.environ.get("CODE_SITUATIONAL_GIT", "false"))
 # Centpilot run failed `mkdir -p`, `curl -o /dev/null`, and `a && b` before recovering. OFF by default ->
 # the env block is byte-identical; needs CODE_SITUATIONAL_CONTEXT on to have any effect.
 SHELL_HINTS = _as_bool(os.environ.get("CODE_SHELL_HINTS", "false"))
+# CODE_SHELL_HINTS_EXTRA (specs/0094) — one MORE gated env line covering the footguns still landing on the full
+# Inkling (log 98d6cbd9d8a2) that neither the full nor the LEAN shell block covers: PowerShell has NO heredoc
+# (`cat << 'EOF'` fails), and the LEAN block (specs/0090, armed) DROPPED the Unix-alias catalog so `ls -la` / `head`
+# / `tail` / `which` regressed. It also adds a SCRATCH-FILE discipline (write a PDF extraction / temp report under
+# $env:TEMP, not the workspace, or delete it — the Centpilot runs kept leaving pdf_extracted_full.txt behind).
+# OFF -> byte-identical; needs CODE_SHELL_HINTS + CODE_SITUATIONAL_CONTEXT on to have effect.
+SHELL_HINTS_EXTRA = _as_bool(os.environ.get("CODE_SHELL_HINTS_EXTRA", "false"))
 # Non-interactive shell (Phase 55 / specs/0055). run_command runs one-shot commands, but a command that
 # READS STDIN blocks forever waiting for input the agent never sends — a live run HUNG the REPL when the model
 # emitted a bare PowerShell `echo` (Write-Output with no argument prompts for its InputObject and reads the

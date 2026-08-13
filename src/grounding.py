@@ -91,15 +91,20 @@ _ABSENCE_PREDICATE = re.compile(
     r"(?:completely\s+|entirely\s+|totally\s+|basically\s+|essentially\s+)?"
     r"(?:empty|missing|absent|gone|nonexistent|non-existent|unpopulated|not\s+present|not\s+there)\b"
     r"|\bdoes\s+not\s+exist\b|\bdoesn'?t\s+exist\b|\bdo\s+not\s+exist\b"
-    r"|\bhas\s+no\s+(?:source|code|content|files?|implementation)\b"
-    r"|\b(?:no|zero)\s+(?:source|code|content|files?|implementation)\b"
+    # a bounded modifier gap so "has no GO source" / "no .go files" / "no ACTUAL implementation" still predicate
+    # absence (the documented live miss "the auth service has no Go source") — but NOT "add missing code" (no
+    # no/zero/has-no quantifier). Mirrors the .{0,40} tolerance _ABSENCE already has. (specs/0093 review fix.)
+    r"|\bhas\s+no\s+(?:[\w.\-]+\s+){0,3}(?:source|code|content|files?|implementation)\b"
+    r"|\b(?:no|zero)\s+(?:[\w.\-]+\s+){0,3}(?:source|code|content|files?|implementation)\b"
     r"|\bcannot\s+be\s+(?:built|compiled|found)\b",
     re.I)
 # specs/0093: markers that make an _ABSENCE hit a FALSE positive — a QUOTED/meta rebuttal (the model quoting or
 # denying the phantom claim) or an ACTION-negation about the path (didn't open/read/review it), neither of which
 # asserts the path itself is absent. A sentence carrying any of these is NOT an absence contradiction.
 _ABSENCE_META = re.compile(
-    r"\b(?:claim|claimed|described|desc?ribes?|says?|stated|state|assert|incorrect|wrong|false|"
+    # "described as" (the rebuttal "described as missing/empty"), NOT a bare "described" — a genuine absence
+    # sentence that merely narrates (non-)description shouldn't be vetoed (specs/0093 review, low finding).
+    r"\b(?:claim|claimed|describ(?:ed|es)\s+as|says?|stated|state|assert|incorrect|wrong|false|"
     r"never\s+(?:said|described|claimed|called)|"
     r"is\s+not\s+(?:missing|empty|absent)|isn'?t\s+(?:missing|empty|absent)|"
     r"did(?:\s+not|n'?t)\s+(?:open|read|review|view|check|see|find|examine|inspect|look)|"

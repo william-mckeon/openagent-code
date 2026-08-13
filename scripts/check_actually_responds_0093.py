@@ -108,12 +108,15 @@ def part_a_unit():
         "File exists: detailed_report.txt (270 lines, readable)",
         "Here's the list:",
         "## Files to add",
+        # specs/0093 review: a MULTI-LINE all-status RECEIPT is still no answer (every line is a status/banner line)
+        "=== FILE LIST ===\nFiles in workspace: a.txt, docs/\nStatus: done",
     ]
     for s in frags:
         check(f"fragment -> incomplete: {s[:46]!r}", _narration_is_incomplete(s) is True)
     complete = [
         "The free tier is ambitious but well-structured; it undercuts EveryDollar by giving away zero-based budgeting.",
-        "=== ADD ===\n.env\npackage.json\nREADME.md",   # a real multi-line list
+        "=== ADD ===\n.env\npackage.json\nREADME.md",   # a banner + real content lines -> honor
+        "Yes.",                                          # a short genuine answer is not over-nudged
     ]
     for s in complete:
         check(f"complete -> honored: {s[:40]!r}", _narration_is_incomplete(s) is False)
@@ -189,6 +192,11 @@ def part_b_grounding():
             "`X` file is empty": "The `src/config.py` file is empty.",
             "no code in `X`": "There is no code in `src/config.py`.",
             "`X` has no implementation": "`src/config.py` has no implementation.",
+            # specs/0093 review (HIGH): a MODIFIER between the quantifier and the noun ("Go", ".py", "actual")
+            # must not drop the genuine absence — the documented live miss "has no Go source"
+            "no <modifier> source ('no Go source in X')": "There is no Go source in `src/config.py`.",
+            "has no <ext> files ('has no .py files')": "`src/config.py` has no .py files.",
+            "no <adj> implementation ('no actual implementation')": "No actual implementation in `src/config.py`.",
         }
         for label, s in reals.items():
             config.GROUND_ABSENCE_STRICT = False
