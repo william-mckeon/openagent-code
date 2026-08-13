@@ -220,6 +220,42 @@ _STALL_NUDGE = (
     "blocked (a permission denial you cannot clear here), say so and RETURN what you found. If you have enough "
     "to answer, write your final reply now. Do not repeat an action that already failed or already ran.")
 
+# specs/0093: a narration print that is only the HEADER/opener of an answer — a banner ("=== FILE LIST ==="), a
+# lone heading, or a status preamble ("File exists: ...", "Files in workspace: ..."). When one of these is the
+# model's whole print, it was about to print the body next; finalizing on it strands the user with no answer.
+_NARRATION_STATUS_PREFIX = re.compile(
+    r"^\s*(?:=+.*=+\s*$"                                          # === FILE LIST === banner
+    r"|#{1,6}\s+\S"                                               # a lone markdown heading
+    r"|files?\b[^.\n]*\b(?:exists?|in\s+workspace|list)\b"        # "File exists", "Files in workspace", "File list"
+    r"|status\s*[:=]|workspace\s*[:=]"                            # "Status:", "Workspace:"
+    r"|done[.! ]*$"                                               # a bare "Done."
+    r"|here'?s\s+(?:the|your)\s+(?:list|files?|answer)\s*[:=]?\s*$)",   # "Here's the list:" with nothing after
+    re.IGNORECASE)
+
+_FRAGMENT_NUDGE = (
+    "That looks like only the START of your answer — a header or status line, not the answer itself. Write your "
+    "COMPLETE answer NOW as a normal reply: the whole thing as plain text, in ONE message, NOT printed with "
+    "run_command / Write-Output. Don't emit a title, a status line, or a receipt — just give the full answer.")
+
+
+def _narration_is_incomplete(said):
+    """specs/0093: True if a narration print is a FRAGMENT — a header/banner/status line the model prints BEFORE
+    the real answer — rather than the complete answer itself. Used to nudge the model to deliver the full answer
+    via the clean reply channel instead of finalizing the turn on the fragment (the "=== FILE LIST ===" empty
+    response, log 98d6cbd9d8a2). CONSERVATIVE: a multi-line body or substantive single-line prose is treated as
+    COMPLETE (honored immediately), so a genuine printed answer is never nudged."""
+    t = (said or "").strip()
+    if not t or t == "(done)":
+        return True                                              # empty / placeholder — not a real answer
+    lines = [ln for ln in t.splitlines() if ln.strip()]
+    if len(lines) >= 3:
+        return False                                             # a real multi-line answer / list — honor it
+    if _NARRATION_STATUS_PREFIX.match(t):
+        return True                                              # a banner / heading / status preamble
+    if t.endswith((":", "-", "—", "–", "=")):
+        return True                                              # a "the list follows" continuation cue
+    return False                                                 # substantive prose — honor it
+
 _STALL_FINAL = ("(Ended: I was repeating steps that made no progress — denied, failed, or duplicate actions — "
                 "instead of moving forward. Tell me how you'd like to proceed, or adjust what I'm allowed to do "
                 "here.)")
@@ -394,6 +430,7 @@ class Agent:
         accept_retries = 0     # acceptance-gate re-prompts used this run (Phase 25)
         narration_retries = 0  # narration-stall nudges used this run (specs/0067)
         stall_retries = 0      # no-progress-stall nudges used this run (specs/0084)
+        fragment_nudges = 0    # narration full-answer nudges used this run (specs/0093)
 
         try:
             for step in range(self.max_steps):
@@ -451,6 +488,20 @@ class Agent:
                                 for c in decision.calls)):
                     said = _narration_text(decision.calls) or (decision.assistant or {}).get("content", "").strip()
                     said = said or "(done)"
+                    # specs/0093: if the print is only a FRAGMENT — a header/banner/status line the model prints
+                    # BEFORE the real answer ("=== FILE LIST ===", "File exists: X") — don't strand the user with
+                    # it. Nudge (bounded) to deliver the COMPLETE answer via the clean reply channel, then let the
+                    # loop continue; a substantial print is honored below. OFF -> byte-identical (no nudge branch).
+                    if (config.NARRATION_FULL_ANSWER and fragment_nudges < config.NARRATION_FULL_ANSWER_RETRIES
+                            and _narration_is_incomplete(said)):
+                        fragment_nudges += 1
+                        self.cm.add({"role": "assistant", "content": said})   # clean — the fragment it printed
+                        self.cm.add({"role": "user", "content": _FRAGMENT_NUDGE})
+                        if ctx.verbose:
+                            print("  [narration] printed only a header/status line — nudging for the full answer")
+                        log.info("narration fragment at step %d — nudging for the complete answer (retry %d)",
+                                 step, fragment_nudges)
+                        continue
                     # specs/0088: if this print is a receipt that collapses a review_repo digest produced this
                     # turn ("Review complete, N files covered"), deliver the substantive per-area digest the
                     # fan-out children built instead of the receipt. OFF -> byte-identical.

@@ -15,8 +15,19 @@ below was a `.env` change, never a code change:
 - **thinkingmachines/Inkling on Together** — `https://api.together.xyz/v1`, OpenAI-compatible.
 - **gpt-oss-120b on AWS Bedrock / self-hosted vLLM (RunPod)** — the original baseline; last measured eval 13/13.
 
-## Features (specs/0022–0092)
+## Features (specs/0022–0093)
 
+- `0093` **the model actually responds** — on the full Inkling (log `98d6cbd9d8a2`) the agent intermittently
+  returned no real answer — a bare header (`=== FILE LIST ===`), a status line (`File exists: X`), or a repeating
+  phantom grounding challenge. Two causes, both fixed default-OFF: (A) `CODE_NARRATION_FULL_ANSWER` — narration-as
+  -final ended the turn on the model's FIRST print even when it was just a header/status fragment; now the agent
+  nudges once (`_narration_is_incomplete`) for the COMPLETE answer via the clean reply channel, honoring a
+  substantial print immediately, with the narration-stall guard as backstop. (B) `CODE_GROUND_ABSENCE_STRICT` —
+  the deterministic `absence_contradictions` flagged a phantom "`X` is missing/empty" when a cited existing path
+  merely co-occurred with an absence word about an action ("add missing code", "I did not review `X`"), a
+  self-perpetuating challenge; now it requires a real absence PREDICATE on the path and no rebuttal/action-negation
+  markers, keeping the genuine "`X` is empty / no code" catch. (`scripts/check_actually_responds_0093.py`, 20/20,
+  a scripted planner drives the real loop end-to-end.)
 - `0092` **advisory / conversational register** — used as a research / design thought-partner (a near-empty
   workspace, "review this doc", "research these claims", "what do you think about the free tier?"), Arcus
   collapsed every substantive turn into a status receipt — `Claims verified: X - CONFIRMED`, `=== SUMMARY FOR

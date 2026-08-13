@@ -381,6 +381,19 @@ GROUNDING_EFFORT = _g_effort if _g_effort in _EFFORTS else ""
 # the verifier isn't handed granted dirs).
 VERIFY_GROUNDING_PATHS = _as_bool(os.environ.get("CODE_VERIFY_GROUNDING_PATHS", "false"))
 
+# Grounding absence STRICT (specs/0093), default OFF -> byte-identical. The deterministic absence check
+# (absence_contradictions, used by VERIFY_GROUNDING_PATHS) reuses the intentionally OVER-triggering _ABSENCE
+# detector per-sentence: any sentence with an absence WORD + a cited existing path flags "'X' is described as
+# missing/empty, but EXISTS on disk". Over-triggering is harmless for the semantic verifier (it reads the file and
+# returns GROUNDED) but NOT here — this path emits the challenge directly, with no second opinion. So a negation
+# about an ACTION ("I did not open `X`", "I only read `X`, didn't review its contents") or a QUOTED rebuttal ("the
+# claim that `X` is 'missing/empty' is incorrect") produced a PHANTOM challenge — and the rebuttal itself re-matched
+# next turn, a self-perpetuating loop (log 98d6cbd9d8a2). When ON, absence_contradictions additionally requires a
+# real absence PREDICATE on the path (`X` is empty/missing/absent, does not exist, has no source) and NO
+# rebuttal/action-negation markers — killing the false positive while keeping the real "`src/auth` is empty /
+# `main.go` missing" catch.
+GROUND_ABSENCE_STRICT = _as_bool(os.environ.get("CODE_GROUND_ABSENCE_STRICT", "false"))
+
 # Grounding anti-collapse / anti-hijack (specs/0087), default OFF -> byte-identical. The semantic verifier is a
 # small model that sometimes FABRICATES a filesystem fact — flagging a cited path as "not found" when it exists
 # (../style.css), or claiming a file is "present" to reject a CORRECT absence claim (Agent.py, only NAMED in a
@@ -451,6 +464,17 @@ except ValueError:
 # a step whose ONLY calls are pure-narration prints ENDS the turn with the printed text (a clean 'final') the
 # first time, so the loop never forms (supersedes the narration-stall guard for the reply case).
 NARRATION_AS_FINAL = _as_bool(os.environ.get("CODE_NARRATION_AS_FINAL", "false"))
+
+# Narration FULL-answer nudge (specs/0093), default OFF -> byte-identical. NARRATION_AS_FINAL ends the turn on the
+# model's FIRST pure-print step, using ONLY that print's text. But a weak model often prints a HEADER/status line
+# first ("=== FILE LIST ===", "File exists: X", "Files in workspace: ...") intending to print the body next — so
+# the turn dies with just the fragment and the user sees NO real answer (log 98d6cbd9d8a2). When ON, if that first
+# print looks like a fragment/banner/status line rather than a complete answer, the agent NUDGES the model (up to
+# NARRATION_FULL_ANSWER_RETRIES) to deliver the COMPLETE answer via the clean reply channel instead of finalizing
+# on the fragment; a substantial multi-line/prose print is still honored immediately, and the narration-stall
+# guard (0067) remains the backstop. Requires NARRATION_AS_FINAL to be meaningful.
+NARRATION_FULL_ANSWER = _as_bool(os.environ.get("CODE_NARRATION_FULL_ANSWER", "false"))
+NARRATION_FULL_ANSWER_RETRIES = max(0, _env_int("CODE_NARRATION_FULL_ANSWER_RETRIES", "1"))
 
 SUBAGENT_NO_PROPOSE = _as_bool(os.environ.get("CODE_SUBAGENT_NO_PROPOSE", "false"))
 try:

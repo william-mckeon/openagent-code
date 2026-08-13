@@ -82,6 +82,31 @@ def absence_claim(final_text):
     return bool(_ABSENCE.search(final_text or ""))
 
 
+# specs/0093: a REAL absence PREDICATE — the cited thing IS empty/missing/absent/does-not-exist/has-no-source.
+# Used by absence_contradictions in strict mode to require that the absence actually predicates the path, not
+# merely co-occurs with an absence word (which over-triggered _ABSENCE was tuned to do, safely, only for the
+# semantic verifier — see CODE_GROUND_ABSENCE_STRICT).
+_ABSENCE_PREDICATE = re.compile(
+    r"\b(?:is|are|was|were|seems?|appears?|looks?|remains?)\s+(?:to\s+be\s+)?"
+    r"(?:completely\s+|entirely\s+|totally\s+|basically\s+|essentially\s+)?"
+    r"(?:empty|missing|absent|gone|nonexistent|non-existent|unpopulated|not\s+present|not\s+there)\b"
+    r"|\bdoes\s+not\s+exist\b|\bdoesn'?t\s+exist\b|\bdo\s+not\s+exist\b"
+    r"|\bhas\s+no\s+(?:source|code|content|files?|implementation)\b"
+    r"|\b(?:no|zero)\s+(?:source|code|content|files?|implementation)\b"
+    r"|\bcannot\s+be\s+(?:built|compiled|found)\b",
+    re.I)
+# specs/0093: markers that make an _ABSENCE hit a FALSE positive — a QUOTED/meta rebuttal (the model quoting or
+# denying the phantom claim) or an ACTION-negation about the path (didn't open/read/review it), neither of which
+# asserts the path itself is absent. A sentence carrying any of these is NOT an absence contradiction.
+_ABSENCE_META = re.compile(
+    r"\b(?:claim|claimed|described|desc?ribes?|says?|stated|state|assert|incorrect|wrong|false|"
+    r"never\s+(?:said|described|claimed|called)|"
+    r"is\s+not\s+(?:missing|empty|absent)|isn'?t\s+(?:missing|empty|absent)|"
+    r"did(?:\s+not|n'?t)\s+(?:open|read|review|view|check|see|find|examine|inspect|look)|"
+    r"only\s+read|haven'?t\s+(?:read|reviewed|opened|checked))\b",
+    re.I)
+
+
 # An UNCONDITIONAL assertion that a build / test / check SUCCEEDED — the "so the homepage tests now pass"
 # class, where the model INFERS success from reading code instead of RUNNING the check. Runtime success
 # is not a file-content claim, so the citation-based verifier waves it through; this catches it when
@@ -292,6 +317,12 @@ def absence_contradictions(final_text, cwd):
     out, seen = [], set()
     for sent in re.split(r"(?<=[.!?])\s+|\n+", final_text or ""):
         if not _ABSENCE.search(sent):
+            continue
+        # specs/0093: in strict mode, only flag a sentence that REALLY predicates absence ON the path and carries
+        # NO rebuttal/action-negation markers — so "I did not open `X`" / "the claim that `X` is 'missing' is
+        # incorrect" no longer produce a phantom challenge (nor the self-perpetuating rebuttal loop). OFF ->
+        # byte-identical (the broad _ABSENCE match alone decides, exactly as before).
+        if config.GROUND_ABSENCE_STRICT and (not _ABSENCE_PREDICATE.search(sent) or _ABSENCE_META.search(sent)):
             continue
         for p in cited_paths(sent, strict=False):   # BROAD: a bare directory citation must count too
             full = os.path.join(cwd, p)
